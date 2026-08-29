@@ -1,0 +1,51 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+
+# Ambiente
+.env
+*.env.local
+
+# Docker volumes (dados locais)
+data/
+postgres_data/
+minio_data/
+
+# Airflow
+airflow/logs/
+airflow/plugins/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Gerador (saída)
+generator/output/
+generator/data/
+
+# Logs
+*.log
+logs/
+
+# Dissertação LaTeX (repositório separado)
+documentos_apoio/
+
+# Relatórios gerados (output reproduzível)
+relatorios/metricas_gqm_*.json

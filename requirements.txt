@@ -1,0 +1,32 @@
+# ============================================================
+# infra-dissertacao — Dependências Python (venv local)
+# Fase 1: Infraestrutura Lakehouse
+# Fase 2: Gerador de Dados Sintéticos
+# ============================================================
+
+# --- Conexões com banco de dados ---
+psycopg2-binary==2.9.9          # PostgreSQL (baseline_db)
+trino==0.328.0                  # Trino Python client (queries Iceberg)
+sqlalchemy==1.4.52              # ORM / abstração SQL (< 2.0 exigido pelo airflow 2.9)
+
+# --- MinIO / S3 ---
+minio==7.2.7                    # MinIO Python SDK
+boto3==1.34.100                 # AWS SDK (S3-compatible com MinIO)
+
+# --- Dados e formatos ---
+pandas==2.2.2
+pyarrow==16.0.0                 # Leitura/escrita Parquet
+fastparquet==2024.2.0           # Alternativa para Parquet
+
+# --- Gerador de Dados (Fase 2) ---
+faker==25.0.0                   # Geração de dados sintéticos
+numpy==1.26.4                   # Cálculos de trajetória GPS
+
+# --- Airflow (client local, para testar DAGs) ---
+apache-airflow==2.9.0
+
+# --- Utilitários ---
+python-dotenv==1.0.1            # Carrega variáveis do .env
+click==8.1.7                    # CLI para scripts
+loguru==0.7.2                   # Logging estruturado
+tqdm==4.66.4                    # Progress bars

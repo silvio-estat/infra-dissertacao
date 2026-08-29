@@ -1,0 +1,18 @@
+# Ingestion pipeline para capturar o METADADO (esquema, tabelas, colunas) do catálogo Trino
+# Service name must match the Trino service defined in OpenMetadata (trino_lakehouse)
+source:
+  type: trino
+  serviceName: trino_lakehouse
+  sourceConfig:
+    config:
+      type: Metadata   # coleta de metadados
+processor:
+  type: orm-metadata
+  config: {}
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: "http://openmetadata:8585/api"
+    authProvider: openmetadata

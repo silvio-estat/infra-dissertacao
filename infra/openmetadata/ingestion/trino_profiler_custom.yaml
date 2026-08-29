@@ -1,0 +1,18 @@
+source:
+  type: trino
+  serviceName: trino   # nome do serviço criado no OpenMetadata UI
+  sourceConfig:
+    config:
+      type: Profiler
+      # useStatistics: true
+processor:
+  type: "orm-profiler"
+  config: {}
+sink:
+  type: metadata-rest
+  config: {}
+workflowConfig:
+  openMetadataServerConfig:
+    hostPort: "http://dlh_openmetadata:8585/api"
+    authProvider: openmetadata
+    # Se precisar de JWT token, pode ser adicionado aqui

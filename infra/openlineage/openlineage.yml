@@ -1,0 +1,11 @@
+transport:
+  type: http
+  url: http://openmetadata:8585
+  endpoint: /api/v1/openlineage/lineage
+  auth:
+    type: api_key
+    apiKey: eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvcGVuLW1ldGFkYXRhLm9yZyIsInN1YiI6ImluZ2VzdGlvbi1ib3QiLCJyb2xlcyI6WyJJbmdlc3Rpb25Cb3RSb2xlIl0sImVtYWlsIjoiaW5nZXN0aW9uLWJvdEBvcGVubWV0YWRhdGEub3JnIiwiaXNCb3QiOnRydWUsInRva2VuVHlwZSI6IkJPVCIsImlhdCI6MTc3NzMwODIwNCwiZXhwIjpudWxsfQ.oDZu3sjM0D_phAjQ8T8kPx3sWXgo7brKXn_YgO6if37Z0r4pf_IqmWMWPFEvmrQb9B9tMJS86SVFlNwgQJfpDmDpyA6e6R7USNV4NhnH_Dd70R3Z2CZKOEeSfPMGk7Mn7hZs1Y8dKYsC1Vg8zwQ_A_trT7iudlCqZtfjOw7qJGIviU3KqmDPokkFAOC2EooHGc6qYDmFonwTLGllDgfP9mqTaJqsFMt8vfa_OePRI9VMJs_7IT2mbnBsHAmVUJm5W4jn87xLClZZMbt-Lw_DWB_x4IWbnrEg6gqsbuHgKfkvzUShdWKBNvrxVLvoo0SGrFExznxEhKdc1SMxEpWDEQ
+facets:
+  spark:
+    disabled:
+      - spark_unknown

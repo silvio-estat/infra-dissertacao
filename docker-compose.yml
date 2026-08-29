@@ -1,0 +1,405 @@
+---
+# ============================================================
+# infra-dissertacao — Lakehouse Medallion PoC
+# Dissertação ARQ_TEMAC — Sistema C2 Exército Brasileiro
+# ============================================================
+#
+# Fase 1: Infraestrutura Lakehouse
+#   docker compose up -d
+#
+# Com governança (OpenMetadata):
+#   docker compose --profile governance up -d
+#
+# ============================================================
+
+x-minio-env: &minio-env
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+
+x-s3a-env: &s3a-env
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  AWS_DEFAULT_REGION: us-east-1
+
+x-airflow-common: &airflow-common
+  build:
+    context: ./infra/airflow
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow_db
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+    AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master:7077"}'
+    OPENLINEAGE_CONFIG: /opt/openlineage/openlineage.yml
+    OPENLINEAGE_NAMESPACE: dlh
+    OM_INGESTION_BOT_JWT: ${OM_INGESTION_BOT_JWT}
+    OM_ADMIN_EMAIL: ${OM_ADMIN_EMAIL:-admin@open-metadata.org}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+    - airflow_plugins:/opt/airflow/plugins
+    - ./spark/jobs:/opt/spark-jobs
+    - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks:
+    - dlh_net
+
+services:
+
+  # ===========================================================
+  # STORAGE — PostgreSQL (metastore + airflow + baseline)
+  # ===========================================================
+  postgres:
+    image: postgres:15
+    container_name: dlh_postgres
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  # ===========================================================
+  # STORAGE — MinIO (object storage S3-compatible)
+  # ===========================================================
+  minio:
+    image: minio/minio:latest
+    container_name: dlh_minio
+    env_file: .env
+    environment:
+      <<: *minio-env
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console Web
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: dlh_minio_init
+    env_file: .env
+    environment:
+      <<: *minio-env
+    entrypoint: ["/bin/sh", "/init-buckets.sh"]
+    volumes:
+      - ./infra/minio/init-buckets.sh:/init-buckets.sh:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - dlh_net
+    restart: on-failure
+
+  # ===========================================================
+  # ICEBERG CATALOG — Hive Metastore (backend: PostgreSQL)
+  # ===========================================================
+  hive-metastore:
+    image: naushadh/hive-metastore:latest
+    container_name: dlh_hive_metastore
+    env_file: .env
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_DB: ${POSTGRES_DB_METASTORE}
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_DRIVER: org.postgresql.Driver
+      DATABASE_TYPE_JDBC: postgresql
+      DATABASE_TYPE: postgres
+      S3_ENDPOINT_URL: ${MINIO_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${MINIO_BUCKET_LAKEHOUSE}
+      S3_PREFIX: warehouse
+    ports:
+      - "9083:9083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9083' 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  # ===========================================================
+  # PROCESSING — Apache Spark (master + worker)
+  # ===========================================================
+  spark-master:
+    build:
+      context: ./infra/spark
+      dockerfile: Dockerfile
+    container_name: dlh_spark_master
+    env_file: .env
+    environment:
+      <<: *s3a-env
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      OPENLINEAGE_CONFIG: /opt/openlineage/openlineage.yml
+      OM_INGESTION_BOT_JWT: ${OM_INGESTION_BOT_JWT}
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080
+    ports:
+      - "7077:7077"   # Spark Master
+      - "8081:8080"   # Spark Master WebUI
+    volumes:
+      - ./spark/jobs:/opt/spark-jobs
+      - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  spark-worker:
+    build:
+      context: ./infra/spark
+      dockerfile: Dockerfile
+    container_name: dlh_spark_worker
+    env_file: .env
+    environment:
+      <<: *s3a-env
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      OPENLINEAGE_CONFIG: /opt/openlineage/openlineage.yml
+      OM_INGESTION_BOT_JWT: ${OM_INGESTION_BOT_JWT}
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --memory 20g --cores 4
+    ports:
+      - "8082:8081"   # Spark Worker WebUI
+    volumes:
+      - ./spark/jobs:/opt/spark-jobs
+      - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
+    depends_on:
+      - spark-master
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  # ===========================================================
+  # QUERY ENGINE — Trino
+  # ===========================================================
+  trino:
+    image: trinodb/trino:437
+    container_name: dlh_trino
+    env_file: .env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8090:8090"   # Trino Web UI + API
+    volumes:
+      - ./infra/trino/config.properties:/etc/trino/config.properties:ro
+      - ./infra/trino/jvm.config:/etc/trino/jvm.config:ro
+      - ./infra/trino/node.properties:/etc/trino/node.properties:ro
+      - ./infra/trino/catalog:/etc/trino/catalog:ro
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/v1/info"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  # ===========================================================
+  # ORCHESTRATION — Apache Airflow
+  # ===========================================================
+  airflow-init:
+    <<: *airflow-common
+    container_name: dlh_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@dlh.local || true
+    restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: dlh_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: dlh_airflow_scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ===========================================================
+  # GOVERNANCE — OpenMetadata (perfil opcional)
+  # docker compose --profile governance up -d
+  # ===========================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+    container_name: dlh_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  execute-migrate-all:
+    image: docker.getcollate.io/openmetadata/server:1.12.5
+    container_name: dlh_openmetadata_migrate
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_USER_PASSWORD: ${POSTGRES_PASSWORD}
+      OM_DATABASE: openmetadata_db
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      SEARCH_TYPE: "elasticsearch"
+      MIGRATION_LIMIT_PARAM: 1200
+    command: ["-c", "./bootstrap/openmetadata-ops.sh migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - dlh_net
+    restart: on-failure
+
+  openmetadata:
+    image: docker.getcollate.io/openmetadata/server:1.12.5
+    container_name: dlh_openmetadata
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER}
+      DB_USER_PASSWORD: ${POSTGRES_PASSWORD}
+      OM_DATABASE: openmetadata_db
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      SEARCH_TYPE: "elasticsearch"
+      SERVER_PORT: 8585
+      SERVER_ADMIN_PORT: 8586
+      PIPELINE_SERVICE_CLIENT_ENDPOINT: http://openmetadata-ingestion:8080
+      SERVER_HOST_API_URL: http://openmetadata:8585/api
+      PIPELINE_SERVICE_CLIENT_ENABLED: "true"
+    ports:
+      - "8585:8585"
+    depends_on:
+      execute-migrate-all:
+        condition: service_completed_successfully
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  openmetadata-ingestion:
+    image: docker.getcollate.io/openmetadata/ingestion:1.12.5
+    container_name: dlh_openmetadata_ingestion
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${OM_AIRFLOW_DB}"
+      AIRFLOW_HOME: /opt/airflow
+      OPENMETADATA_AIRFLOW_INIT: "true"
+      SERVER_HOST_API_URL: "http://openmetadata:8585/api"
+      SERVER_HOST: openmetadata
+      SERVER_PORT: "8585"
+    entrypoint: /bin/bash
+    command:
+      - "/opt/airflow/ingestion_dependency.sh"
+    depends_on:
+      - openmetadata
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+# ===========================================================
+# VOLUMES
+# ===========================================================
+volumes:
+  postgres_data:
+  minio_data:
+  airflow_logs:
+  airflow_plugins:
+  elasticsearch_data:
+
+# ===========================================================
+# NETWORKS
+# ===========================================================
+networks:
+  dlh_net:
+    driver: bridge

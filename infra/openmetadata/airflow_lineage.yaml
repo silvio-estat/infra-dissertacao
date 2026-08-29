@@ -1,0 +1,11 @@
+source:
+  type: airflow
+  serviceName: dlh_airflow
+  serviceConnection:
+    config:
+      hostPort: "dlh_airflow_webserver:8080"
+      username: "admin"
+      password: "admin"
+  sourceConfig:
+    config:
+      includeLineage: true
