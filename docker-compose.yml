@@ -57,7 +57,7 @@ x-airflow-common: &airflow-common
 services:
 
   # ===========================================================
-  # STORAGE — PostgreSQL (metastore + airflow + baseline)
+  # STORAGE — PostgreSQL (metastore + airflow + openmetadata)
   # ===========================================================
   postgres:
     image: postgres:15

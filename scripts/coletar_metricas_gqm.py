@@ -1,6 +1,10 @@
 """
-Coleta dos 7 Indicadores GQM — ARQ_TEMAC
-Dissertação de mestrado: Lakehouse (Iceberg+Trino) vs Relacional (PostgreSQL)
+Coleta dos Indicadores GQM — ARQ_TEMAC
+Estudo de caso: arquitetura Lakehouse (Iceberg + Trino) para C2.
+
+Não há comparação com outro paradigma. Os indicadores CARACTERIZAM a arquitetura:
+preservação de registros, latências, throughput, desempenho analítico, footprint
+e evolução de schema.
 
 Execução (fora do Docker, na máquina host):
   python3 scripts/coletar_metricas_gqm.py
@@ -22,13 +26,14 @@ from tabulate import tabulate
 # ── Conexões ─────────────────────────────────────────────────────────────────
 
 TRINO_CONF = dict(host="localhost", port=8090, user="admin", http_scheme="http")
-PG_CONF = dict(host="localhost", port=5432, database="baseline_db",
-               user="dlh_admin", password="dlh_pass_2026")
 MINIO_CONF = dict(
     endpoint_url="http://localhost:9000",
     aws_access_key_id="minio_admin",
     aws_secret_access_key="minio_pass_2026",
 )
+# airflow_db é infraestrutura (orquestração), consultado apenas para medir throughput
+AIRFLOW_DB_CONF = dict(host="localhost", port=5432, database="airflow_db",
+                       user="dlh_admin", password="dlh_pass_2026")
 
 resultados = {}
 
@@ -37,21 +42,8 @@ def trino_conn():
     return trino.dbapi.connect(**TRINO_CONF)
 
 
-def pg_conn():
-    return psycopg2.connect(**PG_CONF)
-
-
 def executar_trino(sql):
     con = trino_conn()
-    cur = con.cursor()
-    cur.execute(sql)
-    rows = cur.fetchall()
-    con.close()
-    return rows
-
-
-def executar_pg(sql):
-    con = pg_conn()
     cur = con.cursor()
     cur.execute(sql)
     rows = cur.fetchall()
@@ -65,15 +57,6 @@ def medir_query_trino(sql, repeticoes=5):
     for _ in range(repeticoes):
         t0 = time.perf_counter()
         executar_trino(sql)
-        tempos.append(time.perf_counter() - t0)
-    return statistics.mean(tempos), statistics.stdev(tempos) if len(tempos) > 1 else 0, tempos
-
-
-def medir_query_pg(sql, repeticoes=5):
-    tempos = []
-    for _ in range(repeticoes):
-        t0 = time.perf_counter()
-        executar_pg(sql)
         tempos.append(time.perf_counter() - t0)
     return statistics.mean(tempos), statistics.stdev(tempos) if len(tempos) > 1 else 0, tempos
 
@@ -155,32 +138,7 @@ def indicador_2():
     print(tabulate(rows, headers=["Tipo", "Média(s)", "Min(s)", "Max(s)", "p50(s)", "p90(s)", "p99(s)"],
                    floatfmt=".4f"))
 
-    # PostgreSQL baseline — mesma medida
-    pg_rows = executar_pg("""
-        SELECT 'gps' AS tipo,
-            AVG(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS media_s,
-            MIN(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS min_s,
-            MAX(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS max_s
-        FROM gps_posicionamento
-        UNION ALL
-        SELECT 'pessoal',
-            AVG(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))),
-            MIN(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))),
-            MAX(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao)))
-        FROM pessoal_subunidade
-        UNION ALL
-        SELECT 'sensor',
-            AVG(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))),
-            MIN(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))),
-            MAX(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao)))
-        FROM sensor_drone
-        ORDER BY tipo
-    """)
-
-    print("\n  PostgreSQL baseline (mesmos dados):")
-    print(tabulate(pg_rows, headers=["Tipo", "Média(s)", "Min(s)", "Max(s)"], floatfmt=".4f"))
-
-    resultados["I2"] = {"lakehouse": [list(r) for r in rows], "postgresql": [list(r) for r in pg_rows]}
+    resultados["I2"] = {"por_tipo": [list(r) for r in rows]}
 
 
 # ── Indicador 3 — Latência Ponta-a-Ponta ─────────────────────────────────────
@@ -212,44 +170,21 @@ def indicador_3():
     resultados["I3"] = {"por_batalhao": [list(r) for r in rows]}
 
 
-# ── Indicador 4 — Throughput por Zona ────────────────────────────────────────
+# ── Indicador 4 — Throughput das DAGs ────────────────────────────────────────
 
 def indicador_4():
-    print("\n=== I4 — Throughput por Zona (registros/s nas DAG runs do Airflow) ===")
-
-    rows = executar_pg("""
-        SELECT
-            dag_id,
-            run_id,
-            EXTRACT(EPOCH FROM (end_date - start_date)) AS duracao_s,
-            end_date - start_date AS duracao_intervalo
-        FROM dag_run
-        WHERE dag_id IN ('dag_ingestao_bronze','dag_silver_transform','dag_gold_refresh','dag_baseline_sync')
-          AND state = 'success'
-        ORDER BY dag_id, end_date DESC
-        LIMIT 12
-    """)
-    # dag_run está no banco airflow_db, não baseline_db — ajustar conexão
-    print("  (coletado do Airflow DB)")
-    print(tabulate(rows, headers=["DAG", "Run ID", "Duração(s)", "Intervalo"]))
-    resultados["I4"] = {"dag_runs": [list(r) for r in rows]}
-
-
-def indicador_4_airflow():
-    """Versão que lê o banco airflow_db (conexão separada)."""
+    """Lê o banco do Airflow (infraestrutura) para medir tempo de execução das DAGs."""
     print("\n=== I4 — Throughput: tempos de execução das DAGs ===")
 
     try:
-        con = psycopg2.connect(host="localhost", port=5432,
-                               database="airflow_db",
-                               user="dlh_admin", password="dlh_pass_2026")
+        con = psycopg2.connect(**AIRFLOW_DB_CONF)
         cur = con.cursor()
         cur.execute("""
             SELECT
                 dag_id,
                 ROUND(EXTRACT(EPOCH FROM (end_date - start_date))::numeric, 2) AS duracao_s
             FROM dag_run
-            WHERE dag_id IN ('dag_ingestao_bronze','dag_silver_transform','dag_gold_refresh','dag_baseline_sync')
+            WHERE dag_id IN ('dag_ingestao_bronze','dag_silver_transform','dag_gold_refresh')
               AND state = 'success'
             ORDER BY dag_id, end_date DESC
             LIMIT 12
@@ -257,12 +192,11 @@ def indicador_4_airflow():
         rows = cur.fetchall()
         con.close()
 
-        # Agrupa por DAG e calcula throughput
+        # Volumes de referência por DAG (ajustar conforme a rodada)
         dag_totais = {
             "dag_ingestao_bronze":  46020,
             "dag_silver_transform": 7920 + 15520 + 7920,
             "dag_gold_refresh":     7 + 10 + 7 + 0 + 7,
-            "dag_baseline_sync":    7920 + 15520 + 7920,
         }
 
         tabela = []
@@ -284,9 +218,9 @@ def indicador_4_airflow():
         resultados["I4"] = {"erro": str(e)}
 
 
-# ── Indicador 5 — Benchmark Analítico ────────────────────────────────────────
+# ── Indicador 5 — Desempenho das Consultas Analíticas ────────────────────────
 
-QUERIES_TRINO = {
+QUERIES_ANALITICAS = {
     "Q1_ultima_posicao": """
         SELECT batalhao_origem, subunidade, latitude, longitude,
                timestamp_geracao, id_lote
@@ -357,119 +291,32 @@ QUERIES_TRINO = {
     """,
 }
 
-QUERIES_PG = {
-    "Q1_ultima_posicao": """
-        SELECT batalhao_origem, subunidade, latitude, longitude,
-               timestamp_geracao, id_lote
-        FROM v_posicionamento_atual
-        ORDER BY batalhao_origem, subunidade
-    """,
-    "Q2_pessoal_4h": """
-        SELECT batalhao_origem, count(*) AS total,
-               SUM(baixas_combate + baixas_nao_combate) AS baixas, MAX(timestamp_geracao) AS ultimo
-        FROM pessoal_subunidade
-        WHERE timestamp_geracao >= (
-            SELECT MAX(timestamp_geracao) - INTERVAL '4 hours' FROM pessoal_subunidade
-        )
-        GROUP BY batalhao_origem
-        ORDER BY batalhao_origem
-    """,
-    "Q3_fusao_multifonte_1h": """
-        WITH janela AS (
-            SELECT date_trunc('hour', timestamp_geracao) AS hora,
-                   batalhao_origem,
-                   AVG(latitude)  AS lat_media,
-                   AVG(longitude) AS lon_media,
-                   count(*)       AS registros_gps
-            FROM gps_posicionamento
-            GROUP BY 1, 2
-        ),
-        sit AS (
-            SELECT date_trunc('hour', timestamp_geracao) AS hora,
-                   batalhao_origem,
-                   count(*)                                    AS registros_pessoal,
-                   SUM(baixas_combate + baixas_nao_combate)   AS baixas
-            FROM pessoal_subunidade
-            GROUP BY 1, 2
-        ),
-        sen AS (
-            SELECT date_trunc('hour', timestamp_geracao) AS hora,
-                   batalhao_origem,
-                   count(*) AS registros_sensor
-            FROM sensor_drone
-            GROUP BY 1, 2
-        )
-        SELECT j.batalhao_origem, j.hora,
-               j.registros_gps, j.lat_media, j.lon_media,
-               COALESCE(s.registros_pessoal, 0) AS registros_pessoal,
-               COALESCE(s.baixas, 0)            AS baixas,
-               COALESCE(d.registros_sensor, 0)  AS registros_sensor
-        FROM janela j
-        LEFT JOIN sit s ON j.batalhao_origem = s.batalhao_origem AND j.hora = s.hora
-        LEFT JOIN sen d ON j.batalhao_origem = d.batalhao_origem AND j.hora = d.hora
-        ORDER BY j.batalhao_origem, j.hora
-    """,
-    "Q4_latencia_percentis": """
-        SELECT batalhao_origem,
-               AVG(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS media_s,
-               PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS p50_s,
-               PERCENTILE_CONT(0.9)  WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS p90_s,
-               PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS p99_s
-        FROM (
-            SELECT batalhao_origem, timestamp_geracao, timestamp_chegada FROM gps_posicionamento
-            UNION ALL
-            SELECT batalhao_origem, timestamp_geracao, timestamp_chegada FROM pessoal_subunidade
-            UNION ALL
-            SELECT batalhao_origem, timestamp_geracao, timestamp_chegada FROM sensor_drone
-        ) dados
-        GROUP BY batalhao_origem
-        ORDER BY batalhao_origem
-    """,
-    "Q5_gaps_cobertura": """
-        SELECT batalhao_origem, subunidade,
-               LAG(timestamp_geracao) OVER (PARTITION BY batalhao_origem, subunidade ORDER BY timestamp_geracao) AS inicio_gap,
-               timestamp_geracao AS fim_gap,
-               EXTRACT(EPOCH FROM (timestamp_geracao - LAG(timestamp_geracao) OVER (PARTITION BY batalhao_origem, subunidade ORDER BY timestamp_geracao))) / 60 AS gap_minutos
-        FROM gps_posicionamento
-        ORDER BY gap_minutos DESC NULLS LAST
-        LIMIT 10
-    """,
-}
-
 
 def indicador_5():
-    print("\n=== I5 — Benchmark Analítico: Trino (Lakehouse) vs PostgreSQL (5 execuções cada) ===")
+    print("\n=== I5 — Desempenho das Consultas Analíticas (5 execuções cada) ===")
 
     tabela = []
     i5_dados = {}
 
-    for nome in QUERIES_TRINO:
+    for nome, sql in QUERIES_ANALITICAS.items():
         print(f"  Executando {nome}...", end=" ", flush=True)
+        media, desvio, tempos = medir_query_trino(sql)
 
-        media_t, desvio_t, _ = medir_query_trino(QUERIES_TRINO[nome])
-        media_p, desvio_p, _ = medir_query_pg(QUERIES_PG[nome])
-
-        vencedor = "Trino" if media_t < media_p else "PostgreSQL"
-        razao = media_p / media_t if media_t > 0 else float("inf")
-
-        tabela.append([nome, f"{media_t:.3f}s", f"±{desvio_t:.3f}",
-                        f"{media_p:.3f}s", f"±{desvio_p:.3f}",
-                        vencedor, f"{razao:.1f}x"])
-        i5_dados[nome] = {"trino_media_s": media_t, "trino_desvio_s": desvio_t,
-                           "pg_media_s": media_p, "pg_desvio_s": desvio_p,
-                           "vencedor": vencedor, "razao": razao}
+        tabela.append([nome, f"{media:.3f}s", f"±{desvio:.3f}",
+                       f"{min(tempos):.3f}s", f"{max(tempos):.3f}s"])
+        i5_dados[nome] = {"media_s": media, "desvio_s": desvio,
+                          "min_s": min(tempos), "max_s": max(tempos)}
         print("OK")
 
     print()
-    print(tabulate(tabela,
-                   headers=["Query", "Trino(s)", "±σ", "PG(s)", "±σ", "Mais rápido", "Razão"]))
+    print(tabulate(tabela, headers=["Query", "Média", "±σ", "Min", "Max"]))
     resultados["I5"] = i5_dados
 
 
-# ── Indicador 6 — Taxa de Compressão ─────────────────────────────────────────
+# ── Indicador 6 — Footprint de Armazenamento ─────────────────────────────────
 
 def indicador_6():
-    print("\n=== I6 — Taxa de Compressão (MinIO vs PostgreSQL) ===")
+    print("\n=== I6 — Footprint de Armazenamento (MinIO) ===")
 
     s3 = boto3.client("s3", **MINIO_CONF)
 
@@ -487,50 +334,40 @@ def indicador_6():
             pass
         return total / (1024 * 1024)
 
-    landing_mb  = prefix_size_mb("landing")
-    bronze_mb   = prefix_size_mb("lakehouse", "warehouse/bronze.db/")
-    silver_mb   = prefix_size_mb("lakehouse", "warehouse/silver.db/")
-    gold_mb     = prefix_size_mb("lakehouse", "warehouse/gold.db/")
+    landing_mb   = prefix_size_mb("landing")
+    bronze_mb    = prefix_size_mb("lakehouse", "warehouse/bronze.db/")
+    silver_mb    = prefix_size_mb("lakehouse", "warehouse/silver.db/")
+    gold_mb      = prefix_size_mb("lakehouse", "warehouse/gold.db/")
     warehouse_mb = silver_mb + gold_mb
 
-    # Tamanho do PostgreSQL (baseline_db)
-    pg_rows = executar_pg("""
-        SELECT pg_size_pretty(pg_database_size('baseline_db')),
-               pg_database_size('baseline_db') / 1024.0 / 1024.0
-    """)
-    pg_size_pretty = pg_rows[0][0]
-    pg_mb = float(pg_rows[0][1])
-
-    taxa_bronze_warehouse = bronze_mb / warehouse_mb if warehouse_mb > 0 else 0
-    taxa_bronze_pg        = bronze_mb / pg_mb        if pg_mb > 0        else 0
+    taxa_landing_bronze   = landing_mb / bronze_mb    if bronze_mb    > 0 else 0
+    taxa_bronze_warehouse = bronze_mb / warehouse_mb  if warehouse_mb > 0 else 0
 
     dados = [
-        ["Landing (MinIO)", f"{landing_mb:.2f} MB"],
-        ["Bronze (MinIO lakehouse/bronze.db)", f"{bronze_mb:.2f} MB"],
-        ["Silver (MinIO lakehouse/silver.db)", f"{silver_mb:.2f} MB"],
-        ["Gold (MinIO lakehouse/gold.db)", f"{gold_mb:.2f} MB"],
-        ["Silver + Gold (Warehouse)", f"{warehouse_mb:.2f} MB"],
-        ["PostgreSQL baseline_db", f"{pg_mb:.2f} MB  ({pg_size_pretty})"],
-        ["Razão Bronze → Warehouse (Iceberg)", f"{taxa_bronze_warehouse:.2f}x"],
-        ["Razão Bronze → PostgreSQL",          f"{taxa_bronze_pg:.2f}x"],
+        ["Landing (JSON bruto)",              f"{landing_mb:.2f} MB"],
+        ["Bronze (lakehouse/bronze.db)",      f"{bronze_mb:.2f} MB"],
+        ["Silver (lakehouse/silver.db)",      f"{silver_mb:.2f} MB"],
+        ["Gold (lakehouse/gold.db)",          f"{gold_mb:.2f} MB"],
+        ["Silver + Gold (Warehouse)",         f"{warehouse_mb:.2f} MB"],
+        ["Razão Landing → Bronze (Parquet)",  f"{taxa_landing_bronze:.2f}x"],
+        ["Razão Bronze → Warehouse",          f"{taxa_bronze_warehouse:.2f}x"],
     ]
     print(tabulate(dados, headers=["Item", "Valor"]))
 
     resultados["I6"] = {
         "landing_mb": landing_mb, "bronze_mb": bronze_mb,
         "silver_mb": silver_mb, "gold_mb": gold_mb,
-        "warehouse_mb": warehouse_mb, "pg_mb": pg_mb,
+        "warehouse_mb": warehouse_mb,
+        "razao_landing_bronze": taxa_landing_bronze,
         "razao_bronze_warehouse": taxa_bronze_warehouse,
-        "razao_bronze_pg": taxa_bronze_pg,
     }
 
 
 # ── Indicador 7 — Schema Evolution ───────────────────────────────────────────
 
 def indicador_7():
-    print("\n=== I7 — Schema Evolution (resultado qualitativo) ===")
+    print("\n=== I7 — Schema Evolution e Time Travel ===")
 
-    # Verifica que o Iceberg aceita schema evolution consultando snapshots
     rows = executar_trino("""
         SELECT snapshot_id, committed_at, summary
         FROM iceberg.silver."gps$snapshots"
@@ -543,18 +380,18 @@ def indicador_7():
         print(f"    snapshot={r[0]}  committed={r[1]}")
 
     print("""
-  Teste Schema Evolution:
-    Lakehouse (Iceberg):  aceita novos campos via MERGE INTO sem ALTER TABLE.
-                          Bronze usa JSON (schema-on-read). Silver usa MERGE
-                          que ignora campos extras do Bronze.
-    PostgreSQL baseline:  requer ALTER TABLE ADD COLUMN antes de inserir.
-  Resultado: Iceberg = evolutivo automático | PostgreSQL = requer DDL manual.
+  Evolução de schema na arquitetura:
+    Bronze  — JSON no campo payload (schema-on-read): campos novos chegam sem DDL.
+    Silver  — ALTER TABLE ADD COLUMN idempotente em migrar_schema(); leituras antigas
+              continuam válidas (schema evolution do Iceberg, sem reescrita de dados).
+    Snapshots— cada commit gera um snapshot consultável por FOR TIMESTAMP AS OF,
+              permitindo reconstruir o estado da tabela em qualquer instante.
     """)
 
     resultados["I7"] = {
         "snapshots_silver_gps": len(rows),
-        "lakehouse": "schema evolution automática (schema-on-read no Bronze, MERGE INTO no Silver)",
-        "postgresql": "requer ALTER TABLE manual para novos campos",
+        "bronze": "schema-on-read (payload JSON) — campos novos não exigem DDL",
+        "silver": "ALTER TABLE ADD COLUMN sem reescrita; snapshots preservam histórico",
     }
 
 
@@ -581,7 +418,7 @@ if __name__ == "__main__":
     indicador_1()
     indicador_2()
     indicador_3()
-    indicador_4_airflow()
+    indicador_4()
     indicador_5()
     indicador_6()
     indicador_7()

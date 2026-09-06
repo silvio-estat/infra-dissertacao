@@ -28,6 +28,13 @@ airflow/plugins/
 *.swp
 *.swo
 
+# Assistentes de IA — não versionar
+.claude/
+CLAUDE.md
+
+# Informações locais — não versionar
+outras_info/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,18 +1,18 @@
 """
-DAG: Benchmark de Escalabilidade — Lakehouse vs PostgreSQL
-Objetivo: encontrar o ponto de cruzamento (crossover) onde Spark+Iceberg
-supera PostgreSQL nas queries analíticas GQM.
+DAG: Curva de Escalabilidade do Lakehouse
+Caracteriza como o tempo das consultas analíticas evolui conforme o volume cresce
+(indicador GQM I4). Estudo de caso — não há comparação com outro paradigma.
 
 Trigger manual com parâmetro de volume:
   airflow dags trigger dag_benchmark_escalabilidade --conf '{"registros_por_tipo": 50000}'
 
 Fluxo:
-  1. Pausa DAGs operacionais (evita interferência)
-  2. Gera N registros (GPS + SITREP + Sensor) no landing
-  3. Executa pipeline completo: Bronze → Silver → Gold → Baseline Sync
-  4. Conta registros em ambos os paradigmas
-  5. Executa queries GQM benchmark (5 repetições cada)
-  6. Grava resultados na tabela benchmark_resultados (PostgreSQL)
+  1. Pausa DAGs operacionais (evita interferência nas medições)
+  2. Gera N registros (GPS + Pessoal + Sensor) no landing
+  3. Executa o pipeline: Bronze → Silver → Gold
+  4. Conta registros por camada
+  5. Executa as queries analíticas (5 repetições cada)
+  6. Grava resultados em iceberg.bench.resultados
 
 Nota: os dados se ACUMULAM entre rodadas — cada execução adiciona volume
 e mede no total acumulado, simulando crescimento real.
@@ -38,9 +38,10 @@ DAGS_OPERACIONAIS = [
     "dag_ingestao_bronze",
     "dag_silver_transform",
     "dag_gold_refresh",
-    "dag_baseline_sync",
     "dag_iceberg_maintenance",
 ]
+
+TABELA_RESULTADOS = "iceberg.bench.resultados"
 
 TRINO_HOST = "trino"
 TRINO_PORT = 8090
@@ -72,17 +73,6 @@ SPARK_CONF_BASE = {
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-
-def _get_pg_conn():
-    import psycopg2
-    return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ["POSTGRES_PORT"]),
-        database=os.environ["POSTGRES_DB_BASELINE"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-    )
-
 
 def _get_trino_conn():
     import trino as trino_lib
@@ -166,80 +156,6 @@ QUERIES_TRINO = {
         SELECT batalhao_origem, subunidade, inicio_gap, fim_gap, gap_minutos
         FROM iceberg.gold.cobertura_temporal
         ORDER BY gap_minutos DESC
-    """,
-}
-
-QUERIES_PG = {
-    "Q1_posicao_atual": """
-        SELECT batalhao_origem, subunidade, latitude, longitude,
-               timestamp_geracao, id_lote
-        FROM v_posicionamento_atual
-        ORDER BY batalhao_origem, subunidade
-    """,
-    "Q2_pessoal_4h": """
-        SELECT batalhao_origem, count(*) AS total,
-               SUM(baixas_combate + baixas_nao_combate) AS baixas, MAX(timestamp_geracao) AS ultimo
-        FROM pessoal_subunidade
-        WHERE timestamp_geracao >= (
-            SELECT MAX(timestamp_geracao) - INTERVAL '4 hours' FROM pessoal_subunidade
-        )
-        GROUP BY batalhao_origem
-        ORDER BY batalhao_origem
-    """,
-    "Q3_fusao_multifonte": """
-        WITH janela AS (
-            SELECT date_trunc('hour', timestamp_geracao) AS hora,
-                   batalhao_origem,
-                   AVG(latitude) AS lat_media, AVG(longitude) AS lon_media,
-                   count(*) AS registros_gps
-            FROM gps_posicionamento GROUP BY 1, 2
-        ),
-        sit AS (
-            SELECT date_trunc('hour', timestamp_geracao) AS hora,
-                   batalhao_origem,
-                   count(*) AS registros_pessoal,
-                   SUM(baixas_combate + baixas_nao_combate) AS baixas
-            FROM pessoal_subunidade GROUP BY 1, 2
-        ),
-        sen AS (
-            SELECT date_trunc('hour', timestamp_geracao) AS hora,
-                   batalhao_origem, count(*) AS registros_sensor
-            FROM sensor_drone GROUP BY 1, 2
-        )
-        SELECT j.batalhao_origem, j.hora,
-               j.registros_gps, j.lat_media, j.lon_media,
-               COALESCE(s.registros_pessoal, 0), COALESCE(s.baixas, 0),
-               COALESCE(d.registros_sensor, 0)
-        FROM janela j
-        LEFT JOIN sit s ON j.batalhao_origem = s.batalhao_origem AND j.hora = s.hora
-        LEFT JOIN sen d ON j.batalhao_origem = d.batalhao_origem AND j.hora = d.hora
-        ORDER BY j.batalhao_origem, j.hora
-    """,
-    "Q4_latencia_percentis": """
-        SELECT batalhao_origem,
-               AVG(EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS media_s,
-               PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS p50_s,
-               PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS p90_s,
-               PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (timestamp_chegada - timestamp_geracao))) AS p99_s
-        FROM (
-            SELECT batalhao_origem, timestamp_geracao, timestamp_chegada FROM gps_posicionamento
-            UNION ALL
-            SELECT batalhao_origem, timestamp_geracao, timestamp_chegada FROM pessoal_subunidade
-            UNION ALL
-            SELECT batalhao_origem, timestamp_geracao, timestamp_chegada FROM sensor_drone
-        ) dados
-        GROUP BY batalhao_origem
-        ORDER BY batalhao_origem
-    """,
-    "Q5_gaps_cobertura": """
-        SELECT batalhao_origem, subunidade,
-               LAG(timestamp_geracao) OVER w AS inicio_gap,
-               timestamp_geracao AS fim_gap,
-               EXTRACT(EPOCH FROM (timestamp_geracao - LAG(timestamp_geracao) OVER w)) / 60 AS gap_minutos
-        FROM gps_posicionamento
-        WINDOW w AS (PARTITION BY batalhao_origem, subunidade ORDER BY timestamp_geracao)
-        ORDER BY gap_minutos DESC NULLS LAST
-        LIMIT 50
     """,
 }
 
@@ -388,10 +304,7 @@ def gerar_dados_benchmark(**context):
 
 
 def contar_registros(**context):
-    """Conta registros em ambos os paradigmas após o pipeline."""
-    import trino as trino_lib
-    import psycopg2
-
+    """Conta registros por camada após o pipeline."""
     trino_c = _get_trino_conn()
     cur = trino_c.cursor()
 
@@ -402,18 +315,11 @@ def contar_registros(**context):
         contagens[tabela] = cur.fetchone()[0]
     trino_c.close()
 
-    pg_c = _get_pg_conn()
-    pg_cur = pg_c.cursor()
-    for tabela in ["gps_posicionamento", "pessoal_subunidade", "sensor_drone"]:
-        pg_cur.execute(f"SELECT count(*) FROM {tabela}")
-        contagens[f"pg.{tabela}"] = pg_cur.fetchone()[0]
-    pg_c.close()
-
     volume_total = (contagens.get("iceberg.silver.gps", 0) +
                     contagens.get("iceberg.silver.pessoal", 0) +
                     contagens.get("iceberg.silver.sensor", 0))
 
-    print(f"Volume total Silver (Lakehouse): {volume_total}")
+    print(f"Volume total Silver: {volume_total}")
     print(f"Contagens detalhadas: {contagens}")
 
     context["ti"].xcom_push(key="volume_total", value=volume_total)
@@ -421,54 +327,42 @@ def contar_registros(**context):
 
 
 def criar_tabela_resultados(**context):
-    """Garante que a tabela de resultados existe no PostgreSQL."""
-    pg_c = _get_pg_conn()
-    cur = pg_c.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS benchmark_resultados (
-            id              SERIAL PRIMARY KEY,
-            rodada          INTEGER NOT NULL,
-            volume_total    INTEGER NOT NULL,
-            query_id        VARCHAR(50) NOT NULL,
-            tempo_trino_ms  NUMERIC(12, 3),
-            desvio_trino_ms NUMERIC(12, 3),
-            min_trino_ms    NUMERIC(12, 3),
-            max_trino_ms    NUMERIC(12, 3),
-            tempo_pg_ms     NUMERIC(12, 3),
-            desvio_pg_ms    NUMERIC(12, 3),
-            min_pg_ms       NUMERIC(12, 3),
-            max_pg_ms       NUMERIC(12, 3),
-            vencedor        VARCHAR(20),
-            razao           NUMERIC(8, 3),
-            repeticoes      INTEGER DEFAULT 5,
-            executado_em    TIMESTAMPTZ DEFAULT NOW()
-        );
+    """Garante que a tabela de resultados existe no Iceberg."""
+    trino_c = _get_trino_conn()
+    cur = trino_c.cursor()
 
-        CREATE INDEX IF NOT EXISTS idx_bench_volume
-            ON benchmark_resultados(volume_total);
-        CREATE INDEX IF NOT EXISTS idx_bench_query
-            ON benchmark_resultados(query_id, volume_total);
+    cur.execute("CREATE SCHEMA IF NOT EXISTS iceberg.bench")
+    cur.fetchall()
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABELA_RESULTADOS} (
+            rodada       INTEGER,
+            volume_total BIGINT,
+            query_id     VARCHAR,
+            tempo_ms     DOUBLE,
+            desvio_ms    DOUBLE,
+            min_ms       DOUBLE,
+            max_ms       DOUBLE,
+            repeticoes   INTEGER,
+            executado_em TIMESTAMP(6) WITH TIME ZONE
+        )
     """)
-    pg_c.commit()
-    pg_c.close()
-    print("Tabela benchmark_resultados pronta.")
+    cur.fetchall()
+    trino_c.close()
+    print(f"Tabela {TABELA_RESULTADOS} pronta.")
 
 
 def executar_benchmark(**context):
-    """Executa as queries GQM em ambos os paradigmas e grava resultados."""
-    import psycopg2
-
+    """Executa as queries analíticas e grava a curva de escalabilidade."""
     volume_total = context["ti"].xcom_pull(key="volume_total", task_ids="contar_registros")
 
-    # Determinar número da rodada
-    pg_c = _get_pg_conn()
-    cur = pg_c.cursor()
-    cur.execute("SELECT COALESCE(MAX(rodada), 0) + 1 FROM benchmark_resultados")
+    trino_c = _get_trino_conn()
+    cur = trino_c.cursor()
+    cur.execute(f"SELECT COALESCE(MAX(rodada), 0) + 1 FROM {TABELA_RESULTADOS}")
     rodada = cur.fetchone()[0]
-    pg_c.close()
+    trino_c.close()
 
     print(f"\n{'=' * 60}")
-    print(f"  BENCHMARK RODADA {rodada} — Volume: {volume_total} registros")
+    print(f"  RODADA {rodada} — Volume: {volume_total} registros")
     print(f"  {REPETICOES_QUERY} repetições por query")
     print(f"{'=' * 60}\n")
 
@@ -477,52 +371,44 @@ def executar_benchmark(**context):
     for query_id in QUERIES_TRINO:
         print(f"  Medindo {query_id}...", end=" ", flush=True)
 
-        media_t, desvio_t, min_t, max_t = _medir_query(
+        media, desvio, minimo, maximo = _medir_query(
             _get_trino_conn, QUERIES_TRINO[query_id])
-        media_p, desvio_p, min_p, max_p = _medir_query(
-            _get_pg_conn, QUERIES_PG[query_id])
-
-        vencedor = "trino" if media_t < media_p else "postgresql"
-        razao = media_p / media_t if media_t > 0 else 0
 
         resultados.append({
             "rodada": rodada, "volume_total": volume_total,
             "query_id": query_id,
-            "tempo_trino_ms": media_t, "desvio_trino_ms": desvio_t,
-            "min_trino_ms": min_t, "max_trino_ms": max_t,
-            "tempo_pg_ms": media_p, "desvio_pg_ms": desvio_p,
-            "min_pg_ms": min_p, "max_pg_ms": max_p,
-            "vencedor": vencedor, "razao": razao,
+            "tempo_ms": media, "desvio_ms": desvio,
+            "min_ms": minimo, "max_ms": maximo,
         })
-        print(f"Trino={media_t:.1f}ms  PG={media_p:.1f}ms  -> {vencedor} ({razao:.2f}x)")
+        print(f"{media:.1f}ms  (±{desvio:.1f})")
 
-    # Gravar no PostgreSQL
-    pg_c = _get_pg_conn()
-    cur = pg_c.cursor()
+    trino_c = _get_trino_conn()
+    cur = trino_c.cursor()
     for r in resultados:
-        cur.execute("""
-            INSERT INTO benchmark_resultados
+        cur.execute(
+            f"""
+            INSERT INTO {TABELA_RESULTADOS}
                 (rodada, volume_total, query_id,
-                 tempo_trino_ms, desvio_trino_ms, min_trino_ms, max_trino_ms,
-                 tempo_pg_ms, desvio_pg_ms, min_pg_ms, max_pg_ms,
-                 vencedor, razao, repeticoes)
-            VALUES (%(rodada)s, %(volume_total)s, %(query_id)s,
-                    %(tempo_trino_ms)s, %(desvio_trino_ms)s, %(min_trino_ms)s, %(max_trino_ms)s,
-                    %(tempo_pg_ms)s, %(desvio_pg_ms)s, %(min_pg_ms)s, %(max_pg_ms)s,
-                    %(vencedor)s, %(razao)s, %(repeticoes)s)
-        """, {**r, "repeticoes": REPETICOES_QUERY})
-    pg_c.commit()
-    pg_c.close()
+                 tempo_ms, desvio_ms, min_ms, max_ms,
+                 repeticoes, executado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+            """,
+            (r["rodada"], r["volume_total"], r["query_id"],
+             r["tempo_ms"], r["desvio_ms"], r["min_ms"], r["max_ms"],
+             REPETICOES_QUERY),
+        )
+        cur.fetchall()
+    trino_c.close()
 
     print(f"\nRodada {rodada} concluída — {len(resultados)} medições gravadas.")
-    print("Consulte: SELECT * FROM benchmark_resultados ORDER BY rodada, query_id;")
+    print(f"Consulte: SELECT * FROM {TABELA_RESULTADOS} ORDER BY rodada, query_id;")
 
 
 # ── DAG ──────────────────────────────────────────────────────────────────────
 
 with DAG(
     dag_id="dag_benchmark_escalabilidade",
-    description="Benchmark progressivo Lakehouse vs PostgreSQL — busca crossover point",
+    description="Curva de escalabilidade do Lakehouse — tempo de query vs. volume acumulado",
     schedule=None,  # trigger manual apenas
     start_date=datetime(2026, 5, 1),
     catchup=False,
@@ -693,52 +579,6 @@ with DAG(
         python_callable=pipeline_gold_trino,
     )
 
-    def sync_baseline_inline(**context):
-        """TRUNCATE + reload do Silver (Trino) para PostgreSQL."""
-        from psycopg2.extras import execute_values
-
-        BATCH = 2000
-        tabelas = [
-            ("gps_posicionamento",
-             "SELECT batalhao_origem, subunidade, latitude, longitude, altitude, velocidade, direcao, timestamp_geracao, timestamp_chegada, id_lote FROM iceberg.silver.gps",
-             "INSERT INTO gps_posicionamento (batalhao_origem, subunidade, latitude, longitude, altitude, velocidade, direcao, timestamp_geracao, timestamp_chegada, id_lote) VALUES %s"),
-            ("pessoal_subunidade",
-             "SELECT id_relatorio, batalhao_origem, subunidade, situacao_operacional, efetivo_organico, efetivo_presente, baixas_combate, baixas_nao_combate, evacuados, necessidade_prioritaria, necessidade_logistica, timestamp_geracao, timestamp_chegada, id_lote FROM iceberg.silver.pessoal",
-             "INSERT INTO pessoal_subunidade (id_relatorio, batalhao_origem, subunidade, situacao_operacional, efetivo_organico, efetivo_presente, baixas_combate, baixas_nao_combate, evacuados, necessidade_prioritaria, necessidade_logistica, timestamp_geracao, timestamp_chegada, id_lote) VALUES %s"),
-            ("sensor_drone",
-             "SELECT batalhao_origem, drone_id, area_cobertura, latitude_centro, longitude_centro, raio_km, altitude_voo, bateria_pct, status_missao, timestamp_geracao, timestamp_chegada, id_lote FROM iceberg.silver.sensor",
-             "INSERT INTO sensor_drone (batalhao_origem, drone_id, area_cobertura, latitude_centro, longitude_centro, raio_km, altitude_voo, bateria_pct, status_missao, timestamp_geracao, timestamp_chegada, id_lote) VALUES %s"),
-        ]
-
-        trino_c = _get_trino_conn()
-        pg_c = _get_pg_conn()
-
-        for pg_table, trino_query, insert_sql in tabelas:
-            trino_cur = trino_c.cursor()
-            pg_cur = pg_c.cursor()
-
-            pg_cur.execute(f"TRUNCATE TABLE {pg_table} RESTART IDENTITY")
-            trino_cur.execute(trino_query)
-
-            total = 0
-            while True:
-                rows = trino_cur.fetchmany(BATCH)
-                if not rows:
-                    break
-                execute_values(pg_cur, insert_sql, rows)
-                total += len(rows)
-
-            pg_c.commit()
-            print(f"  {pg_table}: {total} registros sincronizados")
-
-        trino_c.close()
-        pg_c.close()
-
-    t_baseline = PythonOperator(
-        task_id="pipeline_baseline_sync",
-        python_callable=sync_baseline_inline,
-    )
-
     t_criar_tabela = PythonOperator(
         task_id="criar_tabela_resultados",
         python_callable=criar_tabela_resultados,
@@ -755,6 +595,6 @@ with DAG(
     )
 
     # Dependências
-    t_pausar >> t_gerar >> t_bronze >> t_silver >> t_gold >> t_baseline
-    t_baseline >> [t_criar_tabela, t_contar]
+    t_pausar >> t_gerar >> t_bronze >> t_silver >> t_gold
+    t_gold >> [t_criar_tabela, t_contar]
     [t_criar_tabela, t_contar] >> t_benchmark
