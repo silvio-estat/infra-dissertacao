@@ -56,3 +56,7 @@ documentos_apoio/
 
 # Relatórios gerados (output reproduzível)
 relatorios/metricas_gqm_*.json
+
+# Contem o JWT do ingestion-bot, proprio de cada instalacao.
+# A versao versionada e openlineage.yml.example.
+infra/openlineage/openlineage.yml

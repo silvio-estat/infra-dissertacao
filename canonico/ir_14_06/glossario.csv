@@ -1,0 +1,24 @@
+# IR 14-06, TITULO III, CAPITULO V (Art. 31) - Glossario de Termos
+# Contem o Termo, a descricao de sua semantica e a relacao de termos com mesmo significado (sinonimos).
+# Art. 34: nenhuma abreviatura pode ser catalogada sem que o termo conste aqui.
+# Os nomes de sistemas de origem sao placeholders (C2_A, C2_B) por exigencia de sigilo.
+termo,sinonimos,definicao
+EVENTO,"Fato;Ocorrencia;Registro","Fato universal do modelo canonico: algo que foi relatado, observado ou ocorreu no terreno, independentemente da modalidade em que chegou (JSON, texto, imagem, audio, PDF)."
+GEOMETRIA,"Feicao;Feicao geografica","Representacao espacial de um evento: ponto, linha, poligono, medida de coordenacao e controle ou desenho livre."
+MIDIA,"Arquivo binario;Anexo","Arquivo binario (imagem, audio) preservado no repositorio de objetos e representado no catalogo por manifesto com URI, hash e metadados."
+DOCUMENTO,"Peca documental","Arquivo PDF ou DOCX com texto extraido e estrutura reconhecida, oriundo de formulario doutrinario ou informe."
+ALVO,"Objetivo","Alvo localizado, conforme os anexos de Lista de Alvos e Lista de Armas Inimigas da doutrina de artilharia."
+MISSAO DE TIRO,"Missao de fogos","Execucao e avaliacao de fogos, conforme o Relatorio de Bombardeio."
+TRANSCRICAO,"Texto transcrito","Resultado da conversao automatica de audio em texto, acompanhado das metricas de qualidade do reconhecimento."
+EXTRACAO,"Inferencia","Registro de uma inferencia automatica (reconhecimento optico de caracteres, reconhecimento de fala ou modelo de linguagem) que produziu dado estruturado a partir de conteudo nao estruturado."
+LINHAGEM,"Proveniencia;Rastreabilidade","Cadeia que liga um valor da camada analitica ao arquivo bruto que o originou, incluindo qual modelo de inteligencia artificial fez a extracao e com que versao de prompt."
+FUNCAO DE COMBATE,"","Conjunto de atividades correlatas que orienta a organizacao dos dados operacionais: comando e controle, movimento e manobra, inteligencia, fogos, protecao e logistica."
+UNIDADE REPORTANTE,"Unidade;Unidade de origem","Organizacao militar responsavel por reportar o evento, referenciada na hierarquia de unidades."
+FRACAO,"Subfracao;Elemento subordinado","Granularidade de subordinacao mais fina que a subunidade."
+CONFIABILIDADE DA FONTE,"Confiabilidade","Grau de confianca atribuido a fonte de uma informacao, expresso na escala doutrinaria de A a F."
+CREDIBILIDADE DA INFORMACAO,"Credibilidade","Grau de veracidade atribuido ao conteudo de uma informacao, expresso na escala doutrinaria de 1 a 6."
+PRIORIDADE,"Precedencia","Urgencia atribuida ao tratamento de um evento, em dominio controlado."
+METODO DE LOCALIZACAO,"","Forma pela qual a posicao do evento foi obtida: satelital, manual, por indice de nomes geograficos, por leitura optica de coordenada ou estimada."
+MODELO CANONICO,"Modelo unico;Esquema canonico","Descricao unica das entidades, campos, dominios e mapeamentos de origem que rege a integracao de todas as fontes heterogeneas."
+CAMADA,"Camada de refinamento","Estagio de refinamento do dado na arquitetura: bruto, refinado e analitico."
+SISTEMA DE ORIGEM,"Fonte;Sistema fonte","Sistema de comando e controle ou processo que produziu o dado. Registrado por codigo generico (C2_A, C2_B) por exigencia de sigilo."

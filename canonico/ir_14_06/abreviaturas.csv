@@ -1,0 +1,33 @@
+# Dicionario de Abreviaturas — parte propria do projeto
+# A base herdada das Forcas Armadas esta em abreviaturas_md33.csv.
+#
+# DOIS REGISTROS, um por norma — cada abreviatura tem duas grafias legitimas:
+#
+#   abreviatura     grafia do MD33-M-02, usada no GLOSSARIO do catalogo.
+#                   Portaria Normativa 513/EMD/MD, de 26 mar 2008. Caixa significativa.
+#
+#   abreviatura_bd  grafia em MAIUSCULAS, usada em NOME DE OBJETO DE BANCO DE DADOS.
+#                   IR 14-06, Titulo VI, Art. 67, VI — que so alcanca objetos de esquema
+#                   de banco. O Titulo V (objetos de modelagem) pede outra caixa (Art. 47,
+#                   V) e o glossario nao esta sob nenhum dos dois.
+#
+# HIERARQUIA DE FONTES: MD33-M-02 (2008, nivel ministerial) prevalece sobre o
+# IR 14-06 (2004, nivel de Secretaria); PROPOSTA so onde ambos sao silentes (Art. 35).
+#
+abreviatura,abreviatura_bd,termo,origem,justificativa
+Qnt,QNT,QUANTIDADE,MD33-M-02,MD33-M-02 abrevia Quantidade como Qnt. Prevalece sobre o QTD do exemplo do IR 14-06.
+Cod,COD,CODIGO,MD33-M-02,MD33-M-02 abrevia Codigo como Cod. Coincide com o exemplo do IR 14-06.
+Indic,INDIC,INDICADOR,MD33-M-02,MD33-M-02 abrevia Indicar/Indicador como Indic. Prevalece sobre o IND do IR 14-06.
+Idt,IDT,IDENTIFICADOR,MD33-M-02,MD33-M-02 abrevia Identificar/Identificador como Idt.
+Img,IMG,IMAGEM,MD33-M-02,MD33-M-02 abrevia Imagem como Img.
+Dcri,DCRI,DESCRICAO,MD33-M-02,MD33-M-02 abrevia Descrever/Descricao como Dcri.
+Nr,NRO,NUMERO,MD33-M-02,"EXCECAO DE CAIXA. No glossario vale Nr, do MD33-M-02. Em banco de dados NR seria ambiguo: o proprio manual usa NR para Nao Regulamentar. Adotado NRO, forma do IR 14-06, Art. 78, livre no MD33-M-02."
+VLR,VLR,VALOR,IR_14_06,MD33-M-02 silente quanto a Valor; adotada a forma do exemplo do IR 14-06, Art. 41. Livre no MD33-M-02.
+Data,DATA,DATA,PROPOSTA,"Mantido por extenso: MD33-M-02 silente e as formas curtas estao ocupadas (DTA = Direcao Tatica de Atuacao, DT = Direcao de Tiro)."
+Nome,NOME,NOME,PROPOSTA,Mantido por extenso: ambas as normas silentes e o termo e curto.
+Sigla,SIGLA,SIGLA,PROPOSTA,Mantido por extenso: ambas as normas silentes e o termo e curto.
+Txt,TXT,TEXTO,PROPOSTA,Termo de representacao do Titulo X sem abreviatura em ambas as normas. Livre no MD33-M-02.
+Pctl,PCTL,PERCENTUAL,PROPOSTA,"Termo de representacao do Titulo X. Perc e PCT descartadas por ja significarem Percurso e Posto de Comando Tatico no MD33-M-02."
+GDH,GDH,GRUPO DATA HORA,PROPOSTA,"Grupo data-hora militar (DDHHMIMESAA), definido no Titulo X do IR 14-06. Forma consagrada e livre no MD33-M-02."
+WKT,WKT,WELL KNOWN TEXT,PROPOSTA,"Formato textual de geometria (OGC). Nenhuma das normas preve representacao geoespacial. Livre no MD33-M-02."
+CRS,CRS,SISTEMA DE REFERENCIA DE COORDENADAS,PROPOSTA,Do ingles Coordinate Reference System; qualifica a geometria. Livre no MD33-M-02.
