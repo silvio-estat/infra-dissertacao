@@ -19,17 +19,30 @@
 # O termo final vem de uma lista fechada (canonico/ir_14_06/termos_representacao.csv),
 # e as abreviaturas vem do MD33-M-02, o manual das Forcas Armadas.
 #
+# IDIOMA — regra do trabalho:
+#   termo de DOUTRINA vai para o portugues (genero de documento, tipo de evento,
+#   funcao de combate, escalao). Termo de INFORMATICA fica em ingles ou na forma
+#   mais usual (WKT, MIME, JSON, PDF, GPS, OCR). O criterio e a natureza do
+#   termo, nao a lingua: SITREP saiu porque e doutrina ("Parte de Situacao" no
+#   MD33-M-02, com a sigla estrangeira apenas glosada); GPS ficou porque nomeia
+#   uma tecnologia e e a forma corrente.
+#
 # SIGILO: as fontes sao identificadas por codigo generico (C2_A, C2_B).
 # =============================================================================
 
 metadados:
-  versao: 2
-  atualizado_em: 2026-09-07
+  versao: 3
+  atualizado_em: 2026-09-08
   nota: >-
-    Versao 2 simplifica a 1: as tabelas de manifesto de imagem e de documento
-    viraram uma so (ARQUIVO), as tabelas de alvo e missao de tiro sairam (o
-    documento de fogos alimenta EVENTO diretamente) e os codinomes de radio
-    viraram sinonimos de dominio em vez de tabela propria.
+    Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
+    correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
+    reancorados em fontes com referente: gps e obstaculo no C2_A, relt_intel e
+    seg_area no C2_B, paf na documentacao de fogos, pessoal e material no novo
+    relatorio periodico. O tipo sensor foi descontinuado: nao acrescentava
+    modalidade nem no de extracao, e portanto nao sustentava nenhuma das duas
+    teses. Entram a fonte RELPER e a modalidade PLANILHA, a entidade
+    SITUACAO_UNIDADE, a referencia REF_ABREVIATURA e o indicador de mediacao
+    por sistema de C2.
 
 
 # =============================================================================
@@ -45,22 +58,27 @@ dominios:
   sistema_origem:
     descricao: Sistema ou processo que produziu o dado.
     valores:
-      SIM:   {rotulo: Simulador de funcoes de combate}
-      C2_A:  {rotulo: Aplicativo C2 A}
-      C2_B:  {rotulo: Aplicativo C2 B}
-      FOGOS: {rotulo: Documentacao de fogos}
-      VOZ:   {rotulo: Mensagem de voz}
+      C2_A:   {rotulo: Aplicativo C2 A}
+      C2_B:   {rotulo: Aplicativo C2 B}
+      RELPER: {rotulo: Relatorio Periodico de Pessoal e Material}
+      FOGOS:  {rotulo: Documentacao de fogos}
+      VOZ:    {rotulo: Mensagem de voz}
+    # RELPER: o MD33-M-02 cataloga RPP (Relatorio Periodico de Pessoal) e RPI
+    # (Relatorio Periodico de Inteligencia). O formulario decretado pelo EM da
+    # brigada consolida pessoal e material num documento so, entao o codigo
+    # generaliza o genero em vez de adotar a especie.
 
   modalidade:
     descricao: >-
       Forma fisica em que o dado chegou. E a coluna que sustenta a tese de
       heterogeneidade: permite contar quantas modalidades uma consulta atravessou.
     valores:
-      JSON:   {rotulo: JSON estruturado}
-      TEXTO:  {rotulo: Texto livre}
-      IMAGEM: {rotulo: Imagem}
-      AUDIO:  {rotulo: Audio}
-      PDF:    {rotulo: Documento digitalizado}
+      JSON:     {rotulo: JSON estruturado}
+      TEXTO:    {rotulo: Texto livre}
+      PLANILHA: {rotulo: Planilha eletronica}
+      IMAGEM:   {rotulo: Imagem}
+      AUDIO:    {rotulo: Audio}
+      PDF:      {rotulo: Documento digitalizado}
 
   tipo_evento:
     descricao: Natureza do fato relatado.
@@ -71,21 +89,33 @@ dominios:
       INCIDENTE:           {rotulo: Incidente, sinonimos: [brasa]}
       OBSTACULO:           {rotulo: Obstaculo, sinonimos: [bigorna]}
       MISSAO_TIRO:         {rotulo: Missao de tiro, sinonimos: [martelo]}
-      SITUACAO_MEIO:       {rotulo: Situacao de meio ou material, sinonimos: [engrenagem]}
-      SITUACAO_PESSOAL:    {rotulo: Situacao de pessoal, sinonimos: [cantil]}
-      SENSOR:              {rotulo: Leitura de sensor, sinonimos: [antena]}
+      SITUACAO_UNIDADE:    {rotulo: Situacao periodica da unidade, sinonimos: [celeiro]}
     # Os codinomes de radio entram como SINONIMOS, e nao como tabela separada:
     # 'cavalo' no audio transcrito casa direto com AVISTAMENTO_INIMIGO.
+    #
+    # SITUACAO_PESSOAL e SITUACAO_MEIO, que existiam separados na v2, viraram um
+    # tipo so: o formulario do EM reporta efetivo e material na MESMA linha, e
+    # parti-lo em dois eventos duplicaria unidade, data e geometria sem ganho.
+    # SENSOR saiu junto com a fonte SIM.
 
   funcao_combate:
-    descricao: Funcao de combate a que o evento pertence.
+    descricao: >-
+      Funcao de combate a que o CONTEUDO do evento pertence. Escalar: um evento
+      trata de uma coisa.
     valores:
-      C2:           {rotulo: Comando e Controle, sinonimos: [torre]}
       MOV_MANOBRA:  {rotulo: Movimento e Manobra, sinonimos: [bussola]}
       INTELIGENCIA: {rotulo: Inteligencia, sinonimos: [luneta]}
       FOGOS:        {rotulo: Fogos, sinonimos: [lanca]}
       PROTECAO:     {rotulo: Protecao, sinonimos: [escudo]}
       LOGISTICA:    {rotulo: Logistica, sinonimos: [celeiro]}
+    # COMANDO E CONTROLE NAO ESTA AQUI — e a decisao de modelagem mais
+    # importante da v3, e a razao esta em EVENTO.FUNCAO_C2_INDIC.
+    #
+    # C2 nao e par das demais: e transversal. Um relatorio de minagem entregue
+    # direto ao repositorio e PROTECAO. O MESMO relatorio produzido dentro de um
+    # aplicativo de C2 e PROTECAO **e** C2 — e o que discrimina os dois casos nao
+    # e o conteudo nem a modalidade, e por onde o dado nasceu. Isso e procedencia,
+    # nao natureza; logo mora em outro eixo, e nao disputa esta coluna.
 
   prioridade:
     descricao: Urgencia atribuida ao tratamento do evento.
@@ -124,6 +154,7 @@ dominios:
       MANUAL:    {rotulo: Informada pelo operador}
       GAZETTEER: {rotulo: Resolvida por indice de nomes geograficos}
       OCR_COORD: {rotulo: Lida por reconhecimento optico de caractere}
+    # GPS e OCR ficam: nomeiam tecnologia, nao doutrina, e sao a forma corrente.
 
   escalao:
     descricao: Escalao hierarquico da organizacao militar.
@@ -141,17 +172,35 @@ dominios:
       PONTO_NOTAVEL: {rotulo: Ponte, entroncamento ou elevacao}
       QUADRICULA:    {rotulo: Quadricula da carta militar}
 
+  turno_relatorio:
+    descricao: >-
+      Turno do relatorio periodico. O EM da brigada fixa duas remessas por dia;
+      e o que permite medir a AUSENCIA de reporte, que e dado operacional: saber
+      quais OM nao remeteram no turno das 18h e resposta de comando.
+    valores:
+      MATUTINO:   {rotulo: Remessa da manha}
+      VESPERTINO: {rotulo: Remessa do fim do dia}
+
 
 # =============================================================================
 # ENTIDADES — as tabelas
 # =============================================================================
-# Cinco tabelas, e cada uma tem um proposito de uma frase:
+# Sete tabelas, e cada uma tem um proposito de uma frase:
 #
-#   EVENTO         onde todas as fontes convergem
-#   ARQUIVO        manifesto do binario bruto (imagem, audio, PDF)
-#   EXTRACAO       registro de cada inferencia de IA
-#   REF_UNIDADE    hierarquia militar, para consulta
-#   REF_GAZETTEER  nome de lugar -> coordenada, para consulta
+#   EVENTO            onde todas as fontes convergem
+#   SITUACAO_UNIDADE  os numeros que so o relatorio periodico tem
+#   ARQUIVO           manifesto do binario bruto (planilha, imagem, audio, PDF)
+#   EXTRACAO          registro de cada inferencia de IA
+#   REF_UNIDADE       hierarquia militar, para consulta
+#   REF_GAZETTEER     nome de lugar -> coordenada, para consulta
+#   REF_ABREVIATURA   abreviatura -> termo, para consulta
+#
+# A regra que separa EVENTO de SITUACAO_UNIDADE, e que vale para qualquer fonte
+# futura: esta em EVENTO o que TODA fonte tem (quem, quando, onde, por onde
+# chegou, de que arquivo veio). Vira tabela de extensao o que SO UMA fonte tem.
+# Foto, audio e relato livre nao tem atributo proprio — produzem ARQUIVO e
+# EVENTO e mais nada. A planilha tem, e e a unica: por isso ha uma extensao, e
+# uma so.
 # =============================================================================
 
 entidades:
@@ -167,7 +216,7 @@ entidades:
     campos:
       EVENTO_IDT:
         {tipo: string, nulo: false,
-         descricao: "Identificador do evento. Calculado a partir da fonte, do identificador de origem e do instante, para que reprocessar o mesmo arquivo nao duplique linha."}
+         descricao: "Identificador do evento. Calculado a partir da fonte, do identificador de origem e do instante, para que reprocessar o mesmo arquivo nao duplique linha. Numa planilha, entra tambem a unidade da linha: um arquivo produz um evento por linha."}
       SISTEMA_ORIGEM_COD:
         {tipo: string, nulo: false, dominio: sistema_origem,
          descricao: Sistema que produziu o dado.}
@@ -180,7 +229,26 @@ entidades:
       TIPO_COD:
         {tipo: string, nulo: false, dominio: tipo_evento, descricao: Natureza do fato.}
       FUNCAO_COMBATE_COD:
-        {tipo: string, nulo: true, dominio: funcao_combate, descricao: Funcao de combate.}
+        {tipo: string, nulo: true, dominio: funcao_combate,
+         descricao: "Funcao de combate do conteudo do evento. Escalar: nao inclui C2, que e transversal e vive na coluna seguinte."}
+      FUNCAO_C2_INDIC:
+        tipo: string
+        nulo: false
+        valores: [S, N]
+        derivado: true
+        regra: "S quando SISTEMA_ORIGEM_COD in (C2_A, C2_B); N nos demais casos."
+        descricao: >-
+          Indica se a funcao de combate Comando e Controle participou do evento.
+          C2 e transversal: soma-se a funcao do conteudo em vez de substitui-la,
+          e um relatorio de minagem produzido dentro do C2_A e PROTECAO + C2.
+          A regra e por procedencia, e nao por conteudo, porque o que caracteriza
+          a participacao de C2 e o dado ter nascido dentro de um sistema de
+          informacao de C2, que registra o processo de estado-maior. Radio e
+          documento avulso sao MEIOS de transmissao: carregam o dado sem
+          registrar o processo, e por isso nao contam.
+          Consequencia que vale para a tese: C2 e a unica funcao de combate que
+          nunca precisa de inferencia: le-se da procedencia, com certeza,
+          enquanto todas as outras sao deduzidas do conteudo.
       OCORRENCIA_DATA:
         {tipo: timestamp, nulo: false, descricao: Quando o fato ocorreu no terreno.}
       CHEGADA_DATA:
@@ -192,7 +260,7 @@ entidades:
         {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: Unidade que reportou.}
       GEOMETRIA_WKT:
         {tipo: string, nulo: true,
-         descricao: "Onde foi, em Well-Known Text. E a coluna que quatro modalidades diferentes alimentam."}
+         descricao: "Onde foi, em Well-Known Text. E a coluna que quatro modalidades diferentes alimentam. WKT nomeia um padrao tecnico (OGC) sem equivalente no catalogo de termos de representacao do Art. 138: excecao documentada."}
       PRECISAO_METRO:
         {tipo: double, nulo: true,
          descricao: "Incerteza da localizacao. Sem sufixo porque METRO ja implica quantidade."}
@@ -206,9 +274,9 @@ entidades:
       INFO_CREDIBILIDADE_COD:
         {tipo: string, nulo: true, dominio: credibilidade,
          descricao: "Credibilidade da informacao. Chega junto com a confiabilidade num codigo unico de duas posicoes, separado na ingestao."}
-      RELATO_TEXTO:
+      RELATO_TXT:
         {tipo: string, nulo: true,
-         descricao: "Narrativa livre, quando houver. E a entrada da extracao por modelo de linguagem."}
+         descricao: "Narrativa livre, quando houver. E a entrada da extracao por modelo de linguagem. Sufixo TXT conforme o termo TEXTO do Art. 138."}
       ARQUIVO_IDT:
         {tipo: string, nulo: true, referencia: ARQUIVO,
          descricao: "Arquivo bruto que originou o evento. Primeiro elo da rastreabilidade."}
@@ -220,11 +288,99 @@ entidades:
          descricao: "Modelo que extraiu o dado, repetido aqui de proposito para que a consulta mostre a origem sem precisar de juncao."}
 
   # ---------------------------------------------------------------------------
+  SITUACAO_UNIDADE:
+    descricao: >-
+      Os numeros do relatorio periodico: efetivo, baixas, viaturas e suprimento
+      de uma unidade num turno. Extensao de EVENTO, e a unica que existe.
+
+      Ela existe porque estes valores so fazem sentido para UMA fonte. Se
+      morassem em EVENTO, toda linha vinda de foto, audio, PDF ou posicao os
+      teria vazios — a tabela inchada que a versao 2 desmontou. Ficando aqui,
+      EVENTO permanece generico o bastante para as seis modalidades conviverem,
+      e a unica modalidade tabular do conjunto mantem seus numeros com tipo de
+      verdade: 87 e inteiro, e nao o texto "87".
+
+      Justifica-se como tabela fixa, e nao como conteudo semiestruturado, porque
+      esta e a unica fonte cujo esquema e decretado por norma: o EM da brigada
+      publica o formulario e todas as OM subordinadas preenchem o mesmo.
+    abreviatura: SITU
+    camada: silver
+    chave: [EVENTO_IDT]
+    campos:
+      EVENTO_IDT:
+        {tipo: string, nulo: false, referencia: EVENTO,
+         descricao: "Evento correspondente. Um para um: cada linha da planilha e um evento."}
+      TURNO_COD:
+        {tipo: string, nulo: false, dominio: turno_relatorio,
+         descricao: "Remessa do dia. Com a cadencia declarada, a ausencia de linha vira medida."}
+      EF_PREVISTO_QNT:
+        {tipo: int, nulo: true, descricao: "Efetivo previsto no quadro organico. Ef e Pes sao abreviaturas do MD33-M-02."}
+      EF_PRESENTE_QNT:
+        {tipo: int, nulo: true, descricao: Efetivo presto ao servico no momento do relatorio.}
+      BAIXA_COMBATE_QNT:
+        {tipo: int, nulo: true, descricao: Baixas por acao de combate.}
+      BAIXA_NAO_COMBATE_QNT:
+        {tipo: int, nulo: true, descricao: Baixas por acidente, doenca ou outra causa.}
+      EVACUADO_QNT:
+        {tipo: int, nulo: true, descricao: Militares afastados para atendimento externo.}
+      VTR_OPERACIONAL_QNT:
+        {tipo: int, nulo: true, descricao: "Viaturas prontas para emprego. Vtr e abreviatura do MD33-M-02."}
+      VTR_TOTAL_QNT:
+        {tipo: int, nulo: true, descricao: Viaturas organicas da unidade.}
+      COMBUSTIVEL_PCTL:
+        {tipo: double, nulo: true, descricao: Nivel medio de combustivel das viaturas.}
+      SUP_CL_I_DIAS:
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de subsistencia. D Sup (Dia de Suprimento) e a unidade doutrinaria, catalogada no MD33-M-02; DIAS e termo de representacao do Art. 138."}
+      SUP_CL_III_DIAS:
+        {tipo: double, nulo: true, descricao: Dias de suprimento de combustiveis e lubrificantes.}
+      SUP_CL_V_DIAS:
+        {tipo: double, nulo: true, descricao: Dias de suprimento de municao.}
+      SUP_CL_VIII_DIAS:
+        {tipo: double, nulo: true, descricao: Dias de suprimento de material de saude.}
+      NECESSIDADE_TXT:
+        tipo: string
+        nulo: true
+        descricao: >-
+          Necessidade prioritaria declarada pela unidade. E a unica celula de
+          preenchimento livre do formulario, e por isso o lugar onde a
+          abreviatura digitada a mao aparece: uma OM escreve Fuzil, outra
+          escreve Fz. Resolve contra REF_ABREVIATURA pela transformacao
+          `abreviatura`, e o que nao casar fica registrado em vez de virar nulo
+          calado.
+      FORMULARIO_VERSAO_COD:
+        tipo: string
+        nulo: true
+        descricao: >-
+          Versao do formulario que a OM usou. Existe para o caso espelho do
+          anterior: quando o EM revisa o formulario, por algumas semanas
+          convivem duas versoes, porque nem toda OM atualizou. O caminho
+          relacional exige que a migracao ocorra antes do primeiro arquivo novo
+          chegar, e depois quebra com os antigos; aqui as duas convivem e a
+          divergencia e consultavel.
+      ATRIBUTO_EXTRA_TXT:
+        tipo: string
+        nulo: true
+        descricao: >-
+          As colunas que o formulario NAO previa, guardadas em JSON com o nome
+          que a OM deu. E o coracao do argumento de schema-on-read: a OM que
+          acha que precisa mandar mais informacao acrescenta uma coluna, e no
+          caminho relacional essa coluna nao tem onde entrar — o ETL a descarta
+          em silencio ou a carga falha, e preserva-la exige ALTER TABLE por uma
+          coluna que talvez so uma unidade use. Aqui ela e preservada sem nunca
+          ter sido modelada, e quando o EM concluir que a ideia era boa e
+          incorpora-la ao formulario oficial, o historico ja esta gravado e se
+          recupera aplicando o esquema novo na leitura. No caminho relacional
+          esses meses foram destruidos no momento da carga.
+          Consequencia doutrinaria: coluna a mais nao e defeito de qualidade, e
+          o campo sinalizando que o formulario do EM esta incompleto. O
+          Lakehouse captura o sinal; o pipeline relacional o destroi na carga.
+
+  # ---------------------------------------------------------------------------
   ARQUIVO:
     descricao: >-
-      Manifesto de um arquivo bruto: imagem, audio ou documento. O binario fica
-      no armazenamento de objetos; aqui ficam o endereco, o hash e o conteudo ja
-      extraido.
+      Manifesto de um arquivo bruto: planilha, imagem, audio ou documento. O
+      binario fica no armazenamento de objetos; aqui ficam o endereco, o hash e
+      o conteudo ja extraido.
     abreviatura: ARQ
     camada: bronze
     chave: [ARQUIVO_IDT]
@@ -232,13 +388,13 @@ entidades:
       ARQUIVO_IDT:       {tipo: string, nulo: false, descricao: Identificador do arquivo.}
       CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo arquivo reenviado nao gera linha nova."}
       ARQUIVO_URI_TXT:   {tipo: string, nulo: false, descricao: Endereco no armazenamento de objetos.}
-      MIME_TIPO_COD:     {tipo: string, nulo: false, descricao: "Tipo do arquivo. Ex.: image/jpeg, audio/wav, application/pdf."}
+      MIME_TIPO_COD:     {tipo: string, nulo: false, descricao: "Tipo do arquivo. Ex.: image/jpeg, audio/wav, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet."}
       MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: Modalidade do arquivo.}
       ARQUIVO_TAMANHO_QNT: {tipo: bigint, nulo: false, descricao: Tamanho em bytes.}
       CAPTURA_DATA:      {tipo: timestamp, nulo: true, descricao: "Instante da captura, lido do metadado tecnico do proprio arquivo."}
       CAPTURA_GEOMETRIA_WKT: {tipo: string, nulo: true, descricao: "Coordenada lida do metadado da foto. E uma fonte independente do que o operador digitou, o que permite confrontar as duas."}
-      EXTRAIDO_TEXTO:    {tipo: string, nulo: true, descricao: "Texto obtido do arquivo, por leitura direta ou por reconhecimento optico."}
-      DIGITALIZADO_IND:  {tipo: string, nulo: true, descricao: "S ou N. Se S, o texto veio de OCR e a qualidade e menor."}
+      EXTRAIDO_TXT:      {tipo: string, nulo: true, descricao: "Texto obtido do arquivo, por leitura direta ou por reconhecimento optico."}
+      DIGITALIZADO_INDIC: {tipo: string, nulo: true, valores: [S, N], descricao: "S ou N. Se S, o texto veio de OCR e a qualidade e menor. Sufixo INDIC conforme o termo INDICADOR do Art. 138."}
       RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o arquivo chegou.}
 
   # ---------------------------------------------------------------------------
@@ -253,10 +409,10 @@ entidades:
     campos:
       EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da inferencia.}
       ARQUIVO_IDT:       {tipo: string, nulo: false, referencia: ARQUIVO, descricao: Arquivo de entrada.}
-      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta usada. Ex.: tesseract, faster-whisper, ollama."}
-      MODELO_NOME:       {tipo: string, nulo: false, descricao: "Modelo usado. Ex.: qwen3.5:4b."}
+      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta usada. Ex.: tesseract, faster-whisper, ollama, openpyxl."}
+      MODELO_NOME:       {tipo: string, nulo: false, descricao: "Modelo usado. Ex.: qwen3.5:4b. Para leitura deterministica, o nome da biblioteca e a versao."}
       PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "Versao do prompt. Sem ela, a pergunta de auditoria fica sem resposta completa."}
-      SAIDA_TEXTO:       {tipo: string, nulo: true, descricao: Saida da inferencia.}
+      SAIDA_TXT:         {tipo: string, nulo: true, descricao: Saida da inferencia.}
       CONFIANCA_PCTL:    {tipo: double, nulo: true, descricao: "Confianca declarada pela ferramenta, de 0 a 1."}
       INFERENCIA_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto na inferencia.}
       STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA."}
@@ -291,9 +447,42 @@ entidades:
       LOCAL_COD:        {tipo: string, nulo: false, descricao: Codigo do local.}
       LOCAL_NOME:       {tipo: string, nulo: false, descricao: Nome do local.}
       LOCAL_TIPO_COD:   {tipo: string, nulo: false, dominio: tipo_local, descricao: Natureza da referencia.}
-      REFERENCIA_TEXTO: {tipo: string, nulo: false, descricao: "Forma textual usada para casar com a origem. Ex.: 'BR-154 km 43'."}
+      REFERENCIA_TXT:   {tipo: string, nulo: false, descricao: "Forma textual usada para casar com a origem. Ex.: 'BR-154 km 43'."}
       GEOMETRIA_WKT:    {tipo: string, nulo: false, descricao: Ponto correspondente.}
       PRECISAO_METRO:   {tipo: double, nulo: true, descricao: "Incerteza da referencia: um marco de rodovia e mais preciso que o nome de um povoado."}
+
+  # ---------------------------------------------------------------------------
+  REF_ABREVIATURA:
+    descricao: >-
+      Dicionario de abreviaturas do MD33-M-02. Tabela de consulta: converte o
+      que foi digitado na celula no termo canonico.
+
+      Entra na versao 3 porque o problema real do formulario decretado nao esta
+      no cabecalho — esse o EM fixa, e ninguem redigita cabecalho de planilha
+      pronta — e sim no PREENCHIMENTO: uma OM escreve Fuzil, outra escreve Fz.
+      E o dicionario mostra que o caso e pior do que variacao ortografica:
+
+          Fz   -> Fuzil       (a arma)
+          Fuz  -> Fuzileiro   (a pessoa)
+
+      A OM que escreve Fuz querendo dizer Fuzil comete erro semantico — material
+      vira pessoal. Uma coluna de texto livre engole isso em silencio. E o mesmo
+      fenomeno do Nr contra NR que motivou a regra das duas grafias, agora no
+      conteudo da celula em vez do nome da coluna.
+
+      Com o dicionario como tabela, a resolucao vira declarativa (transformacao
+      `abreviatura`) e o que NAO resolve fica mensuravel em vez de virar nulo
+      calado. Indicador que sai de graca: percentual de celulas resolvidas pelo
+      manual, percentual resolvidas por inferencia, percentual nao resolvidas.
+    abreviatura: RABV
+    camada: silver
+    chave: [ABREVIATURA_COD]
+    seed: ir_14_06/abreviaturas_md33.csv
+    campos:
+      ABREVIATURA_COD:  {tipo: string, nulo: false, descricao: "Abreviatura como o MD33-M-02 a grafa. Ex.: 'Vtr', 'Ef', 'Fz'."}
+      TERMO_NOME:       {tipo: string, nulo: false, descricao: "Termo por extenso. Ex.: 'Viatura', 'Efetivo', 'Fuzil'."}
+      SINONIMO_TXT:     {tipo: string, nulo: true, descricao: Outras grafias aceitas para o mesmo termo.}
+      ORIGEM_COD:       {tipo: string, nulo: true, descricao: "Procedencia da abreviatura: capitulo do MD33-M-02 ou proposta a catalogar."}
 
 
 # =============================================================================
@@ -304,90 +493,33 @@ entidades:
 # Transformacoes disponiveis (o codigo delas vive no job, nao aqui):
 #   direto             copia o valor
 #   json               extrai do payload JSON pelo caminho indicado
+#   celula             le uma celula da planilha pelo cabecalho decretado
 #   ts_iso / ts_br     texto -> data
 #   ponto_de_latlon    par de numeros -> ponto
 #   geojson_para_wkt   GeoJSON -> WKT
 #   dms_para_ponto     grau-minuto-segundo em texto -> ponto
 #   decametrica_para_ponto  coordenada metrica militar -> ponto
 #   gazetteer          nome de lugar -> ponto, consultando REF_GAZETTEER
+#   abreviatura        abreviatura digitada -> termo, consultando REF_ABREVIATURA
 #   dominio            valor da origem -> valor canonico, pelos sinonimos
 #   referencia         valor da origem -> codigo de uma tabela de consulta
 #   constante          grava um valor fixo
+#   derivado           calculado por regra declarada no campo de destino
 #   split_escala       'B2' -> confiabilidade B e credibilidade 2 (um campo, dois destinos)
+#   sobra              tudo que o formulario nao previa -> uma coluna JSON
 # =============================================================================
 
 fontes:
 
-  # --- SIM: os 8 tipos que ja existiam. JSON, sem IA. -------------------------
-  SIM:
-    modalidade: JSON
-    origem_tabela: bronze.dados
-    destino: EVENTO
-    comum:
-      batalhao_origem:   {campo: UNIDADE_REPORTANTE_COD, transformacao: direto}
-      timestamp_geracao: {campo: OCORRENCIA_DATA, transformacao: direto}
-      timestamp_chegada: {campo: CHEGADA_DATA, transformacao: direto}
-      _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: SIM}
-      _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
-      _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GPS}
-    tipos:
-      gps:
-        _tipo:      {campo: TIPO_COD, transformacao: constante, valor: POSICAO}
-        _funcao:    {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
-        id_veiculo: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_veiculo}
-        _geometria: {campo: GEOMETRIA_WKT, transformacao: ponto_de_latlon,
-                     caminho_lat: $.latitude, caminho_lon: $.longitude}
-      sensor:
-        _tipo:     {campo: TIPO_COD, transformacao: constante, valor: SENSOR}
-        _funcao:   {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: INTELIGENCIA}
-        id_sensor: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_sensor}
-        _geometria: {campo: GEOMETRIA_WKT, transformacao: ponto_de_latlon,
-                     caminho_lat: $.latitude_centro, caminho_lon: $.longitude_centro}
-      relt_intel:
-        _tipo:        {campo: TIPO_COD, transformacao: constante, valor: AVISTAMENTO_INIMIGO}
-        _funcao:      {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: INTELIGENCIA}
-        id_relatorio: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_relatorio}
-        descricao:    {campo: RELATO_TEXTO, transformacao: json, caminho: $.descricao}
-        confiabilidade:
-          campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD]
-          transformacao: split_escala
-          caminho: $.confiabilidade
-          observacao: "o gerador produz 'A1', 'B2', 'C3' — um campo de origem, dois canonicos"
-        _geometria: {campo: GEOMETRIA_WKT, transformacao: ponto_de_latlon,
-                     caminho_lat: $.coordenada_lat, caminho_lon: $.coordenada_lon}
-      paf:
-        _tipo:      {campo: TIPO_COD, transformacao: constante, valor: MISSAO_TIRO}
-        _funcao:    {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: FOGOS}
-        id_paf:     {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_paf}
-        prioridade: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, caminho: $.prioridade}
-        _geometria: {campo: GEOMETRIA_WKT, transformacao: ponto_de_latlon,
-                     caminho_lat: $.coordenada_alvo_lat, caminho_lon: $.coordenada_alvo_lon}
-      obstaculo:
-        _tipo:        {campo: TIPO_COD, transformacao: constante, valor: OBSTACULO}
-        _funcao:      {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
-        id_obstaculo: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_obstaculo}
-        _geometria:   {campo: GEOMETRIA_WKT, transformacao: ponto_de_latlon,
-                       caminho_lat: $.coordenada_lat, caminho_lon: $.coordenada_lon}
-      seg_area:
-        _tipo:   {campo: TIPO_COD, transformacao: constante, valor: INCIDENTE}
-        _funcao: {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: PROTECAO}
-        id_ocorrencia: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_ocorrencia}
-        _geometria:    {campo: GEOMETRIA_WKT, transformacao: ponto_de_latlon,
-                        caminho_lat: $.coordenada_lat, caminho_lon: $.coordenada_lon}
-      pessoal:
-        _tipo:       {campo: TIPO_COD, transformacao: constante, valor: SITUACAO_PESSOAL}
-        _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: LOGISTICA}
-        id_relatorio: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_relatorio}
-      material:
-        _tipo:       {campo: TIPO_COD, transformacao: constante, valor: SITUACAO_MEIO}
-        _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: LOGISTICA}
-        id_viatura: {campo: REGISTRO_ORIGEM_COD, transformacao: json, caminho: $.id_viatura}
-
-  # --- C2_A: JSON com geometria nativa. ---------------------------------------
+  # --- C2_A: JSON com geometria nativa. Sem IA. -------------------------------
+  # Absorve o `gps` e o `obstaculo` da fonte SIM removida — e ganha com isso:
+  # geometria nativa em vez de par de numeros solto, e fracao resolvida contra
+  # REF_UNIDADE em vez de sigla de batalhao em texto livre.
   C2_A:
     modalidade: JSON
     destino: EVENTO
     entidades:
+
       posicao:
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
@@ -397,8 +529,30 @@ fontes:
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: POSICAO}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GPS}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+
+      # Medida de Coordenacao e Controle: ponto, linha, poligono ou desenho a
+      # mao livre. E aqui que o antigo `obstaculo` passa a viver, e melhora —
+      # obstaculo e feicao grafica no mapa, nao ponto.
+      mcc:
+        campos:
+          id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
+          hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
+          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
+          geometria:   {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt,
+                        observacao: "ponto, LINESTRING ou POLYGON; o desenho a mao livre e uma LINESTRING de muitos vertices"}
+          especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
 
   # --- C2_B: texto livre e incidente com foto. --------------------------------
+  # Absorve o `relt_intel` e o `seg_area` da fonte SIM. O seg_area era duplicata
+  # literal do incidente daqui, so que empobrecida — sem foto e sem prioridade.
   C2_B:
     destino: EVENTO
     entidades:
@@ -410,13 +564,18 @@ fontes:
           relator:     {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
           localizacao: {campo: GEOMETRIA_WKT, transformacao: dms_para_ponto,
                         observacao: "'Sem localizacao' vira vazio, e nao erro: relato sem coordenada e caso legitimo."}
-          situacao:    {campo: RELATO_TEXTO, transformacao: direto}
+          situacao:    {campo: RELATO_TXT, transformacao: direto}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
         # Estes NAO vem da origem: sao inferidos pelo modelo de linguagem a
-        # partir de RELATO_TEXTO. Cada inferencia gera uma linha em EXTRACAO.
-        extraidos_por_llm: [TIPO_COD, FUNCAO_COMBATE_COD, PRIORIDADE_COD]
+        # partir de RELATO_TXT. Cada inferencia gera uma linha em EXTRACAO.
+        # A confiabilidade entrou aqui porque o antigo relt_intel a trazia
+        # pronta ('A1'); num relato livre de verdade ela e juizo do analista,
+        # e portanto inferida.
+        extraidos_por_llm: [TIPO_COD, FUNCAO_COMBATE_COD, PRIORIDADE_COD,
+                            FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD]
 
       incidente:
         modalidade: IMAGEM
@@ -431,9 +590,83 @@ fontes:
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: IMAGEM}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: INCIDENTE}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: PROTECAO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GPS}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+
+  # --- RELPER: o formulario decretado pelo EM da brigada. ---------------------
+  # Absorve o `pessoal` e o `material` da fonte SIM, e traz a sexta modalidade.
+  #
+  # Duas entidades para a MESMA remessa, porque as duas acontecem no campo:
+  # a OM que tem o arquivo devolve o xlsx; a que nao tem imprime, preenche a
+  # mao, assina e digitaliza. Mesmo formulario, duas modalidades, e a segunda
+  # atravessa OCR antes de chegar aos mesmos numeros.
+  RELPER:
+    destino: EVENTO
+    extensao: SITUACAO_UNIDADE
+    cadencia: "duas remessas por dia, fixadas pelo EM da brigada"
+    granularidade: >-
+      Uma linha da planilha por subunidade. Um arquivo produz N eventos e N
+      linhas de SITUACAO_UNIDADE, todos apontando para o mesmo ARQUIVO_IDT.
+    entidades:
+
+      situacao:
+        modalidade: PLANILHA
+        campos:
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                        regra: "codigo da OM remetente + data + turno + unidade da linha"}
+          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        observacao: "celula preenchida a mao: '1a Cia', '1 Cia Fuz', '1ª Cia'. Resolve contra REF_UNIDADE, e o que nao casar e reportado, nao descartado."}
+          data_turno:  {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm"}
+          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: RELPER}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PLANILHA}
+          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: SITUACAO_UNIDADE}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: LOGISTICA}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
+                        observacao: "resolve para N: o formulario e remetido ao repositorio, nao produzido dentro de um sistema de C2"}
+        # As colunas decretadas pelo EM, que vao para a extensao.
+        # `celula` le pelo cabecalho fixado no formulario.
+        extensao:
+          Turno:        {campo: TURNO_COD, transformacao: dominio, dominio: turno_relatorio}
+          Ef Prev:      {campo: EF_PREVISTO_QNT, transformacao: celula}
+          Ef Pres:      {campo: EF_PRESENTE_QNT, transformacao: celula}
+          Baixas Cmb:   {campo: BAIXA_COMBATE_QNT, transformacao: celula}
+          Baixas N Cmb: {campo: BAIXA_NAO_COMBATE_QNT, transformacao: celula}
+          Evacuados:    {campo: EVACUADO_QNT, transformacao: celula}
+          Vtr Op:       {campo: VTR_OPERACIONAL_QNT, transformacao: celula}
+          Vtr Total:    {campo: VTR_TOTAL_QNT, transformacao: celula}
+          Comb Pctl:    {campo: COMBUSTIVEL_PCTL, transformacao: celula}
+          Sup Cl I:     {campo: SUP_CL_I_DIAS, transformacao: celula}
+          Sup Cl III:   {campo: SUP_CL_III_DIAS, transformacao: celula}
+          Sup Cl V:     {campo: SUP_CL_V_DIAS, transformacao: celula}
+          Sup Cl VIII:  {campo: SUP_CL_VIII_DIAS, transformacao: celula}
+          Nec Prio:     {campo: NECESSIDADE_TXT, transformacao: abreviatura,
+                         referencia: REF_ABREVIATURA,
+                         observacao: "'Fz' -> Fuzil (a arma), 'Fuz' -> Fuzileiro (a pessoa). A OM que troca uma pela outra comete erro semantico, nao ortografico: material vira pessoal. Coluna de texto livre engoliria isso em silencio."}
+          _versao:      {campo: FORMULARIO_VERSAO_COD, transformacao: derivado,
+                         regra: "identificada pelo conjunto de cabecalhos presentes na planilha"}
+          _sobra:       {campo: ATRIBUTO_EXTRA_TXT, transformacao: sobra,
+                         observacao: "toda coluna que o formulario nao previa, com o nome que a OM deu"}
+
+      # Mesma remessa, impressa e digitalizada. Cruza duas modalidades numa
+      # fonte so, e e o caso mais realista que existe: a OM que nao tem o
+      # arquivo imprime, preenche, assina e fotografa.
+      situacao_digitalizada:
+        modalidade: PDF
+        herda: situacao
+        campos:
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
+        extraidos_por_llm: [UNIDADE_REPORTANTE_COD]
+        observacao: >-
+          Os numeros passam por OCR antes de virar celula, e por isso esta
+          entidade gera linha em EXTRACAO enquanto a irma nao gera. Comparar as
+          duas sobre o mesmo formulario da a taxa de erro do OCR contra o valor
+          verdadeiro — ground truth de graca.
 
   # --- FOGOS: Relatorio de Bombardeio, PDF digitalizado. OCR + LLM. -----------
+  # Absorve o `paf` da fonte SIM, que era duplicata empobrecida disto.
   FOGOS:
     modalidade: PDF
     destino: EVENTO
@@ -443,13 +676,16 @@ fontes:
           col_A:       {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: numero do alvo}
           col_B:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
                         observacao: "'03250-10550' -> coordenada metrica"}
-          col_G:       {campo: RELATO_TEXTO, transformacao: direto, observacao: "armamento observado, ex. '2/Ob/Me'"}
-          confiabilidade: {campo: FONTE_CONFIABILIDADE_COD, transformacao: dominio, dominio: confiabilidade}
+          col_G:       {campo: RELATO_TXT, transformacao: direto, observacao: "armamento observado, ex. '2/Ob/Me'"}
+          avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
+                        transformacao: split_escala,
+                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: FOGOS}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: FOGOS}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: MISSAO_TIRO}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
         extraidos_por_llm: [OCORRENCIA_DATA, PRIORIDADE_COD]
 
   # --- VOZ: audio de radio. A cadeia mais longa: wav -> texto -> dado. --------
@@ -459,7 +695,7 @@ fontes:
     entidades:
       transcricao:
         campos:
-          texto:    {campo: RELATO_TEXTO, transformacao: direto, observacao: saida do reconhecimento de fala}
+          texto:    {campo: RELATO_TXT, transformacao: direto, observacao: saida do reconhecimento de fala}
           codinome: {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
                      observacao: "'cavalo' casa com o sinonimo de AVISTAMENTO_INIMIGO"}
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
@@ -468,6 +704,8 @@ fontes:
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: VOZ}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: AUDIO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
+                        observacao: "resolve para N. Radio e MEIO de transmissao de C2, nao sistema de informacao que registre o processo de estado-maior — mesma razao pela qual o documento avulso tambem nao conta."}
         extraidos_por_llm: [OCORRENCIA_DATA, PRIORIDADE_COD, FUNCAO_COMBATE_COD]
 
 
@@ -484,4 +722,9 @@ fontes:
 #   1. acrescentar um bloco em `fontes`, no molde de FOGOS acima;
 #   2. acrescentar o gerador correspondente em scripts/geradores/.
 # Nenhum job e alterado, nenhuma tabela e recriada.
+#
+# Mesma regra para uma fonte com atributos proprios: alem do bloco em `fontes`,
+# uma entidade de extensao no molde de SITUACAO_UNIDADE. So justifica-se quando
+# o esquema da fonte for fixado por norma — se for variavel, o lugar dele e uma
+# coluna semiestruturada, como ATRIBUTO_EXTRA_TXT.
 # =============================================================================
