@@ -1,5 +1,5 @@
 <title>Modelo Canônico ARQ_TEMAC</title>
-<meta name="description" content="Como cinco fontes heterogêneas convergem na tabela EVENTO e como a linhagem liga cada número ao arquivo bruto.">
+<meta name="description" content="Como cinco fontes heterogêneas convergem na tabela EVENTO e como a linhagem liga cada número ao registro bruto que o originou.">
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
 
@@ -346,6 +346,83 @@
     dl.glossary div { grid-template-columns: 1fr; gap: .15rem; }
   }
 
+  /* ---------- worked example ---------- */
+  ol.walk {
+    list-style: none;
+    counter-reset: w;
+    margin: 1.6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 2.1rem;
+  }
+  ol.walk > li {
+    counter-increment: w;
+    max-width: none;
+  }
+  ol.walk > li > h3 {
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    margin: 0 0 .5rem;
+  }
+  ol.walk > li > h3::before {
+    content: counter(w, decimal-leading-zero);
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--accent-ink);
+    flex: none;
+  }
+  ol.walk .tag {
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: .12em .5em;
+    border-radius: 2px;
+    background: var(--rule-soft);
+    color: var(--ink-soft);
+  }
+  ol.walk .tag.bronze { color: var(--bronze); }
+  ol.walk .tag.silver { color: var(--slate); }
+  ol.walk p { max-width: 41rem; }
+
+  pre.sheet {
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    line-height: 1.65;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    margin: 1.1rem 0;
+    color: var(--ink);
+    white-space: pre;
+  }
+
+  .note {
+    border-left: 2px solid var(--accent);
+    padding: .1rem 0 .1rem 1rem;
+    margin: 1.1rem 0;
+    color: var(--ink-soft);
+    font-size: .95rem;
+  }
+  .note b { color: var(--ink); font-weight: 500; font-family: var(--font-sans); }
+
+  table.mini { min-width: 28rem; font-size: .86rem; }
+  table.mini tbody th { color: var(--accent-ink); }
+  .trace {
+    font-family: var(--font-mono);
+    font-size: .82rem;
+    line-height: 1.8;
+    background: var(--rule-soft);
+    border-radius: 3px;
+    padding: 1rem 1.1rem;
+    margin: 1.1rem 0;
+    overflow-x: auto;
+  }
+
   /* ---------- footer ---------- */
   footer {
     margin-top: 4rem;
@@ -387,11 +464,11 @@
 
   <header>
     <p class="eyebrow">ARQ_TEMAC · parte empírica · modelo_canonico.yaml</p>
-    <h1>O modelo canônico em dois diagramas</h1>
+    <h1>O modelo canônico em dois diagramas e um exemplo</h1>
     <p class="lead">Cinco sistemas de origem, seis modalidades de arquivo, uma única tabela de
       destino. Esta página mostra o percurso que todo dado faz — e como, a partir de qualquer
-      número na camada final, se volta ao arquivo bruto que o gerou.</p>
-    <p class="meta">versão 3 · atualizado em 2026-09-08 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
+      número na camada final, se volta ao registro bruto que o gerou.</p>
+    <p class="meta">versão 3 · atualizado em 2026-09-09 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
   </header>
 
   <section>
@@ -408,10 +485,11 @@
       </div>
       <div>
         <dt>Linhagem</dt>
-        <dd>Dá para rastrear qualquer número da camada final até o arquivo que o originou,
-          incluindo qual modelo de IA fez a extração e com que versão de prompt. Os campos
-          <code>ARQUIVO_IDT</code> e <code>EXTRACAO_IDT</code> em <code>EVENTO</code> são os dois
-          elos dessa corrente.</dd>
+        <dd>Dá para rastrear qualquer número da camada final até o registro bruto que o originou,
+          incluindo qual modelo de IA fez a extração e com que versão de prompt. Em
+          <code>EVENTO</code>, o primeiro elo é <code>RECEPCAO_IDT</code> (quando a fonte chegou
+          como JSON) ou <code>ARQUIVO_IDT</code> (quando chegou como arquivo binário); o segundo,
+          <code>EXTRACAO_IDT</code>, só existe quando houve IA no caminho.</dd>
       </div>
     </dl>
   </section>
@@ -423,7 +501,7 @@
       camada tem um trabalho e só um.</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA, ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
 flowchart TD
   subgraph FONTES["FONTES · sistemas de origem"]
     C2A["C2_A<br/>JSON com geometria"]
@@ -442,18 +520,20 @@ flowchart TD
   VOZ --> LAND
 
   subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
+    RCPB["RECEPCAO_BRUTA<br/>1 linha por registro JSON:<br/>payload cru inteiro, hash,<br/>ponteiro para a landing/"]
     ARQ["ARQUIVO<br/>manifesto do binario:<br/>URI, hash, MIME, modalidade"]
     EXT["EXTRACAO<br/>1 linha por inferencia de IA:<br/>ferramenta, modelo, versao de prompt"]
   end
 
+  LAND -->|"registro estruturado: JSON"| RCPB
   LAND -->|"binario: foto, audio, pdf, xlsx"| ARQ
-  ARQ -->|"a IA le o arquivo:<br/>OCR / transcricao / LLM"| EXT
+  ARQ -->|"quando a IA le o arquivo:<br/>OCR / transcricao / LLM"| EXT
 
   MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio<br/>gazetteer · abreviatura · split_escala · sobra"}}
 
-  LAND -->|"payload estruturado<br/>(JSON, celulas da planilha)"| MAP
-  ARQ -->|"metadado tecnico do binario:<br/>geo do EXIF, MIME, hash + ponteiro de linhagem"| MAP
-  EXT -->|"so os campos que a IA inferiu<br/>+ ponteiro de linhagem"| MAP
+  RCPB -->|"campos lidos do JSON pelo caminho indicado<br/>+ ponteiro de linhagem (RECEPCAO_IDT)"| MAP
+  ARQ -->|"ponteiro de linhagem (ARQUIVO_IDT);<br/>para foto, a coordenada do EXIF"| MAP
+  EXT -->|"so os campos que a IA inferiu<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
 
   subgraph SEEDS["TABELAS DE CONSULTA · seeds"]
     RUNI["REF_UNIDADE<br/>'1a Cia Fuz' vira BI511C1"]
@@ -466,7 +546,7 @@ flowchart TD
   RABV -.-> MAP
 
   subgraph SILVER["SILVER · modelo canonico unico"]
-    EVT["EVENTO<br/>o denominador comum de toda fonte:<br/>quem, quando, onde, tipo, funcao de combate<br/>por onde chegou, de que arquivo, qual IA"]
+    EVT["EVENTO<br/>o denominador comum de toda fonte:<br/>quem, quando, onde, tipo, funcao de combate<br/>por onde chegou, de que registro bruto, qual IA"]
     SIT["SITUACAO_UNIDADE<br/>extensao - so o RELPER produz:<br/>efetivo, baixas, viaturas, suprimento"]
   end
 
@@ -474,7 +554,8 @@ flowchart TD
   MAP ==>|"so RELPER"| SIT
   EVT -->|"1 : 0..1"| SIT
 
-  EVT -.->|"ARQUIVO_IDT · elo 1 da linhagem"| ARQ
+  EVT -.->|"RECEPCAO_IDT · elo 1 (fonte JSON)"| RCPB
+  EVT -.->|"ARQUIVO_IDT · elo 1 (fonte binaria)"| ARQ
   EVT -.->|"EXTRACAO_IDT · elo 2 da linhagem"| EXT
 </pre>
       <figcaption>Prancha 1 — o percurso do dado. Seta cheia é fluxo; seta pontilhada é um
@@ -515,12 +596,15 @@ flowchart TD
       </li>
       <li>
         <div>
-          <h3>Bronze — <code>ARQUIVO</code> e <code>EXTRACAO</code></h3>
-          <p>Duas tabelas registram o payload sem interpretá-lo. <code>ARQUIVO</code> cataloga
-            cada binário — onde está, seu <em>hash</em>, seu tipo. <code>EXTRACAO</code> grava
-            uma linha por inferência de IA: qual ferramenta (reconhecimento óptico, transcrição
-            de fala, um modelo de linguagem local), qual modelo, qual versão de prompt, quanto
-            tempo levou.</p>
+          <h3>Bronze — <code>RECEPCAO_BRUTA</code>, <code>ARQUIVO</code> e <code>EXTRACAO</code></h3>
+          <p>Toda fonte passa por aqui antes da Silver, sob uma de duas formas, conforme o
+            payload caiba ou não numa coluna. <code>RECEPCAO_BRUTA</code> guarda o registro que
+            já chega estruturado — o JSON do <code>C2_A</code> e do <code>C2_B</code> — inteiro,
+            uma linha por registro, sem ler um campo sequer. <code>ARQUIVO</code> cataloga cada
+            binário — onde está, seu <em>hash</em>, seu tipo. <code>EXTRACAO</code> grava uma
+            linha por inferência de IA sobre um binário: qual ferramenta (reconhecimento óptico,
+            transcrição de fala, um modelo de linguagem local), qual modelo, qual versão de
+            prompt, quanto tempo levou. Uma planilha lida direto, sem IA, não gera linha aqui.</p>
         </div>
       </li>
       <li>
@@ -540,7 +624,7 @@ flowchart TD
           <h3>Silver — <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code></h3>
           <p>Todas as fontes desembocam em <code>EVENTO</code>, uma tabela só, com o que
             <em>toda</em> fonte tem em comum: quem reportou, quando, onde, que tipo de fato, por
-            qual sistema chegou, de que arquivo veio. O que só o <code>RELPER</code> tem —
+            qual sistema chegou, de que registro bruto veio. O que só o <code>RELPER</code> tem —
             efetivo, baixas, viaturas, dias de suprimento — vai para a extensão
             <code>SITUACAO_UNIDADE</code>, a única que existe.</p>
         </div>
@@ -555,15 +639,23 @@ flowchart TD
       <code>FK</code> marca a chave estrangeira (aponta para a linha de outra tabela).</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: ARQUIVO é entrada de EXTRACAO e origina EVENTO; EXTRACAO produz EVENTO; EVENTO estende SITUACAO_UNIDADE numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
+      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: RECEPCAO_BRUTA origina EVENTO quando a fonte é JSON; ARQUIVO é entrada de EXTRACAO e origina EVENTO quando a fonte é binária; EXTRACAO produz EVENTO; EVENTO estende SITUACAO_UNIDADE numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
 erDiagram
+  RECEPCAO_BRUTA ||--o{ EVENTO        : "origina (fonte JSON)"
   ARQUIVO     ||--o{ EXTRACAO         : "e entrada de"
-  ARQUIVO     ||--o{ EVENTO           : "origina"
+  ARQUIVO     ||--o{ EVENTO           : "origina (fonte binaria)"
   EXTRACAO    ||--o{ EVENTO           : "produz"
   EVENTO      ||--o| SITUACAO_UNIDADE : "estende (1 : 0..1)"
   REF_UNIDADE ||--o{ EVENTO           : "unidade reportante"
   REF_UNIDADE ||--o{ REF_UNIDADE      : "unidade superior"
 
+  RECEPCAO_BRUTA {
+    string RECEPCAO_IDT PK
+    string SISTEMA_ORIGEM_COD
+    string MODALIDADE_COD
+    string CONTEUDO_JSON_TXT
+    string CONTEUDO_HASH_COD
+  }
   ARQUIVO {
     string ARQUIVO_IDT PK
     string CONTEUDO_HASH_COD
@@ -586,6 +678,7 @@ erDiagram
     string FUNCAO_COMBATE_COD
     string FUNCAO_C2_INDIC
     string GEOMETRIA_WKT
+    string RECEPCAO_IDT FK
     string ARQUIVO_IDT FK
     string EXTRACAO_IDT FK
   }
@@ -597,8 +690,10 @@ erDiagram
     string ATRIBUTO_EXTRA_TXT
   }
 </pre>
-      <figcaption>Prancha 2 — as sete tabelas e suas ligações por chave. O losango cheio marca o
-        lado &ldquo;um&rdquo; da relação; o pé-de-galinha marca o lado &ldquo;muitos&rdquo;.</figcaption>
+      <figcaption>Prancha 2 — as oito tabelas e suas ligações por chave. O losango cheio marca o
+        lado &ldquo;um&rdquo; da relação; o pé-de-galinha marca o lado &ldquo;muitos&rdquo;.
+        <code>EVENTO</code> traz <code>RECEPCAO_IDT</code> <em>ou</em> <code>ARQUIVO_IDT</code>,
+        nunca os dois.</figcaption>
       <details>
         <summary>Código-fonte Mermaid</summary>
         <pre><code class="src-view"></code></pre>
@@ -614,10 +709,166 @@ erDiagram
   </section>
 
   <section>
+    <h2><span class="n">De ponta a ponta</span> Uma planilha com duas linhas, do arquivo ao número rastreável</h2>
+    <p>Um exemplo mínimo e concreto, para fixar o mecanismo. O <code>1º/511º BI Mtz</code> remete
+      o relatório periódico da manhã: um arquivo Excel com <strong>duas observações</strong> (uma
+      linha por companhia) e <strong>duas colunas de medida</strong> (efetivo presente e viaturas
+      operacionais). Segue-se cada linha da tabela abaixo à medida que ela desce pelas camadas.</p>
+
+    <ol class="walk">
+
+      <li>
+        <h3>O arquivo, como sai da unidade <span class="tag">origem</span></h3>
+        <p>O cabeçalho é fixado pelo estado-maior da brigada; ninguém redigita cabeçalho de
+          planilha. As duas linhas de dados são o que varia.</p>
+        <pre class="sheet">relper_bi511_2026-09-09_matutino.xlsx            (14,8 KB)
+
+  Data/hora: 09/09/2026 06:00     Turno: Matutino     Formulário: v2
+
+  Fração              | Ef Pres | Vtr Op
+  --------------------|---------|-------
+  1ª Cia Fuz/511      |   118   |   11
+  2ª Cia Fuz/511      |   121   |   12</pre>
+      </li>
+
+      <li>
+        <h3><code>landing/</code> — o byte, intacto <span class="tag">object storage</span></h3>
+        <p>O arquivo é copiado para o armazenamento de objetos exatamente como chegou. Nenhuma
+          célula foi lida. Se a coluna <code>Vtr Op</code> nem existisse no formulário oficial, o
+          arquivo entraria do mesmo jeito — o esquema só será exigido na leitura.</p>
+        <pre class="sheet">s3a://lakehouse/landing/relper/relper_bi511_2026-09-09_matutino.xlsx</pre>
+      </li>
+
+      <li>
+        <h3><code>ARQUIVO</code> — uma linha por arquivo <span class="tag bronze">bronze</span></h3>
+        <p>O manifesto do binário. Repare: são duas observações dentro do arquivo, mas
+          <strong>uma só linha aqui</strong> — a planilha é um documento único. O desdobramento
+          em duas acontece só na Silver.</p>
+        <div class="scroll">
+          <table class="mini">
+            <tbody>
+              <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code></td></tr>
+              <tr><th scope="row">CONTEUDO_HASH_COD</th><td><code>sha256:9f3c1a4e…</code></td></tr>
+              <tr><th scope="row">ARQUIVO_URI_TXT</th><td><code>s3a://…/landing/relper/relper_bi511_2026-09-09_matutino.xlsx</code></td></tr>
+              <tr><th scope="row">MIME_TIPO_COD</th><td><code>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code></td></tr>
+              <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
+              <tr><th scope="row">ARQUIVO_TAMANHO_QNT</th><td><code>14832</code></td></tr>
+              <tr><th scope="row">RECEBIMENTO_DATA</th><td><code>2026-09-09T09:12:07Z</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><b>Contraste com o JSON.</b> Se essas duas observações tivessem chegado
+          como dois registros JSON do <code>C2_A</code>, seriam <b>duas linhas em
+          <code>RECEPCAO_BRUTA</code></b> — uma por registro, com o JSON cru inteiro numa coluna.
+          Planilha é documento (1 linha em <code>ARQUIVO</code>); lote JSON é embalagem de
+          registros independentes (N linhas em <code>RECEPCAO_BRUTA</code>). É a única diferença
+          de tratamento, e ela vem da natureza do dado, não de uma decisão arbitrária.</div>
+      </li>
+
+      <li>
+        <h3><code>EXTRACAO</code> — nenhuma linha, neste caso <span class="tag bronze">bronze</span></h3>
+        <p><code>ARQUIVO</code> e <code>EXTRACAO</code> são duas tabelas Bronze com papéis
+          distintos, apesar do nome parecido: <code>ARQUIVO</code> diz <em>que arquivo
+          chegou</em> — todo binário ganha uma linha, a planilha inclusive;
+          <code>EXTRACAO</code> diz <em>o que uma IA leu de dentro dele</em>, e só ganha linha
+          quando alguma IA roda.</p>
+        <p>Aqui a planilha é lida direto com uma biblioteca (<code>openpyxl</code>), célula por
+          célula, resultado determinístico: nenhuma IA, logo <strong>nenhuma linha em
+          <code>EXTRACAO</code></strong>. <em>O mesmo formulário impresso, assinado e
+          escaneado</em> chegaria como PDF, passaria por reconhecimento óptico, e aí sim cada
+          leitura geraria uma linha em <code>EXTRACAO</code> (ferramenta, modelo, confiança). No
+          YAML esse caminho é a receita <code>situacao_digitalizada</code> — um
+          <strong>bloco de mapeamento</strong>, não uma tabela: escreve nas mesmas
+          <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code> que a planilha nativa. Ter os dois
+          caminhos sobre o mesmo formulário dá a taxa de erro do OCR de graça: um lado tem o
+          número certo, o outro tem o número que o OCR leu.</p>
+      </li>
+
+      <li>
+        <h3>De/para — o job lê o <code>modelo_canonico.yaml</code> e monta o SQL <span class="tag">transformação</span></h3>
+        <p>Para <em>cada</em> uma das duas linhas da planilha, as regras declaradas no YAML são
+          aplicadas:</p>
+        <div class="trace">Fração  "1ª Cia Fuz/511"   → referencia REF_UNIDADE   → UNIDADE_REPORTANTE_COD = BI511C1
+Data/hora "09/09/2026 06:00" → ts_br                  → OCORRENCIA_DATA        = 2026-09-09 06:00:00
+Turno   "Matutino"          → dominio turno_relatorio → TURNO_COD              = MATUTINO
+Ef Pres "118"               → celula                  → EF_PRESENTE_QNT        = 118      (inteiro, não texto)
+Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT    = 11
+(constantes)                                          → SISTEMA_ORIGEM_COD     = RELPER
+                                                       MODALIDADE_ORIGEM_COD  = PLANILHA
+                                                       TIPO_COD               = SITUACAO_UNIDADE
+                                                       FUNCAO_COMBATE_COD     = LOGISTICA
+(derivado)                                            → FUNCAO_C2_INDIC        = N
+(derivado: OM + data + turno + fração)                → REGISTRO_ORIGEM_COD    = BI511-20260909-M-BI511C1
+(ponteiro de linhagem)                                → ARQUIVO_IDT            = arq_7b91f2
+                                                       RECEPCAO_IDT           = (vazio — fonte binária)</div>
+        <div class="note"><b>Se a OM tivesse acrescentado uma coluna <code>Obs</code></b> que o
+          formulário não previa, ela iria inteira para <code>ATRIBUTO_EXTRA_TXT</code> como
+          <code>{"Obs": "sem energia no gerador"}</code> — preservada sem nunca ter sido
+          modelada. Num banco relacional, essa coluna não teria onde entrar: seria descartada na
+          carga ou exigiria alterar a tabela. É o argumento de <em>schema-on-read</em> em uma
+          célula.</div>
+      </li>
+
+      <li>
+        <h3><code>EVENTO</code> — duas linhas: o fan-out <span class="tag silver">silver</span></h3>
+        <p>Um arquivo, duas companhias, dois eventos. O que <em>toda</em> fonte tem em comum.</p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>EVENTO_IDT</th><th>SISTEMA</th><th>MODALIDADE</th><th>TIPO</th><th>FUNÇÃO</th><th>C2</th><th>OCORRÊNCIA</th><th>UNIDADE</th><th>ARQUIVO_IDT</th><th>RECEPCAO_IDT</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>evt_3a0091</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C1</code></td><td><code>arq_7b91f2</code></td><td>—</td></tr>
+              <tr><td><code>evt_3a0092</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C2</code></td><td><code>arq_7b91f2</code></td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><code>RECEPCAO_IDT</code> fica vazio porque a fonte chegou como arquivo binário — o
+          elo de linhagem, aqui, é o <code>ARQUIVO_IDT</code>. Numa linha vinda do
+          <code>C2_A</code> seria o contrário.</p>
+      </li>
+
+      <li>
+        <h3><code>SITUACAO_UNIDADE</code> — duas linhas, uma por evento <span class="tag silver">silver</span></h3>
+        <p>Os números que só o relatório periódico tem. Ligada a <code>EVENTO</code> um-para-um
+          pela chave <code>EVENTO_IDT</code>.</p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>EVENTO_IDT</th><th>TURNO</th><th>EF_PRESENTE_QNT</th><th>VTR_OPERACIONAL_QNT</th><th>ATRIBUTO_EXTRA_TXT</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>evt_3a0091</code></td><td>MATUTINO</td><td>118</td><td>11</td><td>—</td></tr>
+              <tr><td><code>evt_3a0092</code></td><td>MATUTINO</td><td>121</td><td>12</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </li>
+
+      <li>
+        <h3>A volta: do número ao byte <span class="tag">linhagem</span></h3>
+        <p>Pergunta de auditoria: <em>de onde veio o 118 de efetivo presente da 1ª Cia?</em></p>
+        <div class="trace">SITUACAO_UNIDADE.EF_PRESENTE_QNT = 118   (linha evt_3a0091)
+   └─ EVENTO_IDT evt_3a0091
+        └─ EVENTO.ARQUIVO_IDT = arq_7b91f2
+             └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/relper_bi511_2026-09-09_matutino.xlsx
+                  hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)
+                  └─ abre o .xlsx → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔</div>
+        <p>Se fosse a versão escaneada, o mesmo caminho passaria também por <code>EXTRACAO</code>,
+          que responderia <em>com que ferramenta e modelo</em> aquele <code>118</code> foi lido
+          da imagem, e com que confiança. É a tese de linhagem inteira num único número.</p>
+      </li>
+
+    </ol>
+  </section>
+
+  <section>
     <h2><span class="n">Referência</span> As cinco fontes</h2>
-    <p>Cada linha é um bloco em <code>fontes:</code> no YAML. Uma fonte pode ter mais de uma
-      modalidade — o <code>RELPER</code> chega como planilha <em>ou</em> como PDF assinado, e o
-      <code>C2_B</code>, como texto <em>ou</em> como foto.</p>
+    <p>Cada linha da coluna &ldquo;Bloco no YAML&rdquo; é um conjunto de regras de/para dentro de
+      <code>fontes:</code> — <strong>não</strong> uma tabela. Uma fonte pode ter mais de um bloco,
+      um por forma de entrada: o <code>RELPER</code> chega como planilha <em>ou</em> como PDF
+      assinado, e o <code>C2_B</code>, como texto <em>ou</em> como foto. Todos escrevem nas
+      mesmas tabelas da coluna &ldquo;Grava em&rdquo;.</p>
     <div class="scroll">
       <table>
         <thead>
@@ -634,49 +885,49 @@ erDiagram
             <th scope="row">C2_A</th>
             <td><span class="mod">JSON</span></td>
             <td><code>posicao</code>, <code>mcc</code></td>
-            <td><code>EVENTO</code></td>
+            <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
             <td>Não — geometria já vem nativa</td>
           </tr>
           <tr>
             <th scope="row">C2_B</th>
             <td><span class="mod">TEXTO</span></td>
             <td><code>relato</code></td>
-            <td><code>EVENTO</code></td>
+            <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
             <td>LLM: tipo, função de combate, prioridade, confiabilidade, credibilidade</td>
           </tr>
           <tr>
             <th scope="row">C2_B</th>
             <td><span class="mod">IMAGEM</span></td>
             <td><code>incidente</code></td>
-            <td><code>EVENTO</code> + <code>ARQUIVO</code></td>
+            <td><code>RECEPCAO_BRUTA</code> + <code>ARQUIVO</code> → <code>EVENTO</code></td>
             <td>Não — a coordenada vem do metadado da foto</td>
           </tr>
           <tr>
             <th scope="row">RELPER</th>
             <td><span class="mod">PLANILHA</span></td>
             <td><code>situacao</code></td>
-            <td><code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
-            <td>Não — leitura de célula</td>
+            <td><code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td>Não — leitura direta de célula, sem <code>EXTRACAO</code></td>
           </tr>
           <tr>
             <th scope="row">RELPER</th>
             <td><span class="mod">PDF</span></td>
             <td><code>situacao_digitalizada</code></td>
-            <td><code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td><code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
             <td>OCR + LLM: unidade reportante</td>
           </tr>
           <tr>
             <th scope="row">FOGOS</th>
             <td><span class="mod">PDF</span></td>
             <td><code>relatorio_bombardeio</code></td>
-            <td><code>EVENTO</code></td>
+            <td><code>ARQUIVO</code> → <code>EVENTO</code></td>
             <td>OCR + LLM: data, prioridade</td>
           </tr>
           <tr>
             <th scope="row">VOZ</th>
             <td><span class="mod">AUDIO</span></td>
             <td><code>transcricao</code></td>
-            <td><code>EVENTO</code></td>
+            <td><code>ARQUIVO</code> → <code>EVENTO</code></td>
             <td>Transcrição de fala + LLM: data, prioridade, função</td>
           </tr>
         </tbody>
@@ -692,7 +943,7 @@ erDiagram
       job de transformação, não no YAML — o YAML só diz qual aplicar a cada campo.</p>
     <dl class="glossary">
       <div><dt>direto</dt><dd>Copia o valor sem mexer.</dd></div>
-      <div><dt>json</dt><dd>Extrai do payload JSON pelo caminho indicado.</dd></div>
+      <div><dt>json</dt><dd>Extrai um campo do payload JSON pelo caminho indicado. O payload fica preservado inteiro em <code>RECEPCAO_BRUTA</code>; a leitura acontece aqui.</dd></div>
       <div><dt>celula</dt><dd>Lê uma célula da planilha pelo cabeçalho decretado no formulário.</dd></div>
       <div><dt>ts_iso / ts_br</dt><dd>Texto vira data — no formato ISO ou no formato brasileiro.</dd></div>
       <div><dt>ponto_de_latlon</dt><dd>Par de números vira ponto geográfico.</dd></div>

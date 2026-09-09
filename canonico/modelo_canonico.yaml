@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-08
+  atualizado_em: 2026-09-09
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -43,6 +43,17 @@ metadados:
     teses. Entram a fonte RELPER e a modalidade PLANILHA, a entidade
     SITUACAO_UNIDADE, a referencia REF_ABREVIATURA e o indicador de mediacao
     por sistema de C2.
+  nota_2026_09_09: >-
+    Toda fonte passa a atravessar obrigatoriamente a camada Bronze antes da
+    Silver, para que o tratamento seja uniforme (dentro da especificidade de
+    cada modalidade). Antes disso, as fontes que chegavam como JSON (C2_A, C2_B)
+    iam da pasta landing/ direto para EVENTO, sem tabela Bronze — so os binarios
+    tinham ARQUIVO. Agora ha a entidade RECEPCAO_BRUTA: 1 linha por registro
+    JSON, com o payload cru preservado numa coluna, append-only. EVENTO ganha
+    RECEPCAO_IDT, o elo de linhagem simetrico ao ARQUIVO_IDT dos binarios.
+    Bronze fica com duas formas — RECEPCAO_BRUTA para payload estruturado que
+    cabe em coluna, ARQUIVO + EXTRACAO para binario cujos bytes vivem no
+    armazenamento de objetos — e nenhuma fonte pula a camada.
 
 
 # =============================================================================
@@ -185,21 +196,31 @@ dominios:
 # =============================================================================
 # ENTIDADES — as tabelas
 # =============================================================================
-# Sete tabelas, e cada uma tem um proposito de uma frase:
+# Oito tabelas, e cada uma tem um proposito de uma frase:
 #
-#   EVENTO            onde todas as fontes convergem
-#   SITUACAO_UNIDADE  os numeros que so o relatorio periodico tem
-#   ARQUIVO           manifesto do binario bruto (planilha, imagem, audio, PDF)
-#   EXTRACAO          registro de cada inferencia de IA
-#   REF_UNIDADE       hierarquia militar, para consulta
-#   REF_GAZETTEER     nome de lugar -> coordenada, para consulta
-#   REF_ABREVIATURA   abreviatura -> termo, para consulta
+#   RECEPCAO_BRUTA   payload cru das fontes que chegam como JSON (1 linha/registro)
+#   ARQUIVO          manifesto do binario bruto (planilha, imagem, audio, PDF)
+#   EXTRACAO         registro de cada inferencia de IA
+#   EVENTO           onde todas as fontes convergem
+#   SITUACAO_UNIDADE os numeros que so o relatorio periodico tem
+#   REF_UNIDADE      hierarquia militar, para consulta
+#   REF_GAZETTEER    nome de lugar -> coordenada, para consulta
+#   REF_ABREVIATURA  abreviatura -> termo, para consulta
+#
+# BRONZE tem duas formas, uma por natureza do payload, e TODA fonte passa por
+# uma delas antes da Silver — nenhuma vai da landing/ direto para EVENTO:
+#   - RECEPCAO_BRUTA guarda o registro estruturado inteiro (JSON do C2_A e C2_B)
+#     numa coluna de texto, 1 linha por registro;
+#   - ARQUIVO + EXTRACAO cobrem o binario, cujos bytes ficam no armazenamento de
+#     objetos e nao cabem em coluna.
+# Formas diferentes, mesmo tratamento: cru, versionado, nunca normalizado.
 #
 # A regra que separa EVENTO de SITUACAO_UNIDADE, e que vale para qualquer fonte
 # futura: esta em EVENTO o que TODA fonte tem (quem, quando, onde, por onde
-# chegou, de que arquivo veio). Vira tabela de extensao o que SO UMA fonte tem.
-# Foto, audio e relato livre nao tem atributo proprio — produzem ARQUIVO e
-# EVENTO e mais nada. A planilha tem, e e a unica: por isso ha uma extensao, e
+# chegou, de que registro bruto veio). Vira tabela de extensao o que SO UMA
+# fonte tem. Foto, audio e relato livre nao tem atributo proprio — produzem,
+# conforme a modalidade, uma linha de RECEPCAO_BRUTA ou de ARQUIVO, mais um
+# EVENTO, e nada alem. A planilha tem, e e a unica: por isso ha uma extensao, e
 # uma so.
 # =============================================================================
 
@@ -277,12 +298,15 @@ entidades:
       RELATO_TXT:
         {tipo: string, nulo: true,
          descricao: "Narrativa livre, quando houver. E a entrada da extracao por modelo de linguagem. Sufixo TXT conforme o termo TEXTO do Art. 138."}
+      RECEPCAO_IDT:
+        {tipo: string, nulo: true, referencia: RECEPCAO_BRUTA,
+         descricao: "Linha de RECEPCAO_BRUTA que originou o evento, quando a fonte chegou como JSON. Primeiro elo da rastreabilidade para fontes estruturadas: leva ate o registro cru, antes de qualquer leitura. Exclui-se com ARQUIVO_IDT — um evento vem de um registro JSON ou de um arquivo binario, nao dos dois."}
       ARQUIVO_IDT:
         {tipo: string, nulo: true, referencia: ARQUIVO,
-         descricao: "Arquivo bruto que originou o evento. Primeiro elo da rastreabilidade."}
+         descricao: "Arquivo binario bruto que originou o evento (foto, planilha, PDF, audio). Primeiro elo da rastreabilidade para fontes binarias — o papel que RECEPCAO_IDT faz para as fontes JSON."}
       EXTRACAO_IDT:
         {tipo: string, nulo: true, referencia: EXTRACAO,
-         descricao: "Inferencia que produziu o dado. Segundo elo: leva ate o modelo e a versao de prompt."}
+         descricao: "Inferencia que produziu o dado. Segundo elo: leva ate o modelo e a versao de prompt. So existe quando houve IA no caminho (ARQUIVO -> EXTRACAO); as fontes JSON puras nao preenchem."}
       EXTRACAO_MODELO_NOME:
         {tipo: string, nulo: true,
          descricao: "Modelo que extraiu o dado, repetido aqui de proposito para que a consulta mostre a origem sem precisar de juncao."}
@@ -376,11 +400,42 @@ entidades:
           Lakehouse captura o sinal; o pipeline relacional o destroi na carga.
 
   # ---------------------------------------------------------------------------
+  RECEPCAO_BRUTA:
+    descricao: >-
+      Uma linha para cada registro que chega ja estruturado — hoje, o JSON do
+      C2_A e do C2_B. O registro cru vai inteiro para uma coluna de texto, sem
+      um campo sequer ser lido, e a tabela e append-only: reprocessar nunca
+      apaga nem altera o que ja entrou.
+
+      Ela existe para que a camada Bronze trate toda fonte do mesmo jeito. O
+      binario ja tinha onde pousar antes de ser interpretado (ARQUIVO); o JSON
+      nao tinha, e ia da pasta landing/ direto para a Silver. Com RECEPCAO_BRUTA
+      as duas modalidades de entrada — a que cabe numa coluna e a que precisa
+      ficar como arquivo — recebem o mesmo tratamento, dentro da especificidade
+      de cada uma.
+
+      E tambem o palco do argumento de schema-on-read: o payload esta aqui
+      preservado e o esquema so e aplicado na leitura, em EVENTO. Da para
+      ingerir uma fonte antes de modela-la.
+    abreviatura: RCPB
+    camada: bronze
+    chave: [RECEPCAO_IDT]
+    campos:
+      RECEPCAO_IDT:      {tipo: string, nulo: false, descricao: "Identificador do registro bruto. Calculado do sistema de origem, do identificador de origem e do hash, para que reprocessar o mesmo registro nao gere linha nova."}
+      SISTEMA_ORIGEM_COD: {tipo: string, nulo: false, dominio: sistema_origem, descricao: Sistema que produziu o registro.}
+      MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: "Modalidade do registro. Hoje sempre JSON; a coluna existe para o dia em que outra forma estruturada (XML, CSV) chegar por aqui."}
+      CONTEUDO_JSON_TXT: {tipo: string, nulo: false, descricao: "O registro cru, JSON inteiro, como texto. Nenhum campo foi lido ainda. Mesma propriedade CONTEUDO do hash abaixo."}
+      CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo registro reenviado nao gera linha nova."}
+      ORIGEM_URI_TXT:    {tipo: string, nulo: false, descricao: "Endereco do arquivo em landing/ de onde o registro foi lido. Fecha a volta ate o byte que chegou."}
+      RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o registro entrou na plataforma.}
+
+  # ---------------------------------------------------------------------------
   ARQUIVO:
     descricao: >-
-      Manifesto de um arquivo bruto: planilha, imagem, audio ou documento. O
-      binario fica no armazenamento de objetos; aqui ficam o endereco, o hash e
-      o conteudo ja extraido.
+      Manifesto de um arquivo binario bruto: planilha, imagem, audio ou
+      documento. O binario fica no armazenamento de objetos; aqui ficam o
+      endereco, o hash e o conteudo ja extraido. E o equivalente de
+      RECEPCAO_BRUTA para o dado que nao cabe numa coluna.
     abreviatura: ARQ
     camada: bronze
     chave: [ARQUIVO_IDT]
@@ -492,7 +547,8 @@ entidades:
 #
 # Transformacoes disponiveis (o codigo delas vive no job, nao aqui):
 #   direto             copia o valor
-#   json               extrai do payload JSON pelo caminho indicado
+#   json               extrai pelo caminho indicado do payload JSON, que fica
+#                      preservado em RECEPCAO_BRUTA.CONTEUDO_JSON_TXT
 #   celula             le uma celula da planilha pelo cabecalho decretado
 #   ts_iso / ts_br     texto -> data
 #   ponto_de_latlon    par de numeros -> ponto
@@ -515,8 +571,13 @@ fontes:
   # Absorve o `gps` e o `obstaculo` da fonte SIM removida — e ganha com isso:
   # geometria nativa em vez de par de numeros solto, e fracao resolvida contra
   # REF_UNIDADE em vez de sigla de batalhao em texto livre.
+  #
+  # O payload cai primeiro em RECEPCAO_BRUTA (1 linha por registro, JSON cru
+  # inteiro); as transformacoes `json` abaixo leem de la, nao da landing/. O
+  # campo `_recepcao` grava o elo de linhagem em EVENTO.RECEPCAO_IDT.
   C2_A:
     modalidade: JSON
+    bronze: RECEPCAO_BRUTA
     destino: EVENTO
     entidades:
 
@@ -526,6 +587,7 @@ fontes:
           hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
           fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
           coordenadas: {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: POSICAO}
@@ -544,6 +606,7 @@ fontes:
           geometria:   {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt,
                         observacao: "ponto, LINESTRING ou POLYGON; o desenho a mao livre e uma LINESTRING de muitos vertices"}
           especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
@@ -553,7 +616,13 @@ fontes:
   # --- C2_B: texto livre e incidente com foto. --------------------------------
   # Absorve o `relt_intel` e o `seg_area` da fonte SIM. O seg_area era duplicata
   # literal do incidente daqui, so que empobrecida — sem foto e sem prioridade.
+  #
+  # O C2_B exporta JSON: cada relato e cada incidente e um registro que cai
+  # primeiro em RECEPCAO_BRUTA. O incidente, alem disso, referencia um arquivo
+  # de imagem — que gera uma linha em ARQUIVO. E o caso das duas formas de
+  # Bronze na mesma fonte: o registro na RECEPCAO_BRUTA, a foto no ARQUIVO.
   C2_B:
+    bronze: RECEPCAO_BRUTA
     destino: EVENTO
     entidades:
 
@@ -565,6 +634,7 @@ fontes:
           localizacao: {campo: GEOMETRIA_WKT, transformacao: dms_para_ponto,
                         observacao: "'Sem localizacao' vira vazio, e nao erro: relato sem coordenada e caso legitimo."}
           situacao:    {campo: RELATO_TXT, transformacao: direto}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
@@ -587,6 +657,8 @@ fontes:
           _geometria:  {campo: GEOMETRIA_WKT, transformacao: referencia,
                         referencia: ARQUIVO.CAPTURA_GEOMETRIA_WKT,
                         observacao: "vem do metadado da foto, nao do que o operador digitou"}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA,
+                        observacao: "o registro JSON do incidente; a foto em si vai para ARQUIVO pelo campo acima"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: IMAGEM}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: INCIDENTE}
@@ -727,4 +799,9 @@ fontes:
 # uma entidade de extensao no molde de SITUACAO_UNIDADE. So justifica-se quando
 # o esquema da fonte for fixado por norma — se for variavel, o lugar dele e uma
 # coluna semiestruturada, como ATRIBUTO_EXTRA_TXT.
+#
+# Nenhuma tabela Bronze nova por fonte: JSON entra em RECEPCAO_BRUTA, binario em
+# ARQUIVO. Uma fonte estruturada nova (ex.: um C2_C que exporte XML) so
+# acrescenta um bloco em `fontes` e, se a forma nao for JSON, um valor no
+# dominio `modalidade`.
 # =============================================================================
