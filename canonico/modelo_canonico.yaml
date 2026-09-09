@@ -54,6 +54,26 @@ metadados:
     Bronze fica com duas formas — RECEPCAO_BRUTA para payload estruturado que
     cabe em coluna, ARQUIVO + EXTRACAO para binario cujos bytes vivem no
     armazenamento de objetos — e nenhuma fonte pula a camada.
+  nota_operacao_2026_09_09: >-
+    Entra REF_OPERACAO e a coluna OPERACAO_COD (nao nula em EVENTO; carimbada
+    tambem em ARQUIVO e RECEPCAO_BRUTA). E a chave que une as fontes
+    heterogeneas e o recorte de toda visao Gold — sem ela, adestramentos
+    diferentes se misturam. O codigo e legivel (PERSEU_2026), e o hash interno
+    do C2_A vira chave alternativa (OPERACAO_ORIGEM_C2A_COD).
+
+    Decisao do usuario: SIDECAR EM TUDO. Todo arquivo em landing/ — xlsx, PDF,
+    imagem, audio — chega com um .json de proveniencia ao lado. O sidecar entra
+    em RECEPCAO_BRUTA; o binario, em ARQUIVO; ligados por ARQUIVO_IDT. Efeito:
+    EVENTO.RECEPCAO_IDT vira NAO NULO (todo evento nasce de um registro
+    estruturado), e a operacao vem SEMPRE do sidecar/JSON — uma regra so, sem
+    caso especial por modalidade. Some a regra antiga "RECEPCAO_IDT OU
+    ARQUIVO_IDT": foto, audio e agora planilha/PDF tem os dois. O conteudo do
+    arquivo (celulas, colunas) continua vindo do binario por celula/OCR.
+
+    Decisao do usuario: UMA operacao no estudo (seed operacoes.csv com uma
+    linha). Fallback contexto_operacao e a resolucao do hash ficam modelados
+    mas nao sao exercitados. Hierarquia de unidades continua a de tempo de paz
+    (sem organizacao para o combate / GITE).
 
 
 # =============================================================================
@@ -192,36 +212,64 @@ dominios:
       MATUTINO:   {rotulo: Remessa da manha}
       VESPERTINO: {rotulo: Remessa do fim do dia}
 
+  tipo_operacao:
+    descricao: Natureza da operacao que delimita o conjunto de dados.
+    valores:
+      ADESTRAMENTO: {rotulo: Exercicio de adestramento}
+      REAL:         {rotulo: Operacao real}
+    # No estudo de caso os dados sao de um exercicio de adestramento (sinteticos).
+    # A coluna existe para que a arquitetura nao presuma o tipo: uma operacao real
+    # entra pela mesma porta.
+
 
 # =============================================================================
 # ENTIDADES — as tabelas
 # =============================================================================
-# Oito tabelas, e cada uma tem um proposito de uma frase:
+# Nove tabelas, e cada uma tem um proposito de uma frase:
 #
-#   RECEPCAO_BRUTA   payload cru das fontes que chegam como JSON (1 linha/registro)
+#   RECEPCAO_BRUTA   registro estruturado cru de todo evento: o JSON ou o sidecar
 #   ARQUIVO          manifesto do binario bruto (planilha, imagem, audio, PDF)
 #   EXTRACAO         registro de cada inferencia de IA
 #   EVENTO           onde todas as fontes convergem
 #   SITUACAO_UNIDADE os numeros que so o relatorio periodico tem
+#   REF_OPERACAO     as operacoes que delimitam o estudo, para consulta
 #   REF_UNIDADE      hierarquia militar, para consulta
 #   REF_GAZETTEER    nome de lugar -> coordenada, para consulta
 #   REF_ABREVIATURA  abreviatura -> termo, para consulta
 #
-# BRONZE tem duas formas, uma por natureza do payload, e TODA fonte passa por
-# uma delas antes da Silver — nenhuma vai da landing/ direto para EVENTO:
-#   - RECEPCAO_BRUTA guarda o registro estruturado inteiro (JSON do C2_A e C2_B)
-#     numa coluna de texto, 1 linha por registro;
-#   - ARQUIVO + EXTRACAO cobrem o binario, cujos bytes ficam no armazenamento de
-#     objetos e nao cabem em coluna.
+# TODA fonte passa pela Bronze antes da Silver, e TODO evento nasce de um
+# registro estruturado em RECEPCAO_BRUTA — nada vai da landing/ direto para
+# EVENTO. Esse registro e:
+#   - o proprio JSON, quando a fonte ja e estruturada (C2_A, C2_B); ou
+#   - o SIDECAR: um pequeno JSON de proveniencia que acompanha TODO arquivo em
+#     landing/ (planilha, PDF, imagem, audio), mesmo nome, extensao .json. Nao
+#     se confia no binario para se descrever — mesmo principio do STANAG 4609.
+# O binario, quando existe, vira tambem uma linha em ARQUIVO; sidecar e binario
+# se ligam por ARQUIVO_IDT. So C2_A e o relato em texto do C2_B nao tem binario.
 # Formas diferentes, mesmo tratamento: cru, versionado, nunca normalizado.
+#
+# O QUE UNE TUDO: a OPERACAO. Toda linha de EVENTO carrega OPERACAO_COD (nao
+# nulo) — uma posicao de GPS, um relatorio de bombardeio e uma mensagem de voz
+# so se cruzam se pertencem a mesma operacao, e toda visao Gold e recortada por
+# ela. O valor vem SEMPRE do registro em RECEPCAO_BRUTA (o JSON ou o sidecar):
+# uma regra so, sem caso especial por modalidade. O conteudo do documento
+# (celulas da planilha, colunas do PDF) continua sendo lido do binario; o
+# sidecar carrega o que e ABOUT o arquivo (operacao, unidade remetente, data).
+# O OPERACAO_COD de ARQUIVO vem da pasta (landing/<operacao>/...), carimbado na
+# ingestao; serve de conferencia contra o do sidecar. Fallback, quase nunca
+# usado: arquivo sem sidecar -> hora + geo de captura dentro da janela e da
+# AREA_WKT de REF_OPERACAO (transformacao contexto_operacao).
+#
+# O estudo de caso e de UMA operacao: a seed operacoes.csv tem uma linha. O
+# aparato (resolucao do hash do C2_A, fallback por contexto) esta modelado para
+# que uma segunda operacao entre sem tocar em codigo, mas nao e exercitado aqui.
 #
 # A regra que separa EVENTO de SITUACAO_UNIDADE, e que vale para qualquer fonte
 # futura: esta em EVENTO o que TODA fonte tem (quem, quando, onde, por onde
 # chegou, de que registro bruto veio). Vira tabela de extensao o que SO UMA
-# fonte tem. Foto, audio e relato livre nao tem atributo proprio — produzem,
-# conforme a modalidade, uma linha de RECEPCAO_BRUTA ou de ARQUIVO, mais um
-# EVENTO, e nada alem. A planilha tem, e e a unica: por isso ha uma extensao, e
-# uma so.
+# fonte tem. Foto, audio e relato livre nao tem atributo proprio — produzem uma
+# linha de RECEPCAO_BRUTA (e, se ha binario, uma de ARQUIVO), mais um EVENTO, e
+# nada alem. A planilha tem, e e a unica: por isso ha uma extensao, e uma so.
 # =============================================================================
 
 entidades:
@@ -238,6 +286,9 @@ entidades:
       EVENTO_IDT:
         {tipo: string, nulo: false,
          descricao: "Identificador do evento. Calculado a partir da fonte, do identificador de origem e do instante, para que reprocessar o mesmo arquivo nao duplique linha. Numa planilha, entra tambem a unidade da linha: um arquivo produz um evento por linha."}
+      OPERACAO_COD:
+        {tipo: string, nulo: false, referencia: REF_OPERACAO,
+         descricao: "Operacao a que o evento pertence. Chave de juncao entre as fontes heterogeneas e recorte de toda visao Gold. nulo: false — evento fora de operacao nao existe neste estudo. Vem sempre do registro em RECEPCAO_BRUTA (o JSON nativo ou o sidecar); confere contra ARQUIVO.OPERACAO_COD, o palpite da pasta."}
       SISTEMA_ORIGEM_COD:
         {tipo: string, nulo: false, dominio: sistema_origem,
          descricao: Sistema que produziu o dado.}
@@ -299,11 +350,11 @@ entidades:
         {tipo: string, nulo: true,
          descricao: "Narrativa livre, quando houver. E a entrada da extracao por modelo de linguagem. Sufixo TXT conforme o termo TEXTO do Art. 138."}
       RECEPCAO_IDT:
-        {tipo: string, nulo: true, referencia: RECEPCAO_BRUTA,
-         descricao: "Linha de RECEPCAO_BRUTA que originou o evento, quando a fonte chegou como JSON. Primeiro elo da rastreabilidade para fontes estruturadas: leva ate o registro cru, antes de qualquer leitura. Exclui-se com ARQUIVO_IDT — um evento vem de um registro JSON ou de um arquivo binario, nao dos dois."}
+        {tipo: string, nulo: false, referencia: RECEPCAO_BRUTA,
+         descricao: "Registro estruturado que originou o evento: o JSON do C2_A/C2_B, ou o sidecar do arquivo. Primeiro elo da linhagem, e existe SEMPRE — todo arquivo, inclusive planilha e PDF, chega com sidecar."}
       ARQUIVO_IDT:
         {tipo: string, nulo: true, referencia: ARQUIVO,
-         descricao: "Arquivo binario bruto que originou o evento (foto, planilha, PDF, audio). Primeiro elo da rastreabilidade para fontes binarias — o papel que RECEPCAO_IDT faz para as fontes JSON."}
+         descricao: "Arquivo binario bruto por tras do evento (foto, planilha, PDF, audio), quando ha um. Vazio so para C2_A e para o relato em texto do C2_B. Quando preenchido, vem JUNTO com RECEPCAO_IDT — o sidecar e o binario sao dois registros brutos do mesmo evento."}
       EXTRACAO_IDT:
         {tipo: string, nulo: true, referencia: EXTRACAO,
          descricao: "Inferencia que produziu o dado. Segundo elo: leva ate o modelo e a versao de prompt. So existe quando houve IA no caminho (ARQUIVO -> EXTRACAO); as fontes JSON puras nao preenchem."}
@@ -402,31 +453,35 @@ entidades:
   # ---------------------------------------------------------------------------
   RECEPCAO_BRUTA:
     descricao: >-
-      Uma linha para cada registro que chega ja estruturado — hoje, o JSON do
-      C2_A e do C2_B. O registro cru vai inteiro para uma coluna de texto, sem
-      um campo sequer ser lido, e a tabela e append-only: reprocessar nunca
-      apaga nem altera o que ja entrou.
+      O registro estruturado cru de TODO evento. Duas formas do mesmo papel:
+      o proprio JSON, quando a fonte ja e estruturada (C2_A, C2_B); e o SIDECAR
+      — o pequeno JSON de proveniencia (operacao, unidade remetente, hora, geo,
+      rede) que acompanha todo arquivo em landing/, do xlsx ao .wav. O registro
+      cru vai inteiro para uma coluna de texto, sem um campo sequer ser lido, e
+      a tabela e append-only: reprocessar nunca apaga nem altera o que ja entrou.
 
-      Ela existe para que a camada Bronze trate toda fonte do mesmo jeito. O
-      binario ja tinha onde pousar antes de ser interpretado (ARQUIVO); o JSON
-      nao tinha, e ia da pasta landing/ direto para a Silver. Com RECEPCAO_BRUTA
-      as duas modalidades de entrada — a que cabe numa coluna e a que precisa
-      ficar como arquivo — recebem o mesmo tratamento, dentro da especificidade
-      de cada uma.
+      Granularidade: uma linha por unidade estruturada que chega. Para o C2_A e
+      uma por relato; para uma planilha RELPER e uma por arquivo (que depois se
+      abre em N eventos), como acontece em ARQUIVO. O sidecar carrega o que e
+      ABOUT o arquivo; o conteudo do arquivo (celulas, colunas) continua sendo
+      lido do binario.
 
-      E tambem o palco do argumento de schema-on-read: o payload esta aqui
-      preservado e o esquema so e aplicado na leitura, em EVENTO. Da para
-      ingerir uma fonte antes de modela-la.
+      Ela existe para que a camada Bronze trate toda fonte do mesmo jeito, e e o
+      palco do argumento de schema-on-read: o payload esta aqui preservado e o
+      esquema so e aplicado na leitura, em EVENTO. Da para ingerir uma fonte
+      antes de modela-la.
     abreviatura: RCPB
     camada: bronze
     chave: [RECEPCAO_IDT]
     campos:
       RECEPCAO_IDT:      {tipo: string, nulo: false, descricao: "Identificador do registro bruto. Calculado do sistema de origem, do identificador de origem e do hash, para que reprocessar o mesmo registro nao gere linha nova."}
       SISTEMA_ORIGEM_COD: {tipo: string, nulo: false, dominio: sistema_origem, descricao: Sistema que produziu o registro.}
-      MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: "Modalidade do registro. Hoje sempre JSON; a coluna existe para o dia em que outra forma estruturada (XML, CSV) chegar por aqui."}
+      OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao declarada no proprio registro (campo do JSON ou do sidecar). Valor de referencia da linhagem: e o que EVENTO herda, e o que se confere contra o palpite da pasta em ARQUIVO."}
+      MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: "Modalidade do registro: JSON (C2_A, C2_B) ou a do arquivo que o sidecar acompanha (PLANILHA, PDF, IMAGEM, AUDIO)."}
       CONTEUDO_JSON_TXT: {tipo: string, nulo: false, descricao: "O registro cru, JSON inteiro, como texto. Nenhum campo foi lido ainda. Mesma propriedade CONTEUDO do hash abaixo."}
       CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo registro reenviado nao gera linha nova."}
-      ORIGEM_URI_TXT:    {tipo: string, nulo: false, descricao: "Endereco do arquivo em landing/ de onde o registro foi lido. Fecha a volta ate o byte que chegou."}
+      ORIGEM_URI_TXT:    {tipo: string, nulo: false, descricao: "Endereco do .json em landing/ de onde o registro foi lido. Fecha a volta ate o byte que chegou."}
+      ARQUIVO_IDT:       {tipo: string, nulo: true, referencia: ARQUIVO, descricao: "Binario que este sidecar acompanha. Vazio so para o JSON do C2_A e o relato em texto do C2_B, que nao tem binario."}
       RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o registro entrou na plataforma.}
 
   # ---------------------------------------------------------------------------
@@ -441,6 +496,7 @@ entidades:
     chave: [ARQUIVO_IDT]
     campos:
       ARQUIVO_IDT:       {tipo: string, nulo: false, descricao: Identificador do arquivo.}
+      OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao a que o arquivo pertence, carimbada na ingestao pela convencao de pasta (landing/<operacao>/<tipo>/...). E o palpite do momento em que o arquivo pousou; o valor de referencia e o de RECEPCAO_BRUTA (sidecar) ou do cabecalho do documento. Divergencia entre os dois e sinal de qualidade, como a coordenada do EXIF contra a digitada."}
       CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo arquivo reenviado nao gera linha nova."}
       ARQUIVO_URI_TXT:   {tipo: string, nulo: false, descricao: Endereco no armazenamento de objetos.}
       MIME_TIPO_COD:     {tipo: string, nulo: false, descricao: "Tipo do arquivo. Ex.: image/jpeg, audio/wav, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet."}
@@ -472,6 +528,38 @@ entidades:
       INFERENCIA_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto na inferencia.}
       STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA."}
       EXECUCAO_DATA:     {tipo: timestamp, nulo: false, descricao: Quando a inferencia rodou.}
+
+  # ---------------------------------------------------------------------------
+  REF_OPERACAO:
+    descricao: >-
+      As operacoes e exercicios que delimitam o estudo. Tabela de consulta, e a
+      mais importante do conjunto: e ela que da contexto a todo evento. Sem ela,
+      dados de adestramentos diferentes se misturariam e as visoes Gold nao
+      teriam recorte.
+
+      O codigo e legivel — nome + ano, como PERSEU_2026 — e nao o hash que o
+      C2_A usa internamente. O hash entra como chave alternativa
+      (OPERACAO_ORIGEM_C2A_COD): e por ele que o dado do C2_A resolve para o
+      codigo legivel, e o mesmo codigo legivel que aparece no cabecalho da
+      planilha, no sidecar da foto e no nome da pasta em landing/.
+
+      A janela (INICIO_DATA / FIM_DATA) e a AREA_WKT servem de criterio de
+      atribuicao por contexto: um arquivo que chegou pelado, sem se identificar,
+      e atribuido a operacao cuja janela e area contem a hora e o ponto de
+      captura.
+    abreviatura: ROPE
+    camada: silver
+    chave: [OPERACAO_COD]
+    seed: seeds/operacoes.csv
+    campos:
+      OPERACAO_COD:            {tipo: string, nulo: false, descricao: "Codigo legivel: nome + ano, sem acento, termos separados por _. Ex.: PERSEU_2026."}
+      OPERACAO_NOME:           {tipo: string, nulo: false, descricao: "Designacao por extenso. Ex.: Operacao Perseu."}
+      OPERACAO_TIPO_COD:       {tipo: string, nulo: false, dominio: tipo_operacao, descricao: Exercicio de adestramento ou operacao real.}
+      OPERACAO_ORIGEM_C2A_COD: {tipo: string, nulo: true, descricao: "Identificador interno que o C2_A da a operacao (um hash). Chave alternativa: e por aqui que o dado do C2_A casa com a linha."}
+      INICIO_DATA:             {tipo: timestamp, nulo: false, descricao: Inicio da janela da operacao.}
+      FIM_DATA:                {tipo: timestamp, nulo: true, descricao: "Fim da janela. Vazio enquanto a operacao esta em curso."}
+      AREA_WKT:                {tipo: string, nulo: true, descricao: "Area de operacoes, em WKT. Criterio de atribuicao por contexto para arquivo sem identificacao propria."}
+      UNIDADE_RESP_COD:        {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade que comanda a operacao. No estudo, a brigada."}
 
   # ---------------------------------------------------------------------------
   REF_UNIDADE:
@@ -559,10 +647,21 @@ entidades:
 #   abreviatura        abreviatura digitada -> termo, consultando REF_ABREVIATURA
 #   dominio            valor da origem -> valor canonico, pelos sinonimos
 #   referencia         valor da origem -> codigo de uma tabela de consulta
+#   contexto_operacao  hora e ponto de captura -> OPERACAO_COD, pela janela e
+#                      AREA_WKT de REF_OPERACAO (fallback para arquivo sem identificacao)
 #   constante          grava um valor fixo
 #   derivado           calculado por regra declarada no campo de destino
 #   split_escala       'B2' -> confiabilidade B e credibilidade 2 (um campo, dois destinos)
 #   sobra              tudo que o formulario nao previa -> uma coluna JSON
+#
+# SIDECAR: nenhum arquivo se descreve bem. TODA midia em landing/ — xlsx, PDF,
+# imagem, audio — vem com um JSON ao lado (mesmo nome, extensao .json) com a
+# proveniencia: operacao, unidade remetente, hora, geo e — para audio — a rede
+# radio. O sidecar entra em RECEPCAO_BRUTA como qualquer registro estruturado;
+# o binario entra em ARQUIVO; os dois se ligam por ARQUIVO_IDT. O bloco da fonte
+# declara o sidecar em `sidecar:` e mapeia os campos dele como mapearia um JSON.
+# O CONTEUDO do arquivo (celulas, colunas) continua vindo do binario, via
+# `celula`/OCR — o sidecar so carrega o que e ABOUT o arquivo.
 # =============================================================================
 
 fontes:
@@ -587,6 +686,8 @@ fontes:
           hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
           fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
           coordenadas: {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "o C2_A manda o hash da operacao; casa com REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
@@ -606,6 +707,8 @@ fontes:
           geometria:   {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt,
                         observacao: "ponto, LINESTRING ou POLYGON; o desenho a mao livre e uma LINESTRING de muitos vertices"}
           especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "hash da operacao; casa com REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
@@ -620,7 +723,11 @@ fontes:
   # O C2_B exporta JSON: cada relato e cada incidente e um registro que cai
   # primeiro em RECEPCAO_BRUTA. O incidente, alem disso, referencia um arquivo
   # de imagem — que gera uma linha em ARQUIVO. E o caso das duas formas de
-  # Bronze na mesma fonte: o registro na RECEPCAO_BRUTA, a foto no ARQUIVO.
+  # Bronze na mesma fonte: o registro na RECEPCAO_BRUTA, a foto no ARQUIVO. O
+  # registro JSON do incidente FAZ o papel de sidecar da foto: carrega a
+  # operacao, a unidade e a hora que a imagem sozinha nao carrega de forma
+  # confiavel. A operacao e campo nativo do JSON (no faz de conta, o gerador a
+  # inclui — o C2_B nao a tinha).
   C2_B:
     bronze: RECEPCAO_BRUTA
     destino: EVENTO
@@ -634,6 +741,8 @@ fontes:
           localizacao: {campo: GEOMETRIA_WKT, transformacao: dms_para_ponto,
                         observacao: "'Sem localizacao' vira vazio, e nao erro: relato sem coordenada e caso legitimo."}
           situacao:    {campo: RELATO_TXT, transformacao: direto}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "campo nativo do JSON do C2_B (no faz de conta, o gerador o inclui)"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
@@ -649,16 +758,19 @@ fontes:
 
       incidente:
         modalidade: IMAGEM
+        sidecar: "o proprio registro JSON do incidente acompanha a foto (mesmo nome, .json)"
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           prioridade:  {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade}
           c_op:        {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "do sidecar; confere contra ARQUIVO.OPERACAO_COD (o palpite da pasta)"}
           foto:        {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
           _geometria:  {campo: GEOMETRIA_WKT, transformacao: referencia,
                         referencia: ARQUIVO.CAPTURA_GEOMETRIA_WKT,
                         observacao: "vem do metadado da foto, nao do que o operador digitou"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA,
-                        observacao: "o registro JSON do incidente; a foto em si vai para ARQUIVO pelo campo acima"}
+                        observacao: "o registro JSON do incidente (o sidecar); a foto em si vai para ARQUIVO pelo campo foto"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: IMAGEM}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: INCIDENTE}
@@ -673,24 +785,35 @@ fontes:
   # a OM que tem o arquivo devolve o xlsx; a que nao tem imprime, preenche a
   # mao, assina e digitaliza. Mesmo formulario, duas modalidades, e a segunda
   # atravessa OCR antes de chegar aos mesmos numeros.
+  #
+  # O xlsx chega com um sidecar .json (quem remeteu, qual operacao, data e
+  # turno da remessa) — o que e ABOUT o arquivo. As celulas da tabela, que sao
+  # o CONTEUDO, continuam vindo do binario por `celula`.
   RELPER:
+    bronze: RECEPCAO_BRUTA
     destino: EVENTO
     extensao: SITUACAO_UNIDADE
     cadencia: "duas remessas por dia, fixadas pelo EM da brigada"
     granularidade: >-
       Uma linha da planilha por subunidade. Um arquivo produz N eventos e N
-      linhas de SITUACAO_UNIDADE, todos apontando para o mesmo ARQUIVO_IDT.
+      linhas de SITUACAO_UNIDADE, todos apontando para o mesmo ARQUIVO_IDT e o
+      mesmo RECEPCAO_IDT (o sidecar).
     entidades:
 
       situacao:
         modalidade: PLANILHA
+        sidecar:
+          operacao:      {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                          observacao: "confere contra ARQUIVO.OPERACAO_COD (a pasta em landing/)"}
+          data_hora:     {campo: OCORRENCIA_DATA, transformacao: ts_iso}
+          turno:         {campo: TURNO_COD, transformacao: dominio, dominio: turno_relatorio}
         campos:
           _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
-                        regra: "codigo da OM remetente + data + turno + unidade da linha"}
+                        regra: "sidecar (OM remetente + data + turno) + celula (unidade da linha)"}
           fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
                         observacao: "celula preenchida a mao: '1a Cia', '1 Cia Fuz', '1ª Cia'. Resolve contra REF_UNIDADE, e o que nao casar e reportado, nao descartado."}
-          data_turno:  {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm"}
           arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: RELPER}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PLANILHA}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: SITUACAO_UNIDADE}
@@ -700,7 +823,6 @@ fontes:
         # As colunas decretadas pelo EM, que vao para a extensao.
         # `celula` le pelo cabecalho fixado no formulario.
         extensao:
-          Turno:        {campo: TURNO_COD, transformacao: dominio, dominio: turno_relatorio}
           Ef Prev:      {campo: EF_PREVISTO_QNT, transformacao: celula}
           Ef Pres:      {campo: EF_PRESENTE_QNT, transformacao: celula}
           Baixas Cmb:   {campo: BAIXA_COMBATE_QNT, transformacao: celula}
@@ -732,18 +854,27 @@ fontes:
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
         extraidos_por_llm: [UNIDADE_REPORTANTE_COD]
         observacao: >-
-          Os numeros passam por OCR antes de virar celula, e por isso esta
-          entidade gera linha em EXTRACAO enquanto a irma nao gera. Comparar as
-          duas sobre o mesmo formulario da a taxa de erro do OCR contra o valor
-          verdadeiro — ground truth de graca.
+          Herda o sidecar da irma: a operacao, a data e o turno vem do .json,
+          iguais nas duas. So o CONTEUDO muda de caminho — os numeros passam por
+          OCR antes de virar celula, e por isso esta entidade gera linha em
+          EXTRACAO enquanto a irma nao gera. Comparar as duas sobre o mesmo
+          formulario da a taxa de erro do OCR contra o valor verdadeiro — ground
+          truth de graca.
 
   # --- FOGOS: Relatorio de Bombardeio, PDF digitalizado. OCR + LLM. -----------
   # Absorve o `paf` da fonte SIM, que era duplicata empobrecida disto.
+  # O PDF chega com sidecar .json (operacao, OMA que produziu, hora do relatorio);
+  # as linhas de alvo continuam vindo por OCR.
   FOGOS:
     modalidade: PDF
+    bronze: RECEPCAO_BRUTA
     destino: EVENTO
     entidades:
       relatorio_bombardeio:
+        sidecar:
+          operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
+          oma:       {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                      observacao: "Orgao de Manobra da Artilharia que produziu o relatorio"}
         campos:
           col_A:       {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: numero do alvo}
           col_B:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
@@ -752,6 +883,8 @@ fontes:
           avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
                         transformacao: split_escala,
                         observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2"}
+          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: FOGOS}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
@@ -761,11 +894,24 @@ fontes:
         extraidos_por_llm: [OCORRENCIA_DATA, PRIORIDADE_COD]
 
   # --- VOZ: audio de radio. A cadeia mais longa: wav -> texto -> dado. --------
+  # O .wav nao se descreve. Vem com um SIDECAR .json do gravador de radio (voice
+  # logger): o gravador nao transcreve, mas SEMPRE carimba rede, frequencia,
+  # hora da transmissao, estacao de origem e — num exercicio — a operacao. O
+  # sidecar entra em RECEPCAO_BRUTA; o .wav, em ARQUIVO; a operacao sai do
+  # sidecar, o conteudo sai da transcricao + LLM.
   VOZ:
     modalidade: AUDIO
+    bronze: RECEPCAO_BRUTA
     destino: EVENTO
     entidades:
       transcricao:
+        modalidade: AUDIO
+        sidecar:
+          operacao:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
+          hora_transmissao: {campo: CHEGADA_DATA, transformacao: ts_iso,
+                             observacao: "quando a transmissao entrou na rede, do relogio do gravador"}
+          estacao:          {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                             observacao: "estacao de origem identificada pelo gravador; o indicativo de chamada casa com REF_UNIDADE"}
         campos:
           texto:    {campo: RELATO_TXT, transformacao: direto, observacao: saida do reconhecimento de fala}
           codinome: {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
@@ -773,6 +919,8 @@ fontes:
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
                              referencia: REF_GAZETTEER,
                              observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}
+          audio:       {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: VOZ}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: AUDIO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
@@ -804,4 +952,10 @@ fontes:
 # ARQUIVO. Uma fonte estruturada nova (ex.: um C2_C que exporte XML) so
 # acrescenta um bloco em `fontes` e, se a forma nao for JSON, um valor no
 # dominio `modalidade`.
+#
+# Fonte com arquivo (qualquer modalidade): alem do bloco em `fontes`, declarar o
+# `sidecar:` — o JSON de proveniencia que acompanha o arquivo. Vale para xlsx,
+# PDF, imagem e audio: um mecanismo so. Sem sidecar, a operacao e a unidade so
+# podem ser atribuidas por contexto (hora + area), com perda de certeza.
+# REF_OPERACAO nao muda: uma operacao a mais e uma linha na seed operacoes.csv.
 # =============================================================================

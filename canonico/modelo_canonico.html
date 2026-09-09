@@ -466,7 +466,8 @@
     <p class="eyebrow">ARQ_TEMAC · parte empírica · modelo_canonico.yaml</p>
     <h1>O modelo canônico em dois diagramas e um exemplo</h1>
     <p class="lead">Cinco sistemas de origem, seis modalidades de arquivo, uma única tabela de
-      destino. Esta página mostra o percurso que todo dado faz — e como, a partir de qualquer
+      destino — e uma <strong>operação</strong> que amarra tudo. Esta página mostra o percurso que
+      todo dado faz, o que permite cruzar fontes tão diferentes, e como, a partir de qualquer
       número na camada final, se volta ao registro bruto que o gerou.</p>
     <p class="meta">versão 3 · atualizado em 2026-09-09 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
   </header>
@@ -480,8 +481,9 @@
         <dt>Heterogeneidade</dt>
         <dd>A arquitetura ingere e integra dados de tipos muito diferentes — JSON, planilha,
           texto livre, imagem, áudio, PDF — sob um modelo canônico único. A coluna
-          <code>MODALIDADE_ORIGEM_COD</code> em <code>EVENTO</code> é o que permite contar
-          quantas formas físicas de dado uma consulta atravessou.</dd>
+          <code>MODALIDADE_ORIGEM_COD</code> em <code>EVENTO</code> permite contar quantas formas
+          físicas de dado uma consulta atravessou; a coluna <code>OPERACAO_COD</code> é o que
+          permite que essa consulta faça sentido — só se cruzam dados da mesma operação.</dd>
       </div>
       <div>
         <dt>Linhagem</dt>
@@ -501,7 +503,7 @@
       camada tem um trabalho e só um.</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA, ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
 flowchart TD
   subgraph FONTES["FONTES · sistemas de origem"]
     C2A["C2_A<br/>JSON com geometria"]
@@ -520,27 +522,30 @@ flowchart TD
   VOZ --> LAND
 
   subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
-    RCPB["RECEPCAO_BRUTA<br/>1 linha por registro JSON:<br/>payload cru inteiro, hash,<br/>ponteiro para a landing/"]
-    ARQ["ARQUIVO<br/>manifesto do binario:<br/>URI, hash, MIME, modalidade"]
+    RCPB["RECEPCAO_BRUTA<br/>o registro estruturado de TODO evento:<br/>o JSON do C2, ou o sidecar .json do arquivo.<br/>payload cru inteiro, hash, operacao"]
+    ARQ["ARQUIVO<br/>manifesto do binario (xlsx, pdf, foto, audio):<br/>URI, hash, MIME, operacao (da pasta)"]
     EXT["EXTRACAO<br/>1 linha por inferencia de IA:<br/>ferramenta, modelo, versao de prompt"]
   end
 
-  LAND -->|"registro estruturado: JSON"| RCPB
-  LAND -->|"binario: foto, audio, pdf, xlsx"| ARQ
+  LAND -->|"JSON nativo do C2, ou o sidecar .json<br/>que acompanha todo arquivo"| RCPB
+  LAND -->|"o binario: xlsx, pdf, foto, audio"| ARQ
   ARQ -->|"quando a IA le o arquivo:<br/>OCR / transcricao / LLM"| EXT
+  RCPB -.->|"o sidecar aponta para seu binario (ARQUIVO_IDT)"| ARQ
 
-  MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio<br/>gazetteer · abreviatura · split_escala · sobra"}}
+  MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio · gazetteer<br/>abreviatura · split_escala · sobra · contexto_operacao"}}
 
-  RCPB -->|"campos lidos do JSON pelo caminho indicado<br/>+ ponteiro de linhagem (RECEPCAO_IDT)"| MAP
-  ARQ -->|"ponteiro de linhagem (ARQUIVO_IDT);<br/>para foto, a coordenada do EXIF"| MAP
+  RCPB -->|"quem, quando, onde, a OPERACAO<br/>+ ponteiro de linhagem (RECEPCAO_IDT)"| MAP
+  ARQ -->|"conteudo do arquivo (celulas, colunas);<br/>ponteiro (ARQUIVO_IDT); geo do EXIF, na foto"| MAP
   EXT -->|"so os campos que a IA inferiu<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
 
   subgraph SEEDS["TABELAS DE CONSULTA · seeds"]
+    ROPE["REF_OPERACAO<br/>hash do C2 / 'Perseu 2026' / pasta<br/>viram PERSEU_2026"]
     RUNI["REF_UNIDADE<br/>'1a Cia Fuz' vira BI511C1"]
     RGAZ["REF_GAZETTEER<br/>'BR-154 km 43' vira ponto"]
     RABV["REF_ABREVIATURA<br/>'Fz' vira Fuzil"]
   end
 
+  ROPE -.-> MAP
   RUNI -.-> MAP
   RGAZ -.-> MAP
   RABV -.-> MAP
@@ -554,9 +559,9 @@ flowchart TD
   MAP ==>|"so RELPER"| SIT
   EVT -->|"1 : 0..1"| SIT
 
-  EVT -.->|"RECEPCAO_IDT · elo 1 (fonte JSON)"| RCPB
-  EVT -.->|"ARQUIVO_IDT · elo 1 (fonte binaria)"| ARQ
-  EVT -.->|"EXTRACAO_IDT · elo 2 da linhagem"| EXT
+  EVT -.->|"RECEPCAO_IDT · elo 1, sempre"| RCPB
+  EVT -.->|"ARQUIVO_IDT · o binario, quando ha"| ARQ
+  EVT -.->|"EXTRACAO_IDT · elo 2, quando houve IA"| EXT
 </pre>
       <figcaption>Prancha 1 — o percurso do dado. Seta cheia é fluxo; seta pontilhada é um
         ponteiro (a linhagem); seta grossa é o fluxo principal, onde toda fonte cai. A prancha
@@ -597,14 +602,14 @@ flowchart TD
       <li>
         <div>
           <h3>Bronze — <code>RECEPCAO_BRUTA</code>, <code>ARQUIVO</code> e <code>EXTRACAO</code></h3>
-          <p>Toda fonte passa por aqui antes da Silver, sob uma de duas formas, conforme o
-            payload caiba ou não numa coluna. <code>RECEPCAO_BRUTA</code> guarda o registro que
-            já chega estruturado — o JSON do <code>C2_A</code> e do <code>C2_B</code> — inteiro,
-            uma linha por registro, sem ler um campo sequer. <code>ARQUIVO</code> cataloga cada
-            binário — onde está, seu <em>hash</em>, seu tipo. <code>EXTRACAO</code> grava uma
-            linha por inferência de IA sobre um binário: qual ferramenta (reconhecimento óptico,
-            transcrição de fala, um modelo de linguagem local), qual modelo, qual versão de
-            prompt, quanto tempo levou. Uma planilha lida direto, sem IA, não gera linha aqui.</p>
+          <p>Toda fonte passa por aqui antes da Silver. <code>RECEPCAO_BRUTA</code> guarda o
+            registro estruturado de <em>todo</em> evento — o JSON nativo do <code>C2</code>, ou o
+            <em>sidecar</em>, o pequeno <code>.json</code> de proveniência que acompanha cada
+            arquivo (operação, unidade, data). <code>ARQUIVO</code> cataloga cada binário — onde
+            está, seu <em>hash</em>, seu tipo, a operação da pasta. <code>EXTRACAO</code> grava
+            uma linha por inferência de IA sobre um binário: qual ferramenta (reconhecimento
+            óptico, transcrição de fala, um modelo de linguagem local), qual modelo, qual versão
+            de prompt, quanto tempo levou. Uma planilha lida direto, sem IA, não gera linha aqui.</p>
         </div>
       </li>
       <li>
@@ -639,28 +644,39 @@ flowchart TD
       <code>FK</code> marca a chave estrangeira (aponta para a linha de outra tabela).</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: RECEPCAO_BRUTA origina EVENTO quando a fonte é JSON; ARQUIVO é entrada de EXTRACAO e origina EVENTO quando a fonte é binária; EXTRACAO produz EVENTO; EVENTO estende SITUACAO_UNIDADE numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
+      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: REF_OPERACAO dá contexto a EVENTO, ARQUIVO e RECEPCAO_BRUTA; RECEPCAO_BRUTA origina EVENTO e, quando é sidecar, aponta para o ARQUIVO da mídia; ARQUIVO é entrada de EXTRACAO e origina EVENTO; EXTRACAO produz EVENTO; EVENTO estende SITUACAO_UNIDADE numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
 erDiagram
-  RECEPCAO_BRUTA ||--o{ EVENTO        : "origina (fonte JSON)"
+  REF_OPERACAO   ||--o{ EVENTO         : "contexto"
+  REF_OPERACAO   ||--o{ ARQUIVO        : "contexto"
+  REF_OPERACAO   ||--o{ RECEPCAO_BRUTA : "contexto"
+  RECEPCAO_BRUTA ||--|{ EVENTO         : "origina — sempre (JSON ou sidecar)"
+  RECEPCAO_BRUTA ||--o| ARQUIVO        : "sidecar do arquivo"
   ARQUIVO     ||--o{ EXTRACAO         : "e entrada de"
-  ARQUIVO     ||--o{ EVENTO           : "origina (fonte binaria)"
+  ARQUIVO     ||--o{ EVENTO           : "e o binario de"
   EXTRACAO    ||--o{ EVENTO           : "produz"
   EVENTO      ||--o| SITUACAO_UNIDADE : "estende (1 : 0..1)"
   REF_UNIDADE ||--o{ EVENTO           : "unidade reportante"
   REF_UNIDADE ||--o{ REF_UNIDADE      : "unidade superior"
 
+  REF_OPERACAO {
+    string OPERACAO_COD PK
+    string OPERACAO_NOME
+    string OPERACAO_ORIGEM_C2A_COD
+    timestamp INICIO_DATA
+    string AREA_WKT
+  }
   RECEPCAO_BRUTA {
     string RECEPCAO_IDT PK
-    string SISTEMA_ORIGEM_COD
+    string OPERACAO_COD FK
     string MODALIDADE_COD
     string CONTEUDO_JSON_TXT
-    string CONTEUDO_HASH_COD
+    string ARQUIVO_IDT FK
   }
   ARQUIVO {
     string ARQUIVO_IDT PK
+    string OPERACAO_COD FK
     string CONTEUDO_HASH_COD
     string MIME_TIPO_COD
-    string MODALIDADE_COD
     string EXTRAIDO_TXT
   }
   EXTRACAO {
@@ -672,12 +688,12 @@ erDiagram
   }
   EVENTO {
     string EVENTO_IDT PK
+    string OPERACAO_COD FK
     string SISTEMA_ORIGEM_COD
     string MODALIDADE_ORIGEM_COD
     string TIPO_COD
     string FUNCAO_COMBATE_COD
     string FUNCAO_C2_INDIC
-    string GEOMETRIA_WKT
     string RECEPCAO_IDT FK
     string ARQUIVO_IDT FK
     string EXTRACAO_IDT FK
@@ -690,10 +706,12 @@ erDiagram
     string ATRIBUTO_EXTRA_TXT
   }
 </pre>
-      <figcaption>Prancha 2 — as oito tabelas e suas ligações por chave. O losango cheio marca o
+      <figcaption>Prancha 2 — as nove tabelas e suas ligações por chave. O losango cheio marca o
         lado &ldquo;um&rdquo; da relação; o pé-de-galinha marca o lado &ldquo;muitos&rdquo;.
-        <code>EVENTO</code> traz <code>RECEPCAO_IDT</code> <em>ou</em> <code>ARQUIVO_IDT</code>,
-        nunca os dois.</figcaption>
+        <code>OPERACAO_COD</code> aparece nas três tabelas brutas e em <code>EVENTO</code>: é a
+        coluna que atravessa tudo. Todo <code>EVENTO</code> tem um <code>RECEPCAO_IDT</code> (o
+        JSON ou o sidecar — daí o traço cheio); tem também <code>ARQUIVO_IDT</code> quando há um
+        binário por trás, que é quase sempre.</figcaption>
       <details>
         <summary>Código-fonte Mermaid</summary>
         <pre><code class="src-view"></code></pre>
@@ -705,64 +723,172 @@ erDiagram
       o resultado já entra gravado em <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code>.
       <code>REF_UNIDADE</code> aparece porque <code>EVENTO.UNIDADE_REPORTANTE_COD</code> guarda o
       código que ela define — e aponta para si mesma, porque toda unidade tem uma superior (menos
-      a brigada, no topo).</p>
+      a brigada, no topo). <code>REF_OPERACAO</code> aparece porque <code>OPERACAO_COD</code> é
+      chave estrangeira de verdade em três tabelas: é o contexto que não se resolve e some, fica
+      gravado.</p>
   </section>
 
   <section>
-    <h2><span class="n">De ponta a ponta</span> Uma planilha com duas linhas, do arquivo ao número rastreável</h2>
+    <h2><span class="n">O elo</span> O que une tudo: a operação</h2>
+    <p>Uma posição de GPS, um relatório de bombardeio, uma foto de incidente e uma mensagem de
+      voz só podem ser cruzados se pertencem à <strong>mesma operação</strong>. É a chave de
+      junção entre as fontes heterogêneas — e o recorte de toda visão da camada Gold: uma carta
+      de situação é sempre <em>de uma operação</em>. Por isso <code>EVENTO.OPERACAO_COD</code>
+      não é nulo: evento fora de operação não existe neste estudo.</p>
+
+    <h3>A tabela <code>REF_OPERACAO</code></h3>
+    <p>Uma seed pequena e curada, no molde de <code>REF_UNIDADE</code>. O código é
+      <strong>legível</strong> — nome + ano — e não o <em>hash</em> que o <code>C2_A</code> usa
+      por dentro; o hash entra como chave alternativa, e é por ele que o dado do
+      <code>C2_A</code> encontra a linha.</p>
+    <div class="scroll">
+      <table class="mini">
+        <tbody>
+          <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2026</code></td></tr>
+          <tr><th scope="row">OPERACAO_NOME</th><td>Operação Perseu</td></tr>
+          <tr><th scope="row">OPERACAO_TIPO_COD</th><td><code>ADESTRAMENTO</code></td></tr>
+          <tr><th scope="row">OPERACAO_ORIGEM_C2A_COD</th><td><code>a3f9c1e0…</code> &nbsp;(o hash do C2_A)</td></tr>
+          <tr><th scope="row">INICIO_DATA · FIM_DATA</th><td><code>2026-05-04</code> … <code>2026-05-18</code></td></tr>
+          <tr><th scope="row">AREA_WKT</th><td><code>POLYGON((…))</code> &nbsp;(a área de operações)</td></tr>
+          <tr><th scope="row">UNIDADE_RESP_COD</th><td><code>BDA51</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A janela e a área servem de rede de segurança: um arquivo que chegou sem se identificar é
+      atribuído à operação cuja <code>INICIO/FIM</code> e <code>AREA_WKT</code> contêm a hora e o
+      ponto de captura (a transformação <code>contexto_operacao</code>).</p>
+
+    <h3>O sidecar: uma forma só de dar contexto a qualquer arquivo</h3>
+    <p>Um <code>.xlsx</code>, um PDF, uma foto, um <code>.wav</code> — nenhum se descreve bem: quem
+      remeteu, quando, em que operação. A prática (arquivos de imagem de reconhecimento,
+      gravadores de rádio, o padrão STANAG 4609) é <strong>não confiar no binário para se
+      descrever</strong>. Aqui a regra vale para <em>todo</em> arquivo em <code>landing/</code>:
+      ele chega acompanhado de um pequeno JSON de mesmo nome — o <em>sidecar</em> — com a
+      proveniência.</p>
+    <pre class="sheet">landing/perseu_2026/relper/relper_bi511_matutino.xlsx     ← o binário    → ARQUIVO
+landing/perseu_2026/relper/relper_bi511_matutino.json     ← o sidecar    → RECEPCAO_BRUTA
+
+  relper_bi511_matutino.json
+  {
+    "operacao":     "PERSEU_2026",
+    "om_remetente": "1o Btl Inf Mtz / 511",
+    "data_hora":    "2026-09-09T06:00:00Z",
+    "turno":        "MATUTINO"
+  }</pre>
+    <p>O sidecar entra em <code>RECEPCAO_BRUTA</code> exatamente como o JSON do <code>C2_A</code>;
+      o binário entra em <code>ARQUIVO</code>; os dois se ligam por <code>ARQUIVO_IDT</code>. O que
+      é <em>sobre</em> o arquivo (operação, unidade, data) vem do sidecar; o <em>conteúdo</em> — as
+      células da planilha, as colunas do PDF — continua sendo lido do binário, por
+      <code>celula</code> ou OCR.</p>
+    <p>Para o áudio o sidecar vem do <em>voice logger</em>: o gravador não transcreve, mas sempre
+      carimba rede, frequência, hora e, num exercício, a operação. No <code>C2_B</code>, o registro
+      JSON do incidente <em>já é</em> o sidecar da foto — não foi preciso inventar nada, só
+      reconhecer o papel que ele cumpre.</p>
+
+    <h3>Como a operação chega, por modalidade</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th scope="col">Fonte</th><th scope="col">A operação vem de</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mod">JSON</span> C2_A</td><td>campo nativo — é o <em>hash</em>, resolvido contra a chave alternativa</td></tr>
+          <tr><td><span class="mod">JSON</span> C2_B relato</td><td>campo nativo no payload</td></tr>
+          <tr><td>C2_B incidente · RELPER · FOGOS · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
+          <tr><td>arquivo sem sidecar (fallback)</td><td>hora + geo de captura dentro da janela e da área de <code>REF_OPERACAO</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note"><b>O palpite e a referência.</b> A operação é carimbada em
+      <code>ARQUIVO.OPERACAO_COD</code> pela pasta de <code>landing/</code> no momento da
+      ingestão — é o que está sempre disponível. O valor <em>de referência</em> é o do sidecar ou
+      do cabeçalho. Divergência entre os dois é sinal de qualidade, do mesmo tipo que a
+      coordenada do EXIF contra a que o operador digitou.</div>
+  </section>
+
+  <section>
+    <h2><span class="n">De ponta a ponta</span> Uma planilha e seu sidecar, do arquivo ao número rastreável</h2>
     <p>Um exemplo mínimo e concreto, para fixar o mecanismo. O <code>1º/511º BI Mtz</code> remete
       o relatório periódico da manhã: um arquivo Excel com <strong>duas observações</strong> (uma
       linha por companhia) e <strong>duas colunas de medida</strong> (efetivo presente e viaturas
-      operacionais). Segue-se cada linha da tabela abaixo à medida que ela desce pelas camadas.</p>
+      operacionais), mais o <strong>sidecar</strong>. Segue-se tudo à medida que desce pelas
+      camadas.</p>
 
     <ol class="walk">
 
       <li>
         <h3>O arquivo, como sai da unidade <span class="tag">origem</span></h3>
-        <p>O cabeçalho é fixado pelo estado-maior da brigada; ninguém redigita cabeçalho de
-          planilha. As duas linhas de dados são o que varia.</p>
+        <p>O <code>1º/511º BI Mtz</code> remete dois arquivos: a planilha e o seu
+          <strong>sidecar</strong> — o <code>.json</code> de proveniência, gerado pelo portal de
+          submissão. Os cabeçalhos das colunas da planilha são fixados pelo estado-maior da
+          brigada; as duas linhas de dados são o que varia.</p>
         <pre class="sheet">relper_bi511_2026-09-09_matutino.xlsx            (14,8 KB)
-
-  Data/hora: 09/09/2026 06:00     Turno: Matutino     Formulário: v2
 
   Fração              | Ef Pres | Vtr Op
   --------------------|---------|-------
   1ª Cia Fuz/511      |   118   |   11
-  2ª Cia Fuz/511      |   121   |   12</pre>
+  2ª Cia Fuz/511      |   121   |   12
+
+relper_bi511_2026-09-09_matutino.json           (o sidecar)
+
+  { "operacao": "PERSEU_2026", "om_remetente": "1o Btl Inf Mtz / 511",
+    "data_hora": "2026-09-09T06:00:00Z", "turno": "MATUTINO" }</pre>
+        <p>A planilha carrega o <em>conteúdo</em> (os números); o sidecar carrega o que é
+          <em>sobre</em> o arquivo (operação, quem remeteu, quando).</p>
       </li>
 
       <li>
-        <h3><code>landing/</code> — o byte, intacto <span class="tag">object storage</span></h3>
-        <p>O arquivo é copiado para o armazenamento de objetos exatamente como chegou. Nenhuma
-          célula foi lida. Se a coluna <code>Vtr Op</code> nem existisse no formulário oficial, o
-          arquivo entraria do mesmo jeito — o esquema só será exigido na leitura.</p>
-        <pre class="sheet">s3a://lakehouse/landing/relper/relper_bi511_2026-09-09_matutino.xlsx</pre>
+        <h3><code>landing/</code> — os bytes, intactos <span class="tag">object storage</span></h3>
+        <p>O par é copiado para o armazenamento de objetos exatamente como chegou. Nenhuma célula
+          foi lida. Se a coluna <code>Vtr Op</code> nem existisse no formulário oficial, o arquivo
+          entraria do mesmo jeito — o esquema só será exigido na leitura.</p>
+        <pre class="sheet">s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.xlsx
+s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.json</pre>
       </li>
 
       <li>
-        <h3><code>ARQUIVO</code> — uma linha por arquivo <span class="tag bronze">bronze</span></h3>
-        <p>O manifesto do binário. Repare: são duas observações dentro do arquivo, mas
-          <strong>uma só linha aqui</strong> — a planilha é um documento único. O desdobramento
-          em duas acontece só na Silver.</p>
+        <h3><code>ARQUIVO</code> — o binário, uma linha <span class="tag bronze">bronze</span></h3>
+        <p>O manifesto do <code>.xlsx</code>. São duas observações dentro do arquivo, mas
+          <strong>uma só linha aqui</strong> — a planilha é um documento único; o desdobramento
+          em duas acontece na Silver.</p>
         <div class="scroll">
           <table class="mini">
             <tbody>
               <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code></td></tr>
+              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2026</code> &nbsp;(da pasta <code>landing/perseu_2026/…</code>)</td></tr>
               <tr><th scope="row">CONTEUDO_HASH_COD</th><td><code>sha256:9f3c1a4e…</code></td></tr>
-              <tr><th scope="row">ARQUIVO_URI_TXT</th><td><code>s3a://…/landing/relper/relper_bi511_2026-09-09_matutino.xlsx</code></td></tr>
+              <tr><th scope="row">ARQUIVO_URI_TXT</th><td><code>s3a://…/perseu_2026/relper/relper_bi511_2026-09-09_matutino.xlsx</code></td></tr>
               <tr><th scope="row">MIME_TIPO_COD</th><td><code>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code></td></tr>
               <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
-              <tr><th scope="row">ARQUIVO_TAMANHO_QNT</th><td><code>14832</code></td></tr>
               <tr><th scope="row">RECEBIMENTO_DATA</th><td><code>2026-09-09T09:12:07Z</code></td></tr>
             </tbody>
           </table>
         </div>
-        <div class="note"><b>Contraste com o JSON.</b> Se essas duas observações tivessem chegado
-          como dois registros JSON do <code>C2_A</code>, seriam <b>duas linhas em
-          <code>RECEPCAO_BRUTA</code></b> — uma por registro, com o JSON cru inteiro numa coluna.
-          Planilha é documento (1 linha em <code>ARQUIVO</code>); lote JSON é embalagem de
-          registros independentes (N linhas em <code>RECEPCAO_BRUTA</code>). É a única diferença
-          de tratamento, e ela vem da natureza do dado, não de uma decisão arbitrária.</div>
+      </li>
+
+      <li>
+        <h3><code>RECEPCAO_BRUTA</code> — o sidecar, uma linha <span class="tag bronze">bronze</span></h3>
+        <p>O sidecar entra cru, inteiro, numa coluna de texto — sem um campo ser lido. É o mesmo
+          tratamento que o JSON do <code>C2_A</code> recebe. Uma linha por arquivo remetido (que
+          depois vira dois eventos).</p>
+        <div class="scroll">
+          <table class="mini">
+            <tbody>
+              <tr><th scope="row">RECEPCAO_IDT</th><td><code>rcp_c4d80a</code></td></tr>
+              <tr><th scope="row">SISTEMA_ORIGEM_COD</th><td><code>RELPER</code></td></tr>
+              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2026</code> &nbsp;(do próprio sidecar — o valor de referência)</td></tr>
+              <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
+              <tr><th scope="row">CONTEUDO_JSON_TXT</th><td><code>{"operacao":"PERSEU_2026","om_remetente":…}</code></td></tr>
+              <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code> &nbsp;(liga o sidecar ao binário)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><b>O palpite e a referência.</b> A operação aparece <em>duas</em> vezes:
+          em <code>ARQUIVO</code> ela veio da pasta (<code>landing/perseu_2026/…</code>), carimbada
+          na ingestão; em <code>RECEPCAO_BRUTA</code> ela veio do próprio sidecar. É esta segunda
+          que <code>EVENTO</code> herda. As duas concordando é o esperado; divergirem seria sinal
+          de arquivo na pasta errada — do mesmo tipo que a coordenada do EXIF contra a digitada.</div>
       </li>
 
       <li>
@@ -788,19 +914,23 @@ erDiagram
         <h3>De/para — o job lê o <code>modelo_canonico.yaml</code> e monta o SQL <span class="tag">transformação</span></h3>
         <p>Para <em>cada</em> uma das duas linhas da planilha, as regras declaradas no YAML são
           aplicadas:</p>
-        <div class="trace">Fração  "1ª Cia Fuz/511"   → referencia REF_UNIDADE   → UNIDADE_REPORTANTE_COD = BI511C1
-Data/hora "09/09/2026 06:00" → ts_br                  → OCORRENCIA_DATA        = 2026-09-09 06:00:00
-Turno   "Matutino"          → dominio turno_relatorio → TURNO_COD              = MATUTINO
-Ef Pres "118"               → celula                  → EF_PRESENTE_QNT        = 118      (inteiro, não texto)
-Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT    = 11
-(constantes)                                          → SISTEMA_ORIGEM_COD     = RELPER
-                                                       MODALIDADE_ORIGEM_COD  = PLANILHA
-                                                       TIPO_COD               = SITUACAO_UNIDADE
-                                                       FUNCAO_COMBATE_COD     = LOGISTICA
-(derivado)                                            → FUNCAO_C2_INDIC        = N
-(derivado: OM + data + turno + fração)                → REGISTRO_ORIGEM_COD    = BI511-20260909-M-BI511C1
-(ponteiro de linhagem)                                → ARQUIVO_IDT            = arq_7b91f2
-                                                       RECEPCAO_IDT           = (vazio — fonte binária)</div>
+        <div class="trace">do SIDECAR:
+  operacao "PERSEU_2026"     → referencia REF_OPERACAO → OPERACAO_COD           = PERSEU_2026
+  data_hora "…T06:00:00Z"    → ts_iso                  → OCORRENCIA_DATA        = 2026-09-09 06:00:00
+  turno    "MATUTINO"        → dominio turno_relatorio → TURNO_COD              = MATUTINO
+
+da PLANILHA (uma vez por linha):
+  Fração  "1ª Cia Fuz/511"   → referencia REF_UNIDADE  → UNIDADE_REPORTANTE_COD = BI511C1
+  Ef Pres "118"              → celula                  → EF_PRESENTE_QNT        = 118   (inteiro, não texto)
+  Vtr Op  "11"               → celula                  → VTR_OPERACIONAL_QNT    = 11
+
+constantes / derivados:
+  SISTEMA_ORIGEM_COD = RELPER   MODALIDADE_ORIGEM_COD = PLANILHA
+  TIPO_COD = SITUACAO_UNIDADE   FUNCAO_COMBATE_COD = LOGISTICA   FUNCAO_C2_INDIC = N
+  REGISTRO_ORIGEM_COD = BI511-20260909-M-BI511C1   (sidecar: OM+data+turno; planilha: fração)
+
+ponteiros de linhagem:
+  RECEPCAO_IDT = rcp_c4d80a      ARQUIVO_IDT = arq_7b91f2</div>
         <div class="note"><b>Se a OM tivesse acrescentado uma coluna <code>Obs</code></b> que o
           formulário não previa, ela iria inteira para <code>ATRIBUTO_EXTRA_TXT</code> como
           <code>{"Obs": "sem energia no gerador"}</code> — preservada sem nunca ter sido
@@ -815,17 +945,18 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>EVENTO_IDT</th><th>SISTEMA</th><th>MODALIDADE</th><th>TIPO</th><th>FUNÇÃO</th><th>C2</th><th>OCORRÊNCIA</th><th>UNIDADE</th><th>ARQUIVO_IDT</th><th>RECEPCAO_IDT</th></tr>
+              <tr><th>EVENTO_IDT</th><th>OPERAÇÃO</th><th>SISTEMA</th><th>MODALIDADE</th><th>TIPO</th><th>FUNÇÃO</th><th>C2</th><th>OCORRÊNCIA</th><th>UNIDADE</th><th>RECEPCAO_IDT</th><th>ARQUIVO_IDT</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>evt_3a0091</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C1</code></td><td><code>arq_7b91f2</code></td><td>—</td></tr>
-              <tr><td><code>evt_3a0092</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C2</code></td><td><code>arq_7b91f2</code></td><td>—</td></tr>
+              <tr><td><code>evt_3a0091</code></td><td><code>PERSEU_2026</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C1</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
+              <tr><td><code>evt_3a0092</code></td><td><code>PERSEU_2026</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C2</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
             </tbody>
           </table>
         </div>
-        <p><code>RECEPCAO_IDT</code> fica vazio porque a fonte chegou como arquivo binário — o
-          elo de linhagem, aqui, é o <code>ARQUIVO_IDT</code>. Numa linha vinda do
-          <code>C2_A</code> seria o contrário.</p>
+        <p>Os dois eventos herdam o mesmo <code>RECEPCAO_IDT</code> (o sidecar) e o mesmo
+          <code>ARQUIVO_IDT</code> (a planilha) — um arquivo, um sidecar, dois eventos. Numa linha
+          do <code>C2_A</code>, o <code>ARQUIVO_IDT</code> ficaria vazio (não há binário); num
+          relato em texto do <code>C2_B</code>, idem.</p>
       </li>
 
       <li>
@@ -849,14 +980,19 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
         <h3>A volta: do número ao byte <span class="tag">linhagem</span></h3>
         <p>Pergunta de auditoria: <em>de onde veio o 118 de efetivo presente da 1ª Cia?</em></p>
         <div class="trace">SITUACAO_UNIDADE.EF_PRESENTE_QNT = 118   (linha evt_3a0091)
-   └─ EVENTO_IDT evt_3a0091
-        └─ EVENTO.ARQUIVO_IDT = arq_7b91f2
-             └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/relper_bi511_2026-09-09_matutino.xlsx
-                  hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)
-                  └─ abre o .xlsx → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔</div>
-        <p>Se fosse a versão escaneada, o mesmo caminho passaria também por <code>EXTRACAO</code>,
-          que responderia <em>com que ferramenta e modelo</em> aquele <code>118</code> foi lido
-          da imagem, e com que confiança. É a tese de linhagem inteira num único número.</p>
+   └─ EVENTO_IDT evt_3a0091   (OPERACAO_COD = PERSEU_2026)
+        ├─ EVENTO.ARQUIVO_IDT = arq_7b91f2
+        │    └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/perseu_2026/relper/…matutino.xlsx
+        │         hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)
+        │         └─ abre o .xlsx → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔
+        └─ EVENTO.RECEPCAO_IDT = rcp_c4d80a
+             └─ RECEPCAO_BRUTA.ORIGEM_URI_TXT = s3a://…/…matutino.json
+                  └─ o sidecar que disse "operacao: PERSEU_2026, remetente 1º/511º BI"   ✔</div>
+        <p>Dois ramos: o número saiu da planilha, o contexto (operação, remetente) saiu do
+          sidecar. Se fosse a versão escaneada, o ramo do <code>.xlsx</code> passaria também por
+          <code>EXTRACAO</code>, que responderia <em>com que ferramenta e modelo</em> aquele
+          <code>118</code> foi lido da imagem, e com que confiança. É a tese de linhagem inteira
+          num único número.</p>
       </li>
 
     </ol>
@@ -877,6 +1013,7 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
             <th scope="col">Modalidade</th>
             <th scope="col">Bloco no YAML</th>
             <th scope="col">Grava em</th>
+            <th scope="col">Operação vem de</th>
             <th scope="col">Passa por IA?</th>
           </tr>
         </thead>
@@ -886,6 +1023,7 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
             <td><span class="mod">JSON</span></td>
             <td><code>posicao</code>, <code>mcc</code></td>
             <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
+            <td>hash no payload</td>
             <td>Não — geometria já vem nativa</td>
           </tr>
           <tr>
@@ -893,41 +1031,47 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
             <td><span class="mod">TEXTO</span></td>
             <td><code>relato</code></td>
             <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
+            <td>campo no payload</td>
             <td>LLM: tipo, função de combate, prioridade, confiabilidade, credibilidade</td>
           </tr>
           <tr>
             <th scope="row">C2_B</th>
             <td><span class="mod">IMAGEM</span></td>
             <td><code>incidente</code></td>
-            <td><code>RECEPCAO_BRUTA</code> + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar (o registro do incidente)</td>
             <td>Não — a coordenada vem do metadado da foto</td>
           </tr>
           <tr>
             <th scope="row">RELPER</th>
             <td><span class="mod">PLANILHA</span></td>
             <td><code>situacao</code></td>
-            <td><code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td>sidecar</td>
             <td>Não — leitura direta de célula, sem <code>EXTRACAO</code></td>
           </tr>
           <tr>
             <th scope="row">RELPER</th>
             <td><span class="mod">PDF</span></td>
             <td><code>situacao_digitalizada</code></td>
-            <td><code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td>sidecar</td>
             <td>OCR + LLM: unidade reportante</td>
           </tr>
           <tr>
             <th scope="row">FOGOS</th>
             <td><span class="mod">PDF</span></td>
             <td><code>relatorio_bombardeio</code></td>
-            <td><code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar</td>
             <td>OCR + LLM: data, prioridade</td>
           </tr>
           <tr>
             <th scope="row">VOZ</th>
             <td><span class="mod">AUDIO</span></td>
             <td><code>transcricao</code></td>
-            <td><code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar do <em>voice logger</em></td>
             <td>Transcrição de fala + LLM: data, prioridade, função</td>
           </tr>
         </tbody>
@@ -954,6 +1098,7 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
       <div><dt>abreviatura</dt><dd>Abreviatura digitada vira termo, consultando <code>REF_ABREVIATURA</code>.</dd></div>
       <div><dt>dominio</dt><dd>Valor da origem vira valor canônico, pelos sinônimos da lista fechada.</dd></div>
       <div><dt>referencia</dt><dd>Valor da origem vira o código de uma tabela de consulta.</dd></div>
+      <div><dt>contexto_operacao</dt><dd>Hora e ponto de captura viram <code>OPERACAO_COD</code>, pela janela e pela área de <code>REF_OPERACAO</code>. É o recurso para o arquivo que chegou sem se identificar.</dd></div>
       <div><dt>constante</dt><dd>Grava um valor fixo, igual para toda linha daquela fonte.</dd></div>
       <div><dt>derivado</dt><dd>Calculado por uma regra declarada no próprio campo de destino.</dd></div>
       <div><dt>split_escala</dt><dd>Um campo de origem, dois de destino: <span class="kw">B2</span> vira confiabilidade <span class="kw">B</span> e credibilidade <span class="kw">2</span>.</dd></div>
@@ -962,7 +1107,7 @@ Vtr Op  "11"                → celula                  → VTR_OPERACIONAL_QNT 
   </section>
 
   <footer>
-    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 8 de
+    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 9 de
       setembro de 2026). Em caso de divergência, o YAML é a fonte de verdade — os diagramas
       seguem ele, não o contrário.</p>
     <p>Sistemas de origem identificados por código genérico (<code>C2_A</code>,
