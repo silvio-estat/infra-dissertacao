@@ -31,6 +31,9 @@ airflow/plugins/
 # Assistentes de IA — não versionar
 .claude/
 CLAUDE.md
+claude.md
+CLAUDE.local.md
+.mcp.json
 
 # Informações locais — não versionar
 outras_info/
