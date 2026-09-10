@@ -49,3 +49,10 @@ documentos_apoio/
 
 # Relatórios gerados (output reproduzível)
 relatorios/metricas_gqm_*.json
+
+# Claude Code / harness (não vai para o repositório)
+CLAUDE.md
+claude.md
+CLAUDE.local.md
+.claude/
+.mcp.json
