@@ -25,6 +25,8 @@ de/para declarado no modelo e monta o SQL correspondente.
 """
 
 import argparse
+import re
+import unicodedata
 import os
 import sys
 from pathlib import Path
@@ -109,6 +111,19 @@ def _lista(v):
     return v if isinstance(v, list) else [v]
 
 
+def _mapa_do_bloco(bloco: dict) -> dict:
+    """As tres partes do de/para de uma entidade, na ordem em que se sobrepoem:
+    o sidecar (o que e ABOUT o arquivo), os campos (o evento) e a extensao
+    (as colunas que so esta fonte tem). Chave repetida: vale a ultima.
+
+    `sidecar:` as vezes e so uma frase — quando o proprio registro JSON da fonte
+    ja faz esse papel (o incidente do C2_B acompanha a foto). Nesse caso nao ha
+    campos a mapear a partir dele.
+    """
+    partes = [bloco.get(nome) for nome in ("sidecar", "campos", "extensao")]
+    return {c: r for parte in partes if isinstance(parte, dict) for c, r in parte.items()}
+
+
 def _blocos_de_mapeamento(spec: dict):
     """Devolve (nome_do_bloco, mapa_de_campos) para todas as formas que uma fonte assume."""
     if spec.get("comum"):
@@ -116,7 +131,7 @@ def _blocos_de_mapeamento(spec: dict):
     for nome, mapa in (spec.get("tipos") or {}).items():
         yield nome, mapa
     for nome, ent in (spec.get("entidades") or {}).items():
-        yield nome, ent.get("campos") or {}
+        yield nome, _mapa_do_bloco(ent)
 
 
 # =============================================================================
@@ -130,15 +145,43 @@ def _expressao_origem(origem, regra, ctx):
     """De onde o valor vem, ANTES de qualquer conversao.
 
     As transformacoes compoem: primeiro resolve-se a origem (coluna, caminho
-    dentro do JSON, ou pseudo-campo), e so depois a conversao e aplicada por
-    cima. Sem isso, `dominio` sobre um campo que mora dentro do payload seria
-    aplicado a uma coluna que nao existe.
+    dentro do JSON, celula da planilha ou campo do sidecar), e so depois a
+    conversao e aplicada por cima. Sem isso, `dominio` sobre um campo que mora
+    dentro do payload seria aplicado a uma coluna que nao existe.
+
+    O nome da chave no de/para diz de onde ler:
+      _alguma_coisa   pseudo-campo: nao existe na origem (constante ou derivado)
+      no bloco sidecar -> SIDECAR['operacao'], o .json que acompanha o arquivo
+      qualquer outro   -> CELULAS['Ef Pres'], o cabecalho como esta na planilha
     """
     if regra.get("caminho"):
         return f"get_json_object({ctx['coluna_payload']}, '{regra['caminho']}')"
+    if origem in ctx.get("sidecar", ()):
+        return _registrar(ctx, "sc", origem, f"SIDECAR['{origem}']")
     if origem.startswith("_"):
         return "NULL"       # pseudo-campo: nao existe na origem
+    if ctx.get("de_grade"):
+        # `grafias` lista outros rotulos para a MESMA medida: a revisao do
+        # formulario renomeou a coluna, mas o significado nao mudou. Vale o
+        # primeiro que a planilha tiver.
+        nomes = [origem] + list(regra.get("grafias") or [])
+        apelidos = [_registrar(ctx, "cel", n, f"CELULAS['{n}']") for n in nomes]
+        return apelidos[0] if len(apelidos) == 1 else f"coalesce({', '.join(apelidos)})"
     return origem
+
+
+def _registrar(ctx, prefixo, nome, expressao) -> str:
+    """Guarda a leitura do mapa para virar coluna simples, e devolve o apelido.
+
+    Por que nao usar CELULAS['Ef Pres'] direto na expressao final: o Spark recusa
+    subconsulta correlacionada que aponte para uma coluna do tipo mapa — e
+    `referencia`, `gazetteer` e `abreviatura` sao exatamente isso. Resolvendo as
+    celulas numa camada de baixo, o que chega as consultas e texto comum.
+    """
+    limpo = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
+    apelido = f"{prefixo}_" + re.sub(r"[^0-9a-zA-Z]+", "_", limpo).strip("_").lower()
+    ctx.setdefault("origens", {})[apelido] = expressao
+    return apelido
 
 
 def _t_direto(origem, regra, ctx, alvo=None):
@@ -200,17 +243,40 @@ def _t_split_escala(origem, regra, ctx, alvo=None):
     return f"substring(trim({origem}), {posicao}, 1)"
 
 
+def _comparavel(expressao: str) -> str:
+    """Deixa dois textos comparaveis: sem acento, sem marca de ordinal e sem a
+    letra que a acompanha. '1ª Cia', '1a Cia' e '1 Cia' viram todas '1 cia'."""
+    sem_acento = f"translate(lower(trim({expressao})), 'ªº°áàâãéêíóôõúüç', 'aooaaaaeeiooouuc')"
+    return f"regexp_replace(regexp_replace({sem_acento}, '([0-9]+)[ao]\\\\b', '$1'), ' +', ' ')"
+
+
 def _t_referencia(origem, regra, ctx, alvo=None):
-    """Consulta a uma tabela de referencia. Subconsulta escalar: continua sendo expressao."""
-    alvo = regra["referencia"]
-    tabela, coluna = (alvo.split(".", 1) + [None])[:2] if "." in alvo else (alvo, None)
+    """Consulta a uma tabela de referencia. Subconsulta escalar: continua sendo
+    expressao, e por isso encaixa em qualquer lugar do SELECT. Precisa ser
+    AGREGADA (max): o Spark recusa subconsulta correlacionada com LIMIT.
+
+    Com `contexto:` declarado, a busca deixa de ser por igualdade e passa a ser
+    "a sigla COMECA pelo que foi digitado", restrita ao contexto — usado na
+    celula preenchida a mao, onde '1a Cia' identifica unidades diferentes em
+    formularios de OM diferentes.
+    """
+    referida = regra["referencia"]
+    tabela, coluna = (referida.split(".", 1) + [None])[:2] if "." in referida else (referida, None)
     entidade = ctx["modelo"]["entidades"][tabela]
     chave = entidade["chave"][0]
     devolve = coluna or chave
     casa = "UNIDADE_SIGLA" if tabela == "REF_UNIDADE" else chave
+
+    if not regra.get("contexto"):
+        return (f"(SELECT max(r.{devolve}) FROM {CATALOGO}.silver.{tabela} r "
+                f"WHERE lower(trim(r.{casa})) = lower(trim({origem})))")
+
+    contexto = _registrar(ctx, "sc", regra["contexto"], f"SIDECAR['{regra['contexto']}']")
+    sigla, digitado, da_om = _comparavel(f"r.{casa}"), _comparavel(origem), _comparavel(contexto)
     return (
-        f"(SELECT r.{devolve} FROM {CATALOGO}.silver.{tabela} r "
-        f"WHERE lower(trim(r.{casa})) = lower(trim({origem})) LIMIT 1)"
+        f"(SELECT max(r.{devolve}) FROM {CATALOGO}.silver.{tabela} r "
+        f"WHERE {sigla} LIKE concat({digitado}, '%') "
+        f"AND ({sigla} LIKE concat('%', {da_om}) OR {sigla} = {da_om}))"
     )
 
 
@@ -220,9 +286,65 @@ def _t_gazetteer(origem, regra, ctx, alvo=None):
     if (regra.get("parametros") or {}).get("tipo"):
         filtro = f"AND g.LOCAL_TIPO_COD = '{regra['parametros']['tipo']}' "
     return (
-        f"(SELECT g.GEOMETRIA_WKT FROM {CATALOGO}.silver.REF_GAZETTEER g "
-        f"WHERE lower(trim(g.REFERENCIA_TEXTO)) = lower(trim({origem})) {filtro}LIMIT 1)"
+        f"(SELECT max(g.GEOMETRIA_WKT) FROM {CATALOGO}.silver.REF_GAZETTEER g "
+        f"WHERE lower(trim(g.REFERENCIA_TEXTO)) = lower(trim({origem})) {filtro})"
     )
+
+
+def _t_celula(origem, regra, ctx, alvo=None):
+    """Le uma celula pelo cabecalho decretado no formulario.
+
+    Irma da `json`: a origem ja foi resolvida para CELULAS['<cabecalho>'] — a
+    grade da planilha virou um mapa cabecalho -> valor antes de chegar aqui.
+    Cabecalho que a planilha nao tem devolve NULL, e nao erro: uma OM que usa
+    formulario antigo perde a coluna, nao a remessa inteira.
+    """
+    return origem
+
+
+def _t_abreviatura(origem, regra, ctx, alvo=None):
+    """Abreviatura digitada -> termo, consultando o dicionario do MD33-M-02.
+
+    O que nao casa e PRESERVADO como veio ('Mun 7,62' nao e uma abreviatura
+    unica), nunca descartado: a promessa e resolver o que da e deixar o resto
+    visivel. 'Fz' -> Fuzil e 'Fuz' -> Fuzileiro sao entradas distintas, e e por
+    isso que a troca de uma pela outra vira erro semantico detectavel.
+    """
+    return (
+        f"COALESCE((SELECT max(a.TERMO_NOME) FROM {CATALOGO}.silver.REF_ABREVIATURA a "
+        f"WHERE lower(trim(a.ABREVIATURA_COD)) = lower(trim({origem}))), {origem})"
+    )
+
+
+def _t_sobra(origem, regra, ctx, alvo=None):
+    """Toda coluna que o formulario nao previa, com o nome que a OM deu.
+
+    Recolhida ao abrir a grade (nao da para saber em SQL o que 'sobrou'), chega
+    aqui como um JSON pronto. E o argumento de schema-on-read numa celula: a
+    coluna 'Obs' que uma OM acrescentou por conta propria fica preservada sem
+    nunca ter sido modelada.
+    """
+    return "SOBRA_JSON"
+
+
+def _t_derivado(origem, regra, ctx, alvo=None):
+    """Campo calculado a partir dos outros. A regra de cada um esta declarada no
+    modelo, no campo `regra`/`observacao`; aqui esta o calculo correspondente."""
+    if alvo == "REGISTRO_ORIGEM_COD":
+        # o que identifica a observacao na origem: a REMESSA (tudo do sidecar)
+        # mais a LINHA (a unidade daquela linha da planilha).
+        partes = [_registrar(ctx, "sc", c, f"SIDECAR['{c}']") for c in ctx.get("sidecar", ())]
+        partes.append(ctx.get("coluna_unidade") or "NULL")
+        return f"concat_ws('-', {', '.join(partes)})"
+    if alvo == "FUNCAO_C2_INDIC":
+        # S quando o dado nasceu DENTRO de um sistema de C2; N quando o documento
+        # foi apenas remetido ao repositorio, como e o caso do formulario.
+        return "'S'" if ctx["fonte"] in ("C2_A", "C2_B") else "'N'"
+    if alvo == "FORMULARIO_VERSAO_COD":
+        return "FORMULARIO_VERSAO"          # calculada ao abrir a grade
+    if alvo == "CHEGADA_DATA":
+        return "RECEBIMENTO_DATA"           # quando a Bronze recebeu o arquivo
+    raise TransformacaoPendente(f"derivado sem regra implementada para {alvo}")
 
 
 def _pendente(fase):
@@ -244,6 +366,10 @@ TRANSFORMACOES = {
     "referencia":      _t_referencia,
     "gazetteer":       _t_gazetteer,
     "split_escala":    _t_split_escala,
+    "celula":          _t_celula,
+    "abreviatura":     _t_abreviatura,
+    "sobra":           _t_sobra,
+    "derivado":        _t_derivado,
     # Declaradas no modelo, sem implementacao ainda: nao ha dado para exercita-las.
     # O job so falha se voce tentar processar a fonte que as usa.
     "geojson_para_wkt":       _pendente("Fase 1 (C2_A)"),
@@ -311,9 +437,13 @@ def carregar_seeds(spark, modelo):
         import csv, io
         registros = list(csv.DictReader(io.StringIO("\n".join(linhas))))
         colunas = list(entidade["campos"])
-        faltando = set(colunas) - set(registros[0])
+        # O seed pode vir de fora com outros nomes de coluna (o dicionario do MD33,
+        # por exemplo). `seed_colunas` no modelo diz a correspondencia.
+        de_para = entidade.get("seed_colunas") or {}
+        registros = [{c: r.get(de_para.get(c, c)) for c in colunas} for r in registros]
+        faltando = [c for c in colunas if registros[0][c] is None and c == colunas[0]]
         if faltando:
-            raise ModeloInvalido(f"{caminho.name}: faltam colunas {faltando}")
+            raise ModeloInvalido(f"{caminho.name}: nao achei a coluna de {faltando}")
         # O CSV so tem texto. As colunas precisam ser convertidas para o tipo
         # declarado no modelo, senao a insercao falha por incompatibilidade.
         df = spark.createDataFrame(
@@ -328,31 +458,152 @@ def carregar_seeds(spark, modelo):
 
 
 # =============================================================================
-# 5. O DE/PARA VIRA UM SELECT
+# 5. A ORIGEM — da Bronze para UMA LINHA POR OBSERVACAO
+# =============================================================================
+# As fontes que ja chegam estruturadas (C2_A, C2_B) tem uma linha de
+# RECEPCAO_BRUTA por registro: cada linha ja e uma observacao. Uma planilha nao:
+# ela e uma GRADE, e uma remessa so traz varias fracoes. Esta secao abre a grade
+# — usando o que a leitura gravou em EXTRACAO.SAIDA_TXT — e devolve uma linha por
+# fracao, com as celulas num mapa cabecalho -> valor. Dai para a frente o de/para
+# volta a ser SQL, igual ao das fontes estruturadas.
+
+def _abrir_grade(registro, cabecalhos, principais):
+    """Uma linha de EXTRACAO (uma planilha) -> N linhas, uma por observacao.
+
+    A linha de cabecalho e PROCURADA, nunca fixada: e a primeira que contem pelo
+    menos metade dos cabecalhos decretados. Acima dela ficam titulo, operacao,
+    OM e data — que sao do documento, nao das observacoes.
+    """
+    import json as _json
+    from pyspark.sql import Row
+
+    celulas_por_aba = _json.loads(registro["SAIDA_TXT"])["abas"]
+    sidecar = _json.loads(registro["SIDECAR_JSON"])
+    declarados, decretados = set(cabecalhos), set(principais)
+    saida = []
+
+    for grade in celulas_por_aba.values():
+        titulos, primeira = None, 0
+        for i, linha in enumerate(grade):
+            presentes = {str(c).strip() for c in linha if c is not None}
+            if len(presentes & declarados) >= len(declarados) / 2:
+                titulos, primeira = [str(c).strip() if c is not None else "" for c in linha], i + 1
+                break
+        if titulos is None:
+            continue                      # aba sem o formulario: um anexo, uma nota
+
+        # V1 quando a planilha traz todos os cabecalhos decretados; V2 quando
+        # falta algum, porque a revisao do formulario renomeou colunas. So os
+        # rotulos PRINCIPAIS contam: a grafia alternativa e justamente o sinal de
+        # que a planilha e da outra versao. Coluna a mais nao muda a versao — vai
+        # para a sobra.
+        versao = "V1" if decretados <= set(titulos) else "V2"
+
+        for linha in grade[primeira:]:
+            valores = {t: v for t, v in zip(titulos, linha) if t and v is not None}
+            if not valores:
+                continue                  # linha em branco: fim da tabela
+            saida.append(Row(
+                ARQUIVO_IDT=registro["ARQUIVO_IDT"],
+                RECEPCAO_IDT=registro["RECEPCAO_IDT"],
+                EXTRACAO_IDT=registro["EXTRACAO_IDT"],
+                RECEBIMENTO_DATA=registro["RECEBIMENTO_DATA"],
+                SIDECAR={k: (None if v is None else str(v)) for k, v in sidecar.items()},
+                CELULAS={k: str(v) for k, v in valores.items() if k in declarados},
+                SOBRA_JSON=_sobra_como_json(valores, declarados),
+                FORMULARIO_VERSAO=versao,
+            ))
+    return saida
+
+
+def _sobra_como_json(valores: dict, declarados: set):
+    """O que a OM acrescentou por conta propria. Vazio e None, nao '{}': a sobra
+    tem de ser a excecao visivel, e nao uma coluna preenchida em toda linha."""
+    import json as _json
+    sobra = {c: v for c, v in valores.items() if c not in declarados}
+    return _json.dumps(sobra, ensure_ascii=False) if sobra else None
+
+
+def montar_origem(spark, modelo, fonte, tipo):
+    """Cria a view `origem_bruta`, com uma linha por observacao.
+
+    Junta as tres tabelas da Bronze que contam a historia de um arquivo:
+    o que foi LIDO dele (EXTRACAO), o arquivo em si (ARQUIVO) e o que veio
+    ESCRITO ao lado dele (RECEPCAO_BRUTA, o sidecar). Os tres identificadores
+    seguem junto: sao os elos de linhagem que EVENTO vai guardar.
+    """
+    bloco = modelo["fontes"][fonte]["entidades"][tipo]
+    do_sidecar = bloco.get("sidecar") if isinstance(bloco.get("sidecar"), dict) else {}
+    mapa = _mapa_do_bloco(bloco)
+    principais = [c for c in mapa if not c.startswith("_") and c not in do_sidecar]
+    # as grafias alternativas tambem sao cabecalhos declarados: sem isso elas
+    # cairiam na sobra, como se a OM tivesse inventado a coluna. Mas nao entram
+    # no conjunto que identifica a VERSAO do formulario — ver _abrir_grade.
+    cabecalhos = principais + [g for c in principais for g in (mapa[c].get("grafias") or [])]
+
+    grade = spark.sql(f"""
+        SELECT e.EXTRACAO_IDT, e.SAIDA_TXT, a.ARQUIVO_IDT,
+               r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA
+        FROM {CATALOGO}.bronze.EXTRACAO e
+        JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = e.ARQUIVO_IDT
+        JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
+        WHERE a.MODALIDADE_COD = '{bloco["modalidade"]}'
+          AND r.SISTEMA_ORIGEM_COD = '{fonte}'
+          AND e.STATUS_COD = 'OK'
+    """)
+    if grade.rdd.isEmpty():
+        raise SystemExit(f"\nnenhuma extracao de {fonte}/{tipo} na Bronze — rode a DAG de extracao antes\n")
+
+    linhas = grade.rdd.flatMap(lambda r: _abrir_grade(r, cabecalhos, principais))
+    spark.createDataFrame(linhas).createOrReplaceTempView("origem_bruta")
+    print(f"  {grade.count()} arquivos -> {spark.table('origem_bruta').count()} observacoes")
+
+
+# =============================================================================
+# 6. O DE/PARA VIRA UM SELECT
 # =============================================================================
 
 def montar_select(modelo, fonte, tipo=None):
-    """Monta a consulta que le a origem e devolve colunas canonicas."""
-    spec = modelo["fontes"][fonte]
-    ctx = {"modelo": modelo, "coluna_payload": spec.get("coluna_payload", "payload")}
+    """Monta a consulta que le a origem e devolve colunas canonicas.
 
-    mapa = dict(spec.get("comum") or {})
-    if tipo:
-        mapa.update((spec.get("tipos") or {})[tipo])
+    Projeta as colunas de EVENTO e, quando a fonte tem extensao, tambem as dela —
+    numa consulta so, porque as duas tabelas compartilham o EVENTO_IDT.
+    """
+    spec = modelo["fontes"][fonte]
+    blocos = spec.get("entidades") or {}
+    de_grade = bool(blocos)
+
+    if de_grade:
+        if tipo is None and len(blocos) == 1:
+            tipo = next(iter(blocos))
+        if tipo not in blocos:
+            raise ModeloInvalido(f"{fonte}: informe --tipo (opcoes: {list(blocos)})")
+        mapa = _mapa_do_bloco(blocos[tipo])
+        declarado = blocos[tipo].get("sidecar")
+        sidecar = tuple(declarado) if isinstance(declarado, dict) else ()
     else:
-        entidades = spec.get("entidades") or {}
-        if len(entidades) != 1:
-            raise ModeloInvalido(f"{fonte}: informe --tipo (opcoes: {list(entidades)})")
-        mapa.update(next(iter(entidades.values()))["campos"])
+        mapa = dict(spec.get("comum") or {})
+        mapa.update((spec.get("tipos") or {})[tipo])
+        sidecar = ()
+
+    ctx = {"modelo": modelo, "fonte": fonte, "sidecar": sidecar, "de_grade": de_grade,
+           "origens": {}, "coluna_payload": spec.get("coluna_payload", "payload")}
+    # de qual celula sai a unidade da linha — o derivado de REGISTRO_ORIGEM_COD precisa
+    unidade = next((o for o, r in mapa.items()
+                    if "UNIDADE_REPORTANTE_COD" in _lista(r["campo"]) and not o.startswith("_")), None)
+    ctx["coluna_unidade"] = _registrar(ctx, "cel", unidade, f"CELULAS['{unidade}']") if unidade else None
 
     projecoes = {}
     for origem, regra in mapa.items():
         entrada = _expressao_origem(origem, regra, ctx)
         for alvo in _lista(regra["campo"]):
             coluna = alvo.split(".")[-1]
-            projecoes[coluna] = TRANSFORMACOES[regra["transformacao"]](
-                entrada, regra, ctx, coluna
-            )
+            projecoes[coluna] = TRANSFORMACOES[regra["transformacao"]](entrada, regra, ctx, coluna)
+
+    # os elos de linhagem nao se "resolvem": ja vieram da Bronze prontos
+    for elo in ("ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT"):
+        if elo in projecoes and de_grade:
+            projecoes[elo] = elo
 
     # --- campos derivados: calculados a partir dos ja mapeados, nao vem da origem
     if {"SISTEMA_ORIGEM_COD", "REGISTRO_ORIGEM_COD", "OCORRENCIA_DATA"} <= set(projecoes):
@@ -366,38 +617,74 @@ def montar_select(modelo, fonte, tipo=None):
             "AS DOUBLE)".format(**projecoes)
         )
 
-    colunas_evento = list(modelo["entidades"]["EVENTO"]["campos"])
-    select = ",\n  ".join(
-        f"{projecoes[c]} AS {c}" if c in projecoes else f"CAST(NULL AS {_TIPOS[modelo['entidades']['EVENTO']['campos'][c]['tipo']]}) AS {c}"
-        for c in colunas_evento
-    )
-    origem_tabela = spec.get("origem_tabela", f"bronze.{fonte.lower()}")
-    onde = f"\nWHERE tipo_dado = '{tipo}'" if tipo and spec.get("origem_tabela") else ""
-    return f"SELECT\n  {select}\nFROM {CATALOGO}.{origem_tabela}{onde}"
+    destinos = [modelo["entidades"]["EVENTO"]["campos"]]
+    if spec.get("extensao"):
+        destinos.append(modelo["entidades"][spec["extensao"]]["campos"])
+
+    select, ja = [], set()
+    for campos in destinos:
+        for coluna, spec_col in campos.items():
+            if coluna in ja:
+                continue
+            ja.add(coluna)
+            tipo_sql = _TIPOS[spec_col["tipo"]]
+            expressao = projecoes.get(coluna, "NULL")
+            select.append(f"CAST({expressao} AS {tipo_sql}) AS {coluna}")
+
+    if de_grade:
+        # camada de baixo: cada celula e cada campo do sidecar vira coluna simples
+        fixas = ["ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT", "RECEBIMENTO_DATA",
+                 "SOBRA_JSON", "FORMULARIO_VERSAO"]
+        lidas = [f"{expressao} AS {apelido}" for apelido, expressao in sorted(ctx["origens"].items())]
+        de = ("(SELECT " + ", ".join(fixas + lidas) + " FROM origem_bruta)")
+        onde = ""
+    else:
+        de = f"{CATALOGO}.{spec.get('origem_tabela', 'bronze.' + fonte.lower())}"
+        onde = f"\nWHERE tipo_dado = '{tipo}'" if tipo and spec.get("origem_tabela") else ""
+    return "SELECT\n  " + ",\n  ".join(select) + f"\nFROM {de}{onde}"
 
 
 def processar(spark, modelo, fonte, tipo, mostrar=False):
+    spec = modelo["fontes"][fonte]
+    if spec.get("entidades") and not mostrar:
+        montar_origem(spark, modelo, fonte, tipo or next(iter(spec["entidades"])))
+
     consulta = montar_select(modelo, fonte, tipo)
     if mostrar:
         print(consulta + ";\n")
         return
 
     spark.sql(consulta).createOrReplaceTempView("origem_canonica")
-    colunas = list(modelo["entidades"]["EVENTO"]["campos"])
-    spark.sql(f"""
-        MERGE INTO {CATALOGO}.silver.EVENTO destino
-        USING origem_canonica origem ON destino.EVENTO_IDT = origem.EVENTO_IDT
-        WHEN NOT MATCHED THEN INSERT ({", ".join(colunas)})
-            VALUES ({", ".join("origem." + c for c in colunas)})
-    """)
+
+    # EVENTO primeiro; a extensao depois, porque depende do EVENTO_IDT.
+    for tabela in ["EVENTO"] + ([spec["extensao"]] if spec.get("extensao") else []):
+        colunas = list(modelo["entidades"][tabela]["campos"])
+        chave = modelo["entidades"][tabela]["chave"][0]
+        # A Silver e uma FUNCAO da Bronze: reprocessar a mesma origem tem de dar a
+        # mesma linha. Por isso aqui e upsert, e nao so insercao — corrigir uma regra
+        # do de/para e rodar de novo atualiza o que ja estava gravado. Quem nao pode
+        # ser alterada e a Bronze, que guarda o que chegou.
+        spark.sql(f"""
+            MERGE INTO {CATALOGO}.silver.{tabela} destino
+            USING origem_canonica origem ON destino.{chave} = origem.{chave}
+            WHEN MATCHED THEN UPDATE SET *
+            WHEN NOT MATCHED THEN INSERT *
+        """)
+        print(f"  {CATALOGO}.silver.{tabela}: {spark.table(f'{CATALOGO}.silver.{tabela}').count()} linhas")
+
     _relatar_dominios(spark, modelo, fonte, tipo)
-    print(f"  {fonte}" + (f"/{tipo}" if tipo else "") + ": MERGE concluido")
 
 
 def _relatar_dominios(spark, modelo, fonte, tipo):
     """A promessa do dominio controlado: valor que nao casa nao passa em silencio."""
     campos = modelo["entidades"]["EVENTO"]["campos"]
-    com_dominio = [c for c, s in campos.items() if isinstance(s, dict) and s.get("dominio")]
+    mapeadas = {a.split(".")[-1]
+                for _, mapa in _blocos_de_mapeamento(modelo["fontes"][fonte])
+                for r in mapa.values() for a in _lista(r["campo"])}
+    # so faz sentido cobrar dominio de coluna que ESTA fonte mapeia; as demais
+    # sao nulas por nao terem origem, e nao por o valor nao ter casado.
+    com_dominio = [c for c, s in campos.items()
+                   if isinstance(s, dict) and s.get("dominio") and c in mapeadas]
     if not com_dominio:
         return
     contagens = ", ".join(f"sum(CASE WHEN {c} IS NULL THEN 1 ELSE 0 END) AS {c}" for c in com_dominio)

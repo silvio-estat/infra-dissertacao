@@ -685,6 +685,10 @@ entidades:
     camada: silver
     chave: [ABREVIATURA_COD]
     seed: ir_14_06/abreviaturas_md33.csv
+    # O CSV das abreviaturas foi extraido do MD33-M-02 por um script proprio e usa
+    # os nomes do manual; aqui fica a correspondencia com as colunas canonicas.
+    seed_colunas: {ABREVIATURA_COD: abreviatura, TERMO_NOME: termo,
+                   SINONIMO_TXT: sinonimos, ORIGEM_COD: origem}
     campos:
       ABREVIATURA_COD:  {tipo: string, nulo: false, descricao: "Abreviatura como o MD33-M-02 a grafa. Ex.: 'Vtr', 'Ef', 'Fz'."}
       TERMO_NOME:       {tipo: string, nulo: false, descricao: "Termo por extenso. Ex.: 'Viatura', 'Efetivo', 'Fuzil'."}
@@ -891,10 +895,15 @@ fontes:
         campos:
           _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
                         regra: "sidecar (OM remetente + data + turno) + celula (unidade da linha)"}
-          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
-                        observacao: "celula preenchida a mao: '1a Cia', '1 Cia Fuz', '1ª Cia'. Resolve contra REF_UNIDADE, e o que nao casar e reportado, nao descartado."}
-          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          Fração:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        contexto: om_remetente,
+                        observacao: "celula preenchida a mao, em varias grafias para a mesma unidade: '1a Cia', '1a Cia Fuz', '1ª Cia Fuz', '1 Cia Fuz', '1a Cia Fuz/511'. Duas coisas resolvem: comparar sem acento e sem a letra do ordinal ('1a'='1ª'='1'), e aceitar o inicio da sigla. Sozinho isso seria AMBIGUO — '1a Cia' existe em todo batalhao —, e por isso entra o `contexto`: a OM que remeteu o arquivo, que vem do sidecar. O que ainda nao casar e reportado, nao descartado."}
+          _arquivo:    {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o arquivo entrou na plataforma. Nao vem do documento: o formulario diz quando a situacao foi apurada, nao quando a remessa chegou."}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a leitura que produziu as celulas desta linha (openpyxl, sem IA)"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: RELPER}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PLANILHA}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: SITUACAO_UNIDADE}
@@ -911,7 +920,8 @@ fontes:
           Evacuados:    {campo: EVACUADO_QNT, transformacao: celula}
           Vtr Op:       {campo: VTR_OPERACIONAL_QNT, transformacao: celula}
           Vtr Total:    {campo: VTR_TOTAL_QNT, transformacao: celula}
-          Comb Pctl:    {campo: COMBUSTIVEL_PCTL, transformacao: celula}
+          Comb Pctl:    {campo: COMBUSTIVEL_PCTL, transformacao: celula, grafias: ['Comb %'],
+                         observacao: "a revisao do formulario renomeou esta coluna para 'Comb %'. As duas grafias sao a MESMA medida, entao entram no mesmo campo canonico — o que muda entre as versoes e o rotulo, nao o significado. Ja 'Agua L', que a mesma revisao acrescentou, e medida nova: nao tem campo e fica na sobra."}
           Sup Cl I:     {campo: SUP_CL_I_DIAS, transformacao: celula}
           Sup Cl III:   {campo: SUP_CL_III_DIAS, transformacao: celula}
           Sup Cl V:     {campo: SUP_CL_V_DIAS, transformacao: celula}
@@ -920,7 +930,7 @@ fontes:
                          referencia: REF_ABREVIATURA,
                          observacao: "'Fz' -> Fuzil (a arma), 'Fuz' -> Fuzileiro (a pessoa). A OM que troca uma pela outra comete erro semantico, nao ortografico: material vira pessoal. Coluna de texto livre engoliria isso em silencio."}
           _versao:      {campo: FORMULARIO_VERSAO_COD, transformacao: derivado,
-                         regra: "identificada pelo conjunto de cabecalhos presentes na planilha"}
+                         regra: "V1 quando a planilha traz TODOS os cabecalhos decretados acima; V2 quando falta algum (a revisao do formulario renomeou colunas). Coluna a mais nao muda a versao: vai para _sobra."}
           _sobra:       {campo: ATRIBUTO_EXTRA_TXT, transformacao: sobra,
                          observacao: "toda coluna que o formulario nao previa, com o nome que a OM deu"}
 
