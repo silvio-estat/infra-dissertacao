@@ -69,9 +69,13 @@ class TransformacaoPendente(NotImplementedError):
 # 1. CARGA E VALIDACAO DO MODELO
 # =============================================================================
 
-def carregar_modelo(caminho: Path) -> dict:
+def carregar_modelo(caminho: Path, validar_mapeamentos: bool = True) -> dict:
+    """Le o YAML. A validacao do de/para so e exigida para PROCESSAR uma fonte:
+    criar tabelas e carregar seeds dependem apenas de `entidades`, e nao devem
+    ficar reféns de uma transformacao ainda nao implementada."""
     modelo = yaml.safe_load(caminho.read_text(encoding="utf-8"))
-    validar(modelo)
+    if validar_mapeamentos:
+        validar(modelo)
     # os seeds sao relativos ao proprio modelo, e nao a raiz do repositorio
     modelo["_dir"] = caminho.parent
     return modelo
@@ -269,6 +273,16 @@ def criar_tabelas(spark, modelo, mostrar=False):
             continue
         spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOGO}.{esquema}")
         spark.sql(ddl)
+        # CREATE IF NOT EXISTS nao toca numa tabela que ja existe. Se ela ficou de
+        # uma versao anterior do modelo, as colunas nao batem — falha aqui, com o
+        # motivo, em vez de num ALTER COLUMN obscuro logo abaixo.
+        existentes = [c.lower() for c in spark.table(tabela).columns]
+        esperadas = [c.lower() for c in entidade["campos"]]
+        if existentes != esperadas:
+            raise ModeloInvalido(
+                f"{tabela} ja existe com colunas diferentes do modelo.\n"
+                f"  na tabela: {existentes}\n  no modelo: {esperadas}\n"
+                f"  Se e residuo de uma versao anterior, apague-a (DROP TABLE) e rode de novo.")
         # Art. 137 do IR 14-06: descricao e metadado minimo de tabela e de coluna.
         spark.sql(f"ALTER TABLE {tabela} SET TBLPROPERTIES "
                   f"('comment' = '{_limpar(entidade['descricao'])}')")
@@ -417,7 +431,8 @@ def listar(modelo):
     for fonte, spec in modelo["fontes"].items():
         alvos = sorted({r["transformacao"] for _, m in _blocos_de_mapeamento(spec)
                         for r in m.values() if isinstance(r, dict) and "transformacao" in r})
-        pendentes = [t for t in alvos if TRANSFORMACOES[t].__name__ == "_f"]
+        pendentes = [t for t in alvos
+                     if t not in TRANSFORMACOES or TRANSFORMACOES[t].__name__ == "_f"]
         estado = "PRONTA" if not pendentes else f"aguarda {', '.join(pendentes)}"
         tipos = list(spec.get("tipos") or spec.get("entidades") or {})
         print(f"  {fonte:7s} {estado}")
@@ -436,10 +451,12 @@ def main():
     a = p.parse_args()
 
     try:
-        modelo = carregar_modelo(achar_modelo(a.modelo))
+        # so quem vai processar uma fonte precisa do de/para inteiro validado
+        modelo = carregar_modelo(achar_modelo(a.modelo), validar_mapeamentos=bool(a.fonte))
     except ModeloInvalido as e:
         raise SystemExit(f"\n{e}\n")
-    print(f"modelo canonico v{modelo['metadados']['versao']} carregado e validado")
+    print(f"modelo canonico v{modelo['metadados']['versao']} carregado"
+          + (" e validado" if a.fonte else ""))
 
     if a.listar:
         return listar(modelo)

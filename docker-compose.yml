@@ -47,6 +47,7 @@ x-airflow-common: &airflow-common
     - airflow_logs:/opt/airflow/logs
     - airflow_plugins:/opt/airflow/plugins
     - ./spark/jobs:/opt/spark-jobs
+    - ./canonico:/opt/canonico:ro
     - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
   depends_on:
     postgres:

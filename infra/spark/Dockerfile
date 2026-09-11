@@ -17,8 +17,9 @@ ENV OPENLINEAGE_VERSION=1.18.0
 RUN curl -fsSL -o /opt/spark/jars/openlineage-spark_2.12-${OPENLINEAGE_VERSION}.jar \
         https://repo1.maven.org/maven2/io/openlineage/openlineage-spark_2.12/${OPENLINEAGE_VERSION}/openlineage-spark_2.12-${OPENLINEAGE_VERSION}.jar
 
-# O job canonico_para_silver.py le o modelo canonico em YAML.
-RUN pip install --no-cache-dir pyyaml==6.0.2
+# pyyaml: os jobs leem o modelo canonico em YAML.
+# piexif: ingestao_bronze.py le data e GPS do EXIF das fotos (roda nos executores).
+RUN pip install --no-cache-dir pyyaml==6.0.2 piexif==1.1.3
 
 COPY spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
