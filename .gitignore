@@ -1,5 +1,6 @@
 # Python
 venv/
+venv-geradores/
 __pycache__/
 *.pyc
 *.pyo
@@ -63,3 +64,6 @@ relatorios/metricas_gqm_*.json
 # Contem o JWT do ingestion-bot, proprio de cada instalacao.
 # A versao versionada e openlineage.yml.example.
 infra/openlineage/openlineage.yml
+
+# Dados sinteticos gerados (reproduziveis por scripts/geradores/gerar_tudo.py)
+dados_sinteticos/

@@ -11,9 +11,17 @@ SIGILO
   Nenhuma unidade, localidade ou codinome aqui existe. As designacoes seguem a
   estrutura doutrinaria (para que a hierarquia seja plausivel) mas a numeracao e
   ficticia: o Exercito Brasileiro nao possui 51a Brigada. Os toponimos formam
-  uma familia sintetica — nomes de arvores do cerrado — para que fique evidente
-  que sao inventados. A regiao geografica e real e pouco povoada, o que da
-  coordenadas plausiveis sem descrever movimento de tropa em lugar identificavel.
+  uma familia sintetica — nomes de arvores nativas — para que fique evidente
+  que sao inventados. A regiao geografica e real: o Vale do Paraiba, entre
+  Lorena/Cruzeiro (SP) e Resende (RJ), onde ocorreu a Operacao Perseu 2024
+  (exercicio publico, 25 nov a 5 dez 2024) que da contexto ao estudo. As
+  rodovias, os corregos e as localidades, porem, sao inventados: a BR-154 nao
+  existe na numeracao do DNIT.
+
+GEOMETRIA
+  Tudo e posicionado num eixo: a BR-154 parte de LAT0/LON0 com rumo AZIMUTE e
+  cada ponto e descrito por (km ao longo do eixo, km perpendicular a ele). Da
+  para mover a area inteira trocando duas constantes.
 
 SIGLAS
   Compostas pela regra 3.1.5 do MD33-M-02: a abreviatura de uma expressao e o
@@ -25,15 +33,26 @@ SIGLAS
 """
 
 import csv
+import hashlib
+import math
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[2]
 DIR = RAIZ / "canonico" / "seeds"
 
-# --- ancora geografica: area rural de cerrado, pouco povoada -----------------
-LAT0, LON0 = -14.10, -46.62      # inicio da BR-154 (ficticia)
-GRAU_LAT_KM = 0.008993           # 1 km em graus de latitude
-GRAU_LON_KM = 0.009290           # 1 km em graus de longitude nesta latitude
+# --- ancora geografica: Vale do Paraiba, area da Operacao Perseu 2024 --------
+LAT0, LON0 = -22.80, -45.25      # km 0 da BR-154 (ficticia), a sudoeste de Lorena/SP
+AZIMUTE = 68.0                   # rumo do eixo em graus (ENE), acompanhando o vale ate Resende/RJ
+KM_LAT = 1 / 110.574                                        # 1 km em graus de latitude
+KM_LON = 1 / (111.320 * math.cos(math.radians(LAT0)))       # 1 km em graus de longitude nesta latitude
+
+
+def _latlon(km, perp=0.0):
+    """Ponto a `km` ao longo do eixo da BR-154 e `perp` km ao lado dele (+ esquerda, - direita)."""
+    az = math.radians(AZIMUTE)
+    norte = km * math.cos(az) + perp * math.sin(az)
+    leste = km * math.sin(az) - perp * math.cos(az)
+    return LAT0 + norte * KM_LAT, LON0 + leste * KM_LON
 
 CABECALHO = (
     "# {titulo}\n"
@@ -111,7 +130,7 @@ def gerar_unidades():
 
 
 # =============================================================================
-# Toponimos: arvores do cerrado. Familia sintetica, deliberadamente reconhecivel
+# Toponimos: arvores nativas. Familia sintetica, deliberadamente reconhecivel
 # como invencao, para nao colidir com nome de lugar real.
 ARVORES = ["Aroeira", "Sucupira", "Jatoba", "Copaiba", "Barriguda", "Pequi",
            "Macauba", "Cagaita", "Mangaba", "Baru", "Pau-Terra", "Gonçalo-Alves"]
@@ -123,27 +142,22 @@ def _ponto(lat, lon):
 
 def gerar_gazetteer():
     g = []
-    # --- BR-154: rodovia ficticia, sentido norte-sul, marcos de 5 em 5 km ---
+    # --- BR-154: rodovia ficticia ao longo do eixo do vale, marcos de 5 em 5 km ---
     for km in range(0, 121, 5):
-        lat = LAT0 - km * GRAU_LAT_KM
         g.append([f"BR154K{km:03d}", f"BR-154 km {km}", "RODOVIA_KM",
-                  f"BR-154 km {km}", _ponto(lat, LON0), 250])
+                  f"BR-154 km {km}", _ponto(*_latlon(km)), 250])
 
-    # --- VC-231: vicinal leste-oeste, cruza a BR-154 no km 45 ---
-    lat_cruz = LAT0 - 45 * GRAU_LAT_KM
+    # --- VC-231: vicinal perpendicular, cruza a BR-154 no km 45 ---
     for km in range(0, 41, 5):
-        lon = LON0 + (km - 20) * GRAU_LON_KM
         g.append([f"VC231K{km:03d}", f"VC-231 km {km}", "RODOVIA_KM",
-                  f"VC-231 km {km}", _ponto(lat_cruz, lon), 250])
+                  f"VC-231 km {km}", _ponto(*_latlon(45, km - 20)), 250])
 
     # --- localidades, distribuidas ao longo dos eixos ---
     for i, arv in enumerate(ARVORES):
         km = 8 + i * 9
-        lat = LAT0 - km * GRAU_LAT_KM
-        lon = LON0 + (GRAU_LON_KM * (6 if i % 2 else -6))
         rot = "Vila" if i % 3 == 0 else ("Povoado" if i % 3 == 1 else "Nucleo")
         g.append([f"LOC{i:02d}", f"{rot} {arv}", "LOCALIDADE",
-                  f"{rot} {arv}", _ponto(lat, lon), 1500])
+                  f"{rot} {arv}", _ponto(*_latlon(km, 6 if i % 2 else -6)), 1500])
 
     # --- pontos notaveis, ancorados em marcos ja definidos ---
     notaveis = [
@@ -161,22 +175,38 @@ def gerar_gazetteer():
         ("PN12", "Posto Mangaba", 12, 2),
     ]
     for cod, nome, km, desloc in notaveis:
-        lat = LAT0 - km * GRAU_LAT_KM
-        lon = LON0 + desloc * GRAU_LON_KM
-        g.append([cod, nome, "PONTO_NOTAVEL", nome, _ponto(lat, lon), 400])
+        g.append([cod, nome, "PONTO_NOTAVEL", nome, _ponto(*_latlon(km, desloc)), 400])
 
     # --- quadriculas da carta militar, malha de 10 km ---
     for li in range(4):
         for co in range(3):
-            lat = LAT0 - (15 + li * 30) * GRAU_LAT_KM
-            lon = LON0 + (co - 1) * 10 * GRAU_LON_KM
             cod = f"QD{44 + co}{71 + li}"
+            lat, lon = _latlon(15 + li * 30, (co - 1) * 10)
             g.append([cod, f"Quadricula {cod[2:]}", "QUADRICULA",
                       f"quadricula {cod[2:]}", _ponto(lat, lon), 5000])
 
     _escrever("gazetteer.csv", "REF_GAZETTEER — indice de nomes geograficos (SINTETICO)",
-              ["LOCAL_COD", "LOCAL_NOME", "LOCAL_TIPO_COD", "REFERENCIA_TEXTO",
+              ["LOCAL_COD", "LOCAL_NOME", "LOCAL_TIPO_COD", "REFERENCIA_TXT",
                "GEOMETRIA_WKT", "PRECISAO_METRO"], g)
+
+
+# =============================================================================
+# A operacao que delimita o estudo. Uma linha: decisao do usuario (2026-09-09).
+# Perseu 2024 e um exercicio real e publico (25 nov a 5 dez 2024, Vale do
+# Paraiba ate Resende); so o nome, as datas e a regiao sao reais — as unidades
+# e os fatos gerados sao sinteticos.
+def gerar_operacoes():
+    cod = "PERSEU_2024"
+    # o hash que o C2_A usaria internamente: deterministico, para o de/para resolver
+    hash_c2a = hashlib.sha1(cod.encode()).hexdigest()[:16]
+    # area de operacoes: faixa de 15 km para cada lado do eixo, do km -10 ao km 130
+    cantos = [_latlon(-10, 15), _latlon(130, 15), _latlon(130, -15), _latlon(-10, -15), _latlon(-10, 15)]
+    area = "POLYGON((" + ", ".join(f"{lon:.6f} {lat:.6f}" for lat, lon in cantos) + "))"
+    linhas = [[cod, "Operacao Perseu 2024", "ADESTRAMENTO", hash_c2a,
+               "2024-11-25T03:00:00Z", "2024-12-06T02:59:59Z", area, "BDA51"]]
+    _escrever("operacoes.csv", "REF_OPERACAO — operacoes que delimitam o estudo",
+              ["OPERACAO_COD", "OPERACAO_NOME", "OPERACAO_TIPO_COD", "OPERACAO_ORIGEM_C2A_COD",
+               "INICIO_DATA", "FIM_DATA", "AREA_WKT", "UNIDADE_RESP_COD"], linhas)
 
 
 # =============================================================================
@@ -185,3 +215,4 @@ if __name__ == "__main__":
     print("Gerando seeds:")
     gerar_unidades()
     gerar_gazetteer()
+    gerar_operacoes()

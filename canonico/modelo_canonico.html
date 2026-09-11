@@ -1,5 +1,5 @@
 <title>Modelo Canônico ARQ_TEMAC</title>
-<meta name="description" content="Como cinco fontes heterogêneas convergem na tabela EVENTO e como a linhagem liga cada número ao registro bruto que o originou.">
+<meta name="description" content="Como seis fontes heterogêneas convergem na tabela EVENTO e como a linhagem liga cada número ao registro bruto que o originou.">
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
 
@@ -465,11 +465,11 @@
   <header>
     <p class="eyebrow">ARQ_TEMAC · parte empírica · modelo_canonico.yaml</p>
     <h1>O modelo canônico em dois diagramas e um exemplo</h1>
-    <p class="lead">Cinco sistemas de origem, seis modalidades de arquivo, uma única tabela de
+    <p class="lead">Seis sistemas de origem, seis modalidades de arquivo, uma única tabela de
       destino — e uma <strong>operação</strong> que amarra tudo. Esta página mostra o percurso que
       todo dado faz, o que permite cruzar fontes tão diferentes, e como, a partir de qualquer
       número na camada final, se volta ao registro bruto que o gerou.</p>
-    <p class="meta">versão 3 · atualizado em 2026-09-09 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
+    <p class="meta">versão 3 · atualizado em 2024-11-27 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
   </header>
 
   <section>
@@ -503,13 +503,14 @@
       camada tem um trabalho e só um.</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das seis fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
 flowchart TD
   subgraph FONTES["FONTES · sistemas de origem"]
     C2A["C2_A<br/>JSON com geometria"]
     C2B["C2_B<br/>texto livre + foto"]
     REL["RELPER<br/>planilha ou PDF assinado"]
-    FOG["FOGOS<br/>Relatorio de Bombardeio"]
+    FOG["FOGOS<br/>Relatorio de Bombardeio (Anexo I)"]
+    INT["INTEL<br/>informe de inteligencia assinado"]
     VOZ["VOZ<br/>audio de radio"]
   end
 
@@ -519,6 +520,7 @@ flowchart TD
   C2B --> LAND
   REL --> LAND
   FOG --> LAND
+  INT --> LAND
   VOZ --> LAND
 
   subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
@@ -539,7 +541,7 @@ flowchart TD
   EXT -->|"so os campos que a IA inferiu<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
 
   subgraph SEEDS["TABELAS DE CONSULTA · seeds"]
-    ROPE["REF_OPERACAO<br/>hash do C2 / 'Perseu 2026' / pasta<br/>viram PERSEU_2026"]
+    ROPE["REF_OPERACAO<br/>hash do C2 / 'Perseu 2024' / pasta<br/>viram PERSEU_2024"]
     RUNI["REF_UNIDADE<br/>'1a Cia Fuz' vira BI511C1"]
     RGAZ["REF_GAZETTEER<br/>'BR-154 km 43' vira ponto"]
     RABV["REF_ABREVIATURA<br/>'Fz' vira Fuzil"]
@@ -587,8 +589,9 @@ flowchart TD
           <h3>Fontes</h3>
           <p>Cada sistema entrega o que já produz, no formato em que produz. O <code>C2_A</code>
             manda JSON com a geometria embutida; o <code>RELPER</code>, uma planilha — ou o mesmo
-            formulário impresso, assinado e escaneado; a rede de rádio, um arquivo de áudio. Nada
-            é adaptado na origem.</p>
+            formulário impresso, assinado e escaneado; a artilharia, o Relatório de Bombardeio
+            digitalizado; a seção de inteligência, um informe assinado; a rede de rádio, um
+            arquivo de áudio. Nada é adaptado na origem.</p>
         </div>
       </li>
       <li>
@@ -744,7 +747,7 @@ erDiagram
     <div class="scroll">
       <table class="mini">
         <tbody>
-          <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2026</code></td></tr>
+          <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code></td></tr>
           <tr><th scope="row">OPERACAO_NOME</th><td>Operação Perseu</td></tr>
           <tr><th scope="row">OPERACAO_TIPO_COD</th><td><code>ADESTRAMENTO</code></td></tr>
           <tr><th scope="row">OPERACAO_ORIGEM_C2A_COD</th><td><code>a3f9c1e0…</code> &nbsp;(o hash do C2_A)</td></tr>
@@ -765,14 +768,14 @@ erDiagram
       descrever</strong>. Aqui a regra vale para <em>todo</em> arquivo em <code>landing/</code>:
       ele chega acompanhado de um pequeno JSON de mesmo nome — o <em>sidecar</em> — com a
       proveniência.</p>
-    <pre class="sheet">landing/perseu_2026/relper/relper_bi511_matutino.xlsx     ← o binário    → ARQUIVO
-landing/perseu_2026/relper/relper_bi511_matutino.json     ← o sidecar    → RECEPCAO_BRUTA
+    <pre class="sheet">landing/perseu_2024/relper/relper_bi511_matutino.xlsx     ← o binário    → ARQUIVO
+landing/perseu_2024/relper/relper_bi511_matutino.json     ← o sidecar    → RECEPCAO_BRUTA
 
   relper_bi511_matutino.json
   {
-    "operacao":     "PERSEU_2026",
+    "operacao":     "PERSEU_2024",
     "om_remetente": "1o Btl Inf Mtz / 511",
-    "data_hora":    "2026-09-09T06:00:00Z",
+    "data_hora":    "2024-11-27T06:00:00Z",
     "turno":        "MATUTINO"
   }</pre>
     <p>O sidecar entra em <code>RECEPCAO_BRUTA</code> exatamente como o JSON do <code>C2_A</code>;
@@ -794,7 +797,7 @@ landing/perseu_2026/relper/relper_bi511_matutino.json     ← o sidecar    → R
         <tbody>
           <tr><td><span class="mod">JSON</span> C2_A</td><td>campo nativo — é o <em>hash</em>, resolvido contra a chave alternativa</td></tr>
           <tr><td><span class="mod">JSON</span> C2_B relato</td><td>campo nativo no payload</td></tr>
-          <tr><td>C2_B incidente · RELPER · FOGOS · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
+          <tr><td>C2_B incidente · RELPER · FOGOS · INTEL · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
           <tr><td>arquivo sem sidecar (fallback)</td><td>hora + geo de captura dentro da janela e da área de <code>REF_OPERACAO</code></td></tr>
         </tbody>
       </table>
@@ -823,17 +826,17 @@ landing/perseu_2026/relper/relper_bi511_matutino.json     ← o sidecar    → R
           <strong>sidecar</strong> — o <code>.json</code> de proveniência, gerado pelo portal de
           submissão. Os cabeçalhos das colunas da planilha são fixados pelo estado-maior da
           brigada; as duas linhas de dados são o que varia.</p>
-        <pre class="sheet">relper_bi511_2026-09-09_matutino.xlsx            (14,8 KB)
+        <pre class="sheet">relper_bi511_2024-11-27_matutino.xlsx            (14,8 KB)
 
   Fração              | Ef Pres | Vtr Op
   --------------------|---------|-------
   1ª Cia Fuz/511      |   118   |   11
   2ª Cia Fuz/511      |   121   |   12
 
-relper_bi511_2026-09-09_matutino.json           (o sidecar)
+relper_bi511_2024-11-27_matutino.json           (o sidecar)
 
-  { "operacao": "PERSEU_2026", "om_remetente": "1o Btl Inf Mtz / 511",
-    "data_hora": "2026-09-09T06:00:00Z", "turno": "MATUTINO" }</pre>
+  { "operacao": "PERSEU_2024", "om_remetente": "1o Btl Inf Mtz / 511",
+    "data_hora": "2024-11-27T06:00:00Z", "turno": "MATUTINO" }</pre>
         <p>A planilha carrega o <em>conteúdo</em> (os números); o sidecar carrega o que é
           <em>sobre</em> o arquivo (operação, quem remeteu, quando).</p>
       </li>
@@ -843,8 +846,8 @@ relper_bi511_2026-09-09_matutino.json           (o sidecar)
         <p>O par é copiado para o armazenamento de objetos exatamente como chegou. Nenhuma célula
           foi lida. Se a coluna <code>Vtr Op</code> nem existisse no formulário oficial, o arquivo
           entraria do mesmo jeito — o esquema só será exigido na leitura.</p>
-        <pre class="sheet">s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.xlsx
-s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.json</pre>
+        <pre class="sheet">s3a://lakehouse/landing/perseu_2024/relper/relper_bi511_2024-11-27_matutino.xlsx
+s3a://lakehouse/landing/perseu_2024/relper/relper_bi511_2024-11-27_matutino.json</pre>
       </li>
 
       <li>
@@ -856,12 +859,12 @@ s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.json
           <table class="mini">
             <tbody>
               <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code></td></tr>
-              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2026</code> &nbsp;(da pasta <code>landing/perseu_2026/…</code>)</td></tr>
+              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code> &nbsp;(da pasta <code>landing/perseu_2024/…</code>)</td></tr>
               <tr><th scope="row">CONTEUDO_HASH_COD</th><td><code>sha256:9f3c1a4e…</code></td></tr>
-              <tr><th scope="row">ARQUIVO_URI_TXT</th><td><code>s3a://…/perseu_2026/relper/relper_bi511_2026-09-09_matutino.xlsx</code></td></tr>
+              <tr><th scope="row">ARQUIVO_URI_TXT</th><td><code>s3a://…/perseu_2024/relper/relper_bi511_2024-11-27_matutino.xlsx</code></td></tr>
               <tr><th scope="row">MIME_TIPO_COD</th><td><code>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code></td></tr>
               <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
-              <tr><th scope="row">RECEBIMENTO_DATA</th><td><code>2026-09-09T09:12:07Z</code></td></tr>
+              <tr><th scope="row">RECEBIMENTO_DATA</th><td><code>2024-11-27T09:12:07Z</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -877,15 +880,15 @@ s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.json
             <tbody>
               <tr><th scope="row">RECEPCAO_IDT</th><td><code>rcp_c4d80a</code></td></tr>
               <tr><th scope="row">SISTEMA_ORIGEM_COD</th><td><code>RELPER</code></td></tr>
-              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2026</code> &nbsp;(do próprio sidecar — o valor de referência)</td></tr>
+              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code> &nbsp;(do próprio sidecar — o valor de referência)</td></tr>
               <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
-              <tr><th scope="row">CONTEUDO_JSON_TXT</th><td><code>{"operacao":"PERSEU_2026","om_remetente":…}</code></td></tr>
+              <tr><th scope="row">CONTEUDO_JSON_TXT</th><td><code>{"operacao":"PERSEU_2024","om_remetente":…}</code></td></tr>
               <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code> &nbsp;(liga o sidecar ao binário)</td></tr>
             </tbody>
           </table>
         </div>
         <div class="note"><b>O palpite e a referência.</b> A operação aparece <em>duas</em> vezes:
-          em <code>ARQUIVO</code> ela veio da pasta (<code>landing/perseu_2026/…</code>), carimbada
+          em <code>ARQUIVO</code> ela veio da pasta (<code>landing/perseu_2024/…</code>), carimbada
           na ingestão; em <code>RECEPCAO_BRUTA</code> ela veio do próprio sidecar. É esta segunda
           que <code>EVENTO</code> herda. As duas concordando é o esperado; divergirem seria sinal
           de arquivo na pasta errada — do mesmo tipo que a coordenada do EXIF contra a digitada.</div>
@@ -915,8 +918,8 @@ s3a://lakehouse/landing/perseu_2026/relper/relper_bi511_2026-09-09_matutino.json
         <p>Para <em>cada</em> uma das duas linhas da planilha, as regras declaradas no YAML são
           aplicadas:</p>
         <div class="trace">do SIDECAR:
-  operacao "PERSEU_2026"     → referencia REF_OPERACAO → OPERACAO_COD           = PERSEU_2026
-  data_hora "…T06:00:00Z"    → ts_iso                  → OCORRENCIA_DATA        = 2026-09-09 06:00:00
+  operacao "PERSEU_2024"     → referencia REF_OPERACAO → OPERACAO_COD           = PERSEU_2024
+  data_hora "…T06:00:00Z"    → ts_iso                  → OCORRENCIA_DATA        = 2024-11-27 06:00:00
   turno    "MATUTINO"        → dominio turno_relatorio → TURNO_COD              = MATUTINO
 
 da PLANILHA (uma vez por linha):
@@ -948,8 +951,8 @@ ponteiros de linhagem:
               <tr><th>EVENTO_IDT</th><th>OPERAÇÃO</th><th>SISTEMA</th><th>MODALIDADE</th><th>TIPO</th><th>FUNÇÃO</th><th>C2</th><th>OCORRÊNCIA</th><th>UNIDADE</th><th>RECEPCAO_IDT</th><th>ARQUIVO_IDT</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>evt_3a0091</code></td><td><code>PERSEU_2026</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C1</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
-              <tr><td><code>evt_3a0092</code></td><td><code>PERSEU_2026</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2026-09-09 06:00</td><td><code>BI511C2</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
+              <tr><td><code>evt_3a0091</code></td><td><code>PERSEU_2024</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2024-11-27 06:00</td><td><code>BI511C1</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
+              <tr><td><code>evt_3a0092</code></td><td><code>PERSEU_2024</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2024-11-27 06:00</td><td><code>BI511C2</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -980,14 +983,14 @@ ponteiros de linhagem:
         <h3>A volta: do número ao byte <span class="tag">linhagem</span></h3>
         <p>Pergunta de auditoria: <em>de onde veio o 118 de efetivo presente da 1ª Cia?</em></p>
         <div class="trace">SITUACAO_UNIDADE.EF_PRESENTE_QNT = 118   (linha evt_3a0091)
-   └─ EVENTO_IDT evt_3a0091   (OPERACAO_COD = PERSEU_2026)
+   └─ EVENTO_IDT evt_3a0091   (OPERACAO_COD = PERSEU_2024)
         ├─ EVENTO.ARQUIVO_IDT = arq_7b91f2
-        │    └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/perseu_2026/relper/…matutino.xlsx
+        │    └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/perseu_2024/relper/…matutino.xlsx
         │         hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)
         │         └─ abre o .xlsx → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔
         └─ EVENTO.RECEPCAO_IDT = rcp_c4d80a
              └─ RECEPCAO_BRUTA.ORIGEM_URI_TXT = s3a://…/…matutino.json
-                  └─ o sidecar que disse "operacao: PERSEU_2026, remetente 1º/511º BI"   ✔</div>
+                  └─ o sidecar que disse "operacao: PERSEU_2024, remetente 1º/511º BI"   ✔</div>
         <p>Dois ramos: o número saiu da planilha, o contexto (operação, remetente) saiu do
           sidecar. Se fosse a versão escaneada, o ramo do <code>.xlsx</code> passaria também por
           <code>EXTRACAO</code>, que responderia <em>com que ferramenta e modelo</em> aquele
@@ -999,7 +1002,7 @@ ponteiros de linhagem:
   </section>
 
   <section>
-    <h2><span class="n">Referência</span> As cinco fontes</h2>
+    <h2><span class="n">Referência</span> As seis fontes</h2>
     <p>Cada linha da coluna &ldquo;Bloco no YAML&rdquo; é um conjunto de regras de/para dentro de
       <code>fontes:</code> — <strong>não</strong> uma tabela. Uma fonte pode ter mais de um bloco,
       um por forma de entrada: o <code>RELPER</code> chega como planilha <em>ou</em> como PDF
@@ -1064,7 +1067,15 @@ ponteiros de linhagem:
             <td><code>relatorio_bombardeio</code></td>
             <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
             <td>sidecar</td>
-            <td>OCR + LLM: data, prioridade</td>
+            <td>OCR + LLM: data, prioridade. Só a 1ª parte do Anexo I (informes de observador sobre bombardeio inimigo) vira evento</td>
+          </tr>
+          <tr>
+            <th scope="row">INTEL</th>
+            <td><span class="mod">PDF</span></td>
+            <td><code>informe</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar</td>
+            <td>OCR + LLM: data, tipo, prioridade. A avaliação <span class="kw">B2</span> é lida do cabeçalho, não inferida</td>
           </tr>
           <tr>
             <th scope="row">VOZ</th>
@@ -1072,7 +1083,7 @@ ponteiros de linhagem:
             <td><code>transcricao</code></td>
             <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
             <td>sidecar do <em>voice logger</em></td>
-            <td>Transcrição de fala + LLM: data, prioridade, função</td>
+            <td>Transcrição de fala + LLM: prioridade, função. A hora vem do gravador</td>
           </tr>
         </tbody>
         <caption>Toda linha marcada com IA gera pelo menos uma linha em <code>EXTRACAO</code> —

@@ -58,8 +58,11 @@ metadados:
     Entra REF_OPERACAO e a coluna OPERACAO_COD (nao nula em EVENTO; carimbada
     tambem em ARQUIVO e RECEPCAO_BRUTA). E a chave que une as fontes
     heterogeneas e o recorte de toda visao Gold — sem ela, adestramentos
-    diferentes se misturam. O codigo e legivel (PERSEU_2026), e o hash interno
-    do C2_A vira chave alternativa (OPERACAO_ORIGEM_C2A_COD).
+    diferentes se misturam. O codigo e legivel (PERSEU_2024), e o hash interno
+    do C2_A vira chave alternativa (OPERACAO_ORIGEM_C2A_COD). Decisao do usuario
+    (2026-09-10): a operacao do estudo e a Perseu 2024, exercicio real e publico
+    (25 nov a 5 dez 2024, Vale do Paraiba ate Resende); os seeds geograficos
+    foram movidos para essa regiao, com toponimos e rodovias inventados.
 
     Decisao do usuario: SIDECAR EM TUDO. Todo arquivo em landing/ — xlsx, PDF,
     imagem, audio — chega com um .json de proveniencia ao lado. O sidecar entra
@@ -74,6 +77,22 @@ metadados:
     linha). Fallback contexto_operacao e a resolucao do hash ficam modelados
     mas nao sao exercitados. Hierarquia de unidades continua a de tempo de paz
     (sem organizacao para o combate / GITE).
+  nota_2026_09_10: >-
+    Rodada de preparacao dos geradores sinteticos. FOGOS passa a ser FIEL ao
+    Anexo I do EB60-ME-12.301: a col_A e 'Informe de / Hora' (codinome do
+    observador + grupo data-hora), a col_B e a posicao do OBSERVADOR e a area
+    bombardeada esta na col_F — o de/para anterior trocava as duas. A avaliacao
+    'B2' nao existe no Anexo I e migrou para uma fonte propria, INTEL (informe
+    de inteligencia em PDF assinado), que e o documento que a carrega de fato.
+    Entra o tipo BOMBARDEIO_INIMIGO: a 1a parte do relatorio registra fogos do
+    INIMIGO observados, e nao missao de tiro nossa. C2_B ganha `id` no relato e
+    `data_hora`/`descricao` no incidente (REGISTRO_ORIGEM_COD e OCORRENCIA_DATA
+    sao nao nulos e nao tinham origem). VOZ simplificada: o sidecar traz so
+    operacao, hora e estacao; a hora da transmissao vale como hora do fato.
+    Classes de suprimento I, III, V e VIII conferidas contra o Quadro 5-1 do
+    EB70-MC-10.238. Decisao do usuario: a extracao por IA e APONTADA (modelo,
+    prompt, confianca declarada) e a conferencia fica com o estado-maior — nao
+    se calcula taxa de acerto contra gabarito.
 
 
 # =============================================================================
@@ -94,6 +113,7 @@ dominios:
       RELPER: {rotulo: Relatorio Periodico de Pessoal e Material}
       FOGOS:  {rotulo: Documentacao de fogos}
       VOZ:    {rotulo: Mensagem de voz}
+      INTEL:  {rotulo: Informe de inteligencia}
     # RELPER: o MD33-M-02 cataloga RPP (Relatorio Periodico de Pessoal) e RPI
     # (Relatorio Periodico de Inteligencia). O formulario decretado pelo EM da
     # brigada consolida pessoal e material num documento so, entao o codigo
@@ -118,16 +138,28 @@ dominios:
       AVISTAMENTO:         {rotulo: Avistamento, sinonimos: [potro]}
       AVISTAMENTO_INIMIGO: {rotulo: Avistamento de forca oponente, sinonimos: [cavalo]}
       INCIDENTE:           {rotulo: Incidente, sinonimos: [brasa]}
-      OBSTACULO:           {rotulo: Obstaculo, sinonimos: [bigorna]}
+      OBSTACULO:           {rotulo: Obstaculo, sinonimos: [bigorna, campo de minas, cratera, barreira, fosso anticarro]}
+      MCC:                 {rotulo: Medida de coordenacao e controle, sinonimos: [linha de fase, zona de reuniao, limite, eixo de progressao, ponto de controle, objetivo, linha de partida]}
       MISSAO_TIRO:         {rotulo: Missao de tiro, sinonimos: [martelo]}
+      BOMBARDEIO_INIMIGO:  {rotulo: Bombardeio inimigo observado, sinonimos: [tambor]}
       SITUACAO_UNIDADE:    {rotulo: Situacao periodica da unidade, sinonimos: [celeiro]}
     # Os codinomes de radio entram como SINONIMOS, e nao como tabela separada:
     # 'cavalo' no audio transcrito casa direto com AVISTAMENTO_INIMIGO.
+    #
+    # MCC e OBSTACULO vem da mesma tela do C2_A (as feicoes desenhadas no mapa)
+    # e se separam pela `especie` que o C2_A exporta: campo de minas e cratera
+    # sao obstaculo (algo no terreno, funcao PROTECAO); linha de fase e zona de
+    # reuniao sao medida de coordenacao (algo combinado, funcao MOV_MANOBRA).
+    # As especies entram como SINONIMOS, o mesmo mecanismo dos codinomes.
     #
     # SITUACAO_PESSOAL e SITUACAO_MEIO, que existiam separados na v2, viraram um
     # tipo so: o formulario do EM reporta efetivo e material na MESMA linha, e
     # parti-lo em dois eventos duplicaria unidade, data e geometria sem ganho.
     # SENSOR saiu junto com a fonte SIM.
+    #
+    # BOMBARDEIO_INIMIGO e MISSAO_TIRO sao coisas distintas: o Relatorio de
+    # Bombardeio (Anexo I) registra fogos que o INIMIGO fez sobre nos, vistos
+    # por observador ou deduzidos de cratera; missao de tiro e o nosso fogo.
 
   funcao_combate:
     descricao: >-
@@ -405,13 +437,13 @@ entidades:
       COMBUSTIVEL_PCTL:
         {tipo: double, nulo: true, descricao: Nivel medio de combustivel das viaturas.}
       SUP_CL_I_DIAS:
-        {tipo: double, nulo: true, descricao: "Dias de suprimento de subsistencia. D Sup (Dia de Suprimento) e a unidade doutrinaria, catalogada no MD33-M-02; DIAS e termo de representacao do Art. 138."}
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe I: subsistencia, inclusive agua (Quadro 5-1 do EB70-MC-10.238). D Sup (Dia de Suprimento) e a unidade doutrinaria, catalogada no MD33-M-02; DIAS e termo de representacao do Art. 138."}
       SUP_CL_III_DIAS:
-        {tipo: double, nulo: true, descricao: Dias de suprimento de combustiveis e lubrificantes.}
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe III: combustiveis, oleos e lubrificantes."}
       SUP_CL_V_DIAS:
-        {tipo: double, nulo: true, descricao: Dias de suprimento de municao.}
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe V: armamento e municao."}
       SUP_CL_VIII_DIAS:
-        {tipo: double, nulo: true, descricao: Dias de suprimento de material de saude.}
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe VIII: saude. As quatro classes sao as que o formulario do EM pede; as dez classes da F Ter estao no Quadro 5-1 do EB70-MC-10.238."}
       NECESSIDADE_TXT:
         tipo: string
         nulo: true
@@ -520,8 +552,8 @@ entidades:
     campos:
       EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da inferencia.}
       ARQUIVO_IDT:       {tipo: string, nulo: false, referencia: ARQUIVO, descricao: Arquivo de entrada.}
-      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta usada. Ex.: tesseract, faster-whisper, ollama, openpyxl."}
-      MODELO_NOME:       {tipo: string, nulo: false, descricao: "Modelo usado. Ex.: qwen3.5:4b. Para leitura deterministica, o nome da biblioteca e a versao."}
+      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta usada. Ex.: tesseract, faster-whisper, ollama. Leitura deterministica (celula de planilha por openpyxl) NAO gera linha aqui: so ha extracao quando ha inferencia."}
+      MODELO_NOME:       {tipo: string, nulo: false, descricao: "Modelo usado. Ex.: qwen3.5:4b, ou o modelo do OCR/transcritor (por, small-int8)."}
       PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "Versao do prompt. Sem ela, a pergunta de auditoria fica sem resposta completa."}
       SAIDA_TXT:         {tipo: string, nulo: true, descricao: Saida da inferencia.}
       CONFIANCA_PCTL:    {tipo: double, nulo: true, descricao: "Confianca declarada pela ferramenta, de 0 a 1."}
@@ -537,7 +569,7 @@ entidades:
       dados de adestramentos diferentes se misturariam e as visoes Gold nao
       teriam recorte.
 
-      O codigo e legivel — nome + ano, como PERSEU_2026 — e nao o hash que o
+      O codigo e legivel — nome + ano, como PERSEU_2024 — e nao o hash que o
       C2_A usa internamente. O hash entra como chave alternativa
       (OPERACAO_ORIGEM_C2A_COD): e por ele que o dado do C2_A resolve para o
       codigo legivel, e o mesmo codigo legivel que aparece no cabecalho da
@@ -552,7 +584,7 @@ entidades:
     chave: [OPERACAO_COD]
     seed: seeds/operacoes.csv
     campos:
-      OPERACAO_COD:            {tipo: string, nulo: false, descricao: "Codigo legivel: nome + ano, sem acento, termos separados por _. Ex.: PERSEU_2026."}
+      OPERACAO_COD:            {tipo: string, nulo: false, descricao: "Codigo legivel: nome + ano, sem acento, termos separados por _. Ex.: PERSEU_2024."}
       OPERACAO_NOME:           {tipo: string, nulo: false, descricao: "Designacao por extenso. Ex.: Operacao Perseu."}
       OPERACAO_TIPO_COD:       {tipo: string, nulo: false, dominio: tipo_operacao, descricao: Exercicio de adestramento ou operacao real.}
       OPERACAO_ORIGEM_C2A_COD: {tipo: string, nulo: true, descricao: "Identificador interno que o C2_A da a operacao (um hash). Chave alternativa: e por aqui que o dado do C2_A casa com a linha."}
@@ -684,7 +716,8 @@ fontes:
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
-          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
+          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        observacao: "sigla, como o C2_A exporta ('2o Pel Fuz/1a Cia Fuz/511o Btl Inf Mtz'); casa com REF_UNIDADE.UNIDADE_SIGLA"}
           coordenadas: {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
                         observacao: "o C2_A manda o hash da operacao; casa com REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD"}
@@ -703,16 +736,19 @@ fontes:
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
-          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
+          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        observacao: "sigla; casa com REF_UNIDADE.UNIDADE_SIGLA"}
           geometria:   {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt,
                         observacao: "ponto, LINESTRING ou POLYGON; o desenho a mao livre e uma LINESTRING de muitos vertices"}
-          especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento}
+          especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
+                        observacao: "'campo de minas' -> OBSTACULO; 'linha de fase' -> MCC. A especie decide o tipo E a funcao (regra de _funcao)."}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
                         observacao: "hash da operacao; casa com REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
-          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: derivado,
+                        regra: "PROTECAO quando TIPO_COD = OBSTACULO; MOV_MANOBRA quando TIPO_COD = MCC"}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
 
@@ -736,8 +772,10 @@ fontes:
       relato:
         modalidade: TEXTO
         campos:
+          id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           data:        {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss"}
-          relator:     {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
+          relator:     {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        observacao: "'<posto> <funcao> <fracao> - <IDENTIDADE_MIL>'; a fracao casa com REF_UNIDADE.UNIDADE_SIGLA"}
           localizacao: {campo: GEOMETRIA_WKT, transformacao: dms_para_ponto,
                         observacao: "'Sem localizacao' vira vazio, e nao erro: relato sem coordenada e caso legitimo."}
           situacao:    {campo: RELATO_TXT, transformacao: direto}
@@ -761,6 +799,8 @@ fontes:
         sidecar: "o proprio registro JSON do incidente acompanha a foto (mesmo nome, .json)"
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
+          data_hora:   {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss"}
+          descricao:   {campo: RELATO_TXT, transformacao: direto, observacao: "texto curto do incidente, como o operador digitou"}
           prioridade:  {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade}
           c_op:        {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
@@ -805,6 +845,8 @@ fontes:
         sidecar:
           operacao:      {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
                           observacao: "confere contra ARQUIVO.OPERACAO_COD (a pasta em landing/)"}
+          om_remetente:  {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                          observacao: "a OM que remeteu o arquivo (sigla). Nao tem coluna propria: entra na regra de _registro. A unidade de CADA LINHA vem da celula 'fracao'."}
           data_hora:     {campo: OCORRENCIA_DATA, transformacao: ts_iso}
           turno:         {campo: TURNO_COD, transformacao: dominio, dominio: turno_relatorio}
         campos:
@@ -861,10 +903,23 @@ fontes:
           formulario da a taxa de erro do OCR contra o valor verdadeiro — ground
           truth de graca.
 
-  # --- FOGOS: Relatorio de Bombardeio, PDF digitalizado. OCR + LLM. -----------
+  # --- FOGOS: Relatorio de Bombardeio (Anexo I do EB60-ME-12.301). PDF, OCR + LLM.
   # Absorve o `paf` da fonte SIM, que era duplicata empobrecida disto.
-  # O PDF chega com sidecar .json (operacao, OMA que produziu, hora do relatorio);
-  # as linhas de alvo continuam vindo por OCR.
+  #
+  # O documento e gerado FIEL ao Anexo I: cabecalho (Rcb por / Do / Hora / Nr)
+  # e as tres partes — 1a Informes de Observadores e Analise de Crateras
+  # (colunas A a L), 2a Outras Fontes (M a R), 3a Execucao do Tiro (S a V).
+  # So a 1a parte vira evento: cada linha e um informe de observador sobre
+  # bombardeio INIMIGO, que e o que o relatorio existe para registrar. A 2a e a
+  # 3a partes ficam no PDF e em ARQUIVO.EXTRAIDO_TXT, mapeaveis depois (ver
+  # "PARA AUMENTAR O ESCOPO").
+  #
+  # A avaliacao 'B2' NAO existe no Anexo I: saiu daqui e mora na fonte INTEL,
+  # que e o documento que a carrega de fato.
+  #
+  # O PDF chega com sidecar .json (operacao, quem produziu, hora); as linhas
+  # continuam vindo por OCR. O Anexo I e escaneado desde a origem — o S-2
+  # preenche o formulario impresso e digitaliza — e por isso forca o OCR.
   FOGOS:
     modalidade: PDF
     bronze: RECEPCAO_BRUTA
@@ -873,32 +928,79 @@ fontes:
       relatorio_bombardeio:
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
-          oma:       {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
-                      observacao: "Orgao de Manobra da Artilharia que produziu o relatorio"}
+          origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                      observacao: "quem produziu o relatorio: o S-2 do GAC (cabecalho 'Do:')"}
         campos:
-          col_A:       {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: numero do alvo}
-          col_B:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
-                        observacao: "'03250-10550' -> coordenada metrica"}
-          col_G:       {campo: RELATO_TXT, transformacao: direto, observacao: "armamento observado, ex. '2/Ob/Me'"}
-          avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
-                        transformacao: split_escala,
-                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2"}
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                        regra: "Nr do relatorio (cabecalho) + col_A",
+                        observacao: "col_A e 'Informe de / Hora' (nota 1 do Anexo I): codinome do observador + grupo data-hora, ex. 'TROVAO 1 / 210900 NOV 16'"}
+          col_F:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
+                        observacao: "'Area Bombardeada' (nota 5), ex. '06700-13150': e ONDE o fato ocorreu. A col_B e a posicao do OBSERVADOR (nota 2), nao do evento — fica em EXTRAIDO_TXT, sem coluna canonica."}
+          _relato:     {campo: RELATO_TXT, transformacao: derivado,
+                        regra: "colunas G a L da linha, concatenadas",
+                        observacao: "armamento inimigo (ex. '2/Ob/Me' = 2 obuses medios, nota 6), classificacao do tiro (Ntz, Dest, Itd..., nota 7), municao (nota 8), tempo clarao-som em segundos, efeito dos fogos (nota 9)"}
           arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: FOGOS}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: FOGOS}
-          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: MISSAO_TIRO}
+          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: BOMBARDEIO_INIMIGO}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
         extraidos_por_llm: [OCORRENCIA_DATA, PRIORIDADE_COD]
+        observacao: >-
+          OCORRENCIA_DATA: dia do grupo data-hora da col_A com a hora de inicio
+          da col_D ('Hora da Atividade, De'). PRIORIDADE_COD: juizo do modelo a
+          partir do efeito (col_L): danos e baixas -> URGENTE. A IA aponta, com
+          modelo e prompt registrados em EXTRACAO; a conferencia e do
+          estado-maior.
+
+  # --- INTEL: Informe de inteligencia. PDF assinado e digitalizado, OCR + LLM. --
+  # E o documento que carrega a avaliacao de fonte e informacao ('B2'): a letra
+  # e a confiabilidade da fonte, o algarismo a credibilidade da informacao.
+  # Chega assinado, por isso e PDF. Cabecalho fixo (Nr, grupo data-hora, origem,
+  # assunto, avaliacao) e corpo em texto livre — a segunda fonte em que o modelo
+  # de linguagem le prosa, desta vez saida de OCR, e nao do JSON do C2_B.
+  # O contraste com o C2_B e proposital: la a confiabilidade e INFERIDA do
+  # relato; aqui e LIDA do cabecalho, porque o analista ja a atribuiu.
+  INTEL:
+    modalidade: PDF
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    entidades:
+      informe:
+        sidecar:
+          operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
+          origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                      observacao: "secao de inteligencia que expediu o informe: E-2 da brigada ou S-2 da OM"}
+        campos:
+          nr:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: "numero do informe, do cabecalho"}
+          avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
+                        transformacao: split_escala,
+                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2. Lido do cabecalho por OCR."}
+          texto:       {campo: RELATO_TXT, transformacao: direto, observacao: "corpo do informe, saida do OCR"}
+          referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
+                             referencia: REF_GAZETTEER,
+                             observacao: "o lugar citado no texto ('Ponte sobre o Corrego Aroeira') -> ponto. O modelo extrai a referencia; a tabela resolve. Sem lugar citado, vazio."}
+          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: INTEL}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: INTELIGENCIA}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
+                        observacao: "resolve para N: documento avulso, nao produzido dentro de sistema de C2"}
+        extraidos_por_llm: [OCORRENCIA_DATA, TIPO_COD, PRIORIDADE_COD]
 
   # --- VOZ: audio de radio. A cadeia mais longa: wav -> texto -> dado. --------
   # O .wav nao se descreve. Vem com um SIDECAR .json do gravador de radio (voice
-  # logger): o gravador nao transcreve, mas SEMPRE carimba rede, frequencia,
-  # hora da transmissao, estacao de origem e — num exercicio — a operacao. O
-  # sidecar entra em RECEPCAO_BRUTA; o .wav, em ARQUIVO; a operacao sai do
-  # sidecar, o conteudo sai da transcricao + LLM.
+  # logger): o gravador nao transcreve, mas SEMPRE carimba a hora da
+  # transmissao, a estacao de origem (a unidade dona do radio, como cadastrada
+  # no gravador) e — num exercicio — a operacao. Tres campos, de proposito: e o
+  # minimo que da contexto ao audio. O sidecar entra em RECEPCAO_BRUTA; o .wav,
+  # em ARQUIVO; a operacao sai do sidecar, o conteudo sai da transcricao + LLM.
+  # A fala e normal, em portugues claro, com os codinomes no lugar dos termos
+  # sensiveis: "cavalo passando proximo a ponte do corrego Aroeira".
   VOZ:
     modalidade: AUDIO
     bronze: RECEPCAO_BRUTA
@@ -908,12 +1010,13 @@ fontes:
         modalidade: AUDIO
         sidecar:
           operacao:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
-          hora_transmissao: {campo: CHEGADA_DATA, transformacao: ts_iso,
-                             observacao: "quando a transmissao entrou na rede, do relogio do gravador"}
+          hora_transmissao: {campo: [OCORRENCIA_DATA, CHEGADA_DATA], transformacao: ts_iso,
+                             observacao: "um campo, dois destinos: a mensagem de radio relata o que esta acontecendo AGORA, entao a hora da transmissao (relogio do gravador) vale como hora do fato e como chegada"}
           estacao:          {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
-                             observacao: "estacao de origem identificada pelo gravador; o indicativo de chamada casa com REF_UNIDADE"}
+                             observacao: "unidade dona do radio, pela sigla, como o gravador a cadastra"}
         campos:
-          texto:    {campo: RELATO_TXT, transformacao: direto, observacao: saida do reconhecimento de fala}
+          texto:    {campo: RELATO_TXT, transformacao: direto,
+                     observacao: "saida do reconhecimento de fala. Os codinomes sao palavras raras: o transcritor recebe a lista de codinomes e lugares como vocabulario inicial (initial_prompt), e essa lista e versionada em EXTRACAO.PROMPT_VERSAO_COD como qualquer prompt."}
           codinome: {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
                      observacao: "'cavalo' casa com o sinonimo de AVISTAMENTO_INIMIGO"}
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
@@ -926,17 +1029,19 @@ fontes:
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
                         observacao: "resolve para N. Radio e MEIO de transmissao de C2, nao sistema de informacao que registre o processo de estado-maior — mesma razao pela qual o documento avulso tambem nao conta."}
-        extraidos_por_llm: [OCORRENCIA_DATA, PRIORIDADE_COD, FUNCAO_COMBATE_COD]
+        extraidos_por_llm: [PRIORIDADE_COD, FUNCAO_COMBATE_COD]
 
 
 # =============================================================================
 # PARA AUMENTAR O ESCOPO
 # =============================================================================
-# O recorte atual gera um documento de fogos: o Relatorio de Bombardeio. Os
-# demais anexos do manual de artilharia (Folha de Trabalho do S-2, Lista de
-# Alvos, Arquivo Historico, Lista de Armas Inimigas) provam a mesma coisa do
-# ponto de vista das teses — documento tabular que exige OCR — e por isso nao
-# sao gerados.
+# O recorte atual gera dois documentos em PDF: o Relatorio de Bombardeio
+# (FOGOS, tabular) e o informe de inteligencia (INTEL, prosa). Os demais anexos
+# do manual de artilharia (Folha de Trabalho do S-2, Lista de Alvos, Arquivo
+# Historico, Lista de Armas Inimigas) provam a mesma coisa do ponto de vista
+# das teses — documento tabular que exige OCR — e por isso nao sao gerados. O
+# mesmo vale para a 2a e a 3a partes do proprio Anexo I: estao no PDF, nao no
+# de/para.
 #
 # Se for preciso incluir um deles:
 #   1. acrescentar um bloco em `fontes`, no molde de FOGOS acima;
