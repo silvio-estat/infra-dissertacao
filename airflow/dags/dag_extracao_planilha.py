@@ -27,6 +27,8 @@ from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
 
+from helpers.lineage_emitter import linhagem
+
 TABELA_ARQUIVO = "iceberg.bronze.arquivo"
 TABELA_EXTRACAO = "iceberg.bronze.extracao"
 PENDENTES_SQL = f"""
@@ -102,6 +104,9 @@ def extrair_planilhas():
         linhas.append((extracao_idt, arquivo_idt, "N", ferramenta, None, None, saida,
                        round(time.perf_counter() - inicio, 3), status, agora))
 
+    if not linhas:
+        print("nada a extrair")
+        return
     # uma insercao so: um snapshot Iceberg, nao um por planilha
     cur = conexao_trino().cursor()
     marcadores = ", ".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"] * len(linhas))
@@ -129,6 +134,17 @@ with DAG(
 
     conferir = BranchPythonOperator(task_id="conferir_pendentes", python_callable=conferir_pendentes)
     nada_a_fazer = EmptyOperator(task_id="nada_a_fazer")
-    extrair = PythonOperator(task_id="extrair_planilhas", python_callable=extrair_planilhas)
+    extrair = PythonOperator(
+        task_id="extrair_planilhas",
+        python_callable=extrair_planilhas,
+        on_success_callback=linhagem(
+            le=["bronze.arquivo"],
+            escreve=["bronze.extracao"],
+            colunas={
+                "arquivo_idt": [("bronze.arquivo", "arquivo_idt")],
+                "saida_txt":   [("bronze.arquivo", "arquivo_uri_txt")],
+            },
+        ),
+    )
 
     conferir >> [extrair, nada_a_fazer]

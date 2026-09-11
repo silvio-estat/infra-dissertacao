@@ -15,14 +15,12 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
-from helpers.lineage_emitter import lineage_callback
 
 default_args = {
     "owner": "dlh",
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": False,
-    "on_success_callback": lineage_callback,
 }
 
 SPARK_SUBMIT_GOLD = (

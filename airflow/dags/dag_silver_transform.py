@@ -12,14 +12,12 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
-from helpers.lineage_emitter import lineage_callback
 
 default_args = {
     "owner": "dlh",
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": False,
-    "on_success_callback": lineage_callback,
 }
 
 with DAG(

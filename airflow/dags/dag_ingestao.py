@@ -25,6 +25,8 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
+from helpers.lineage_emitter import linhagem
+
 BUCKET = "lakehouse"
 PREFIXO_LANDING = "landing/"
 TABELAS_BRONZE = {                      # tabela Trino -> coluna com o endereco do arquivo
@@ -122,6 +124,8 @@ with DAG(
             "spark.hadoop.fs.s3a.aws.credentials.provider": "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
         },
         verbose=False,
+        # landing/ nao e tabela: as duas tabelas Bronze sao a raiz do grafo de linhagem
+        on_success_callback=linhagem(le=[], escreve=["bronze.recepcao_bruta", "bronze.arquivo"]),
     )
 
     conferir >> [ingerir, nada_a_fazer]

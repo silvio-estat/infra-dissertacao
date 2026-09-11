@@ -13,14 +13,12 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
-from helpers.lineage_emitter import lineage_callback
 
 default_args = {
     "owner": "dlh",
     "retries": 2,
     "retry_delay": timedelta(minutes=2),
     "email_on_failure": False,
-    "on_success_callback": lineage_callback,
 }
 
 
