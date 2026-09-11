@@ -469,7 +469,7 @@
       destino — e uma <strong>operação</strong> que amarra tudo. Esta página mostra o percurso que
       todo dado faz, o que permite cruzar fontes tão diferentes, e como, a partir de qualquer
       número na camada final, se volta ao registro bruto que o gerou.</p>
-    <p class="meta">versão 3 · atualizado em 2024-11-27 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
+    <p class="meta">versão 3 · atualizado em 2026-09-11 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
   </header>
 
   <section>
@@ -491,7 +491,8 @@
           incluindo qual modelo de IA fez a extração e com que versão de prompt. Em
           <code>EVENTO</code>, o primeiro elo é <code>RECEPCAO_IDT</code> (quando a fonte chegou
           como JSON) ou <code>ARQUIVO_IDT</code> (quando chegou como arquivo binário); o segundo,
-          <code>EXTRACAO_IDT</code>, só existe quando houve IA no caminho.</dd>
+          <code>EXTRACAO_IDT</code>, existe sempre que houve arquivo: registra <em>como</em> o conteúdo
+          saiu dele — leitura direta ou IA — e, no segundo caso, qual modelo e qual prompt.</dd>
       </div>
     </dl>
   </section>
@@ -526,19 +527,19 @@ flowchart TD
   subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
     RCPB["RECEPCAO_BRUTA<br/>o registro estruturado de TODO evento:<br/>o JSON do C2, ou o sidecar .json do arquivo.<br/>payload cru inteiro, hash, operacao"]
     ARQ["ARQUIVO<br/>manifesto do binario (xlsx, pdf, foto, audio):<br/>URI, hash, MIME, operacao (da pasta)"]
-    EXT["EXTRACAO<br/>1 linha por inferencia de IA:<br/>ferramenta, modelo, versao de prompt"]
+    EXT["EXTRACAO<br/>1 linha por leitura de um binario:<br/>ferramenta+versao, houve IA? (S/N),<br/>modelo e prompt quando houve"]
   end
 
   LAND -->|"JSON nativo do C2, ou o sidecar .json<br/>que acompanha todo arquivo"| RCPB
   LAND -->|"o binario: xlsx, pdf, foto, audio"| ARQ
-  ARQ -->|"quando a IA le o arquivo:<br/>OCR / transcricao / LLM"| EXT
+  ARQ -->|"toda leitura do binario:<br/>celula / texto do PDF (direta)<br/>OCR / transcricao / LLM (IA)"| EXT
   RCPB -.->|"o sidecar aponta para seu binario (ARQUIVO_IDT)"| ARQ
 
   MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio · gazetteer<br/>abreviatura · split_escala · sobra · contexto_operacao"}}
 
   RCPB -->|"quem, quando, onde, a OPERACAO<br/>+ ponteiro de linhagem (RECEPCAO_IDT)"| MAP
-  ARQ -->|"conteudo do arquivo (celulas, colunas);<br/>ponteiro (ARQUIVO_IDT); geo do EXIF, na foto"| MAP
-  EXT -->|"so os campos que a IA inferiu<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
+  ARQ -->|"ponteiro (ARQUIVO_IDT);<br/>geo do EXIF, na foto"| MAP
+  EXT -->|"conteudo do arquivo (celulas, colunas, texto)<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
 
   subgraph SEEDS["TABELAS DE CONSULTA · seeds"]
     ROPE["REF_OPERACAO<br/>hash do C2 / 'Perseu 2024' / pasta<br/>viram PERSEU_2024"]
@@ -563,7 +564,7 @@ flowchart TD
 
   EVT -.->|"RECEPCAO_IDT · elo 1, sempre"| RCPB
   EVT -.->|"ARQUIVO_IDT · o binario, quando ha"| ARQ
-  EVT -.->|"EXTRACAO_IDT · elo 2, quando houve IA"| EXT
+  EVT -.->|"EXTRACAO_IDT · elo 2, sempre que ha binario"| EXT
 </pre>
       <figcaption>Prancha 1 — o percurso do dado. Seta cheia é fluxo; seta pontilhada é um
         ponteiro (a linhagem); seta grossa é o fluxo principal, onde toda fonte cai. A prancha
@@ -609,10 +610,13 @@ flowchart TD
             registro estruturado de <em>todo</em> evento — o JSON nativo do <code>C2</code>, ou o
             <em>sidecar</em>, o pequeno <code>.json</code> de proveniência que acompanha cada
             arquivo (operação, unidade, data). <code>ARQUIVO</code> cataloga cada binário — onde
-            está, seu <em>hash</em>, seu tipo, a operação da pasta. <code>EXTRACAO</code> grava
-            uma linha por inferência de IA sobre um binário: qual ferramenta (reconhecimento
-            óptico, transcrição de fala, um modelo de linguagem local), qual modelo, qual versão
-            de prompt, quanto tempo levou. Uma planilha lida direto, sem IA, não gera linha aqui.</p>
+            está, seu <em>hash</em>, seu tipo, a operação da pasta — e nunca abre o binário.
+            <code>EXTRACAO</code> grava uma linha por <em>leitura</em> de um binário, seja ela
+            direta (célula de planilha, camada de texto do PDF) ou por IA (reconhecimento óptico,
+            transcrição de fala, um modelo de linguagem local): qual ferramenta e versão, se houve
+            inferência (<code>INFERENCIA_INDIC</code>, S/N), qual modelo e versão de prompt quando
+            houve, quanto tempo levou. Todo binário passa por aqui — é o único caminho de
+            <code>ARQUIVO</code> até <code>EVENTO</code>.</p>
         </div>
       </li>
       <li>
@@ -680,14 +684,16 @@ erDiagram
     string OPERACAO_COD FK
     string CONTEUDO_HASH_COD
     string MIME_TIPO_COD
-    string EXTRAIDO_TXT
+    string DIGITALIZADO_INDIC
   }
   EXTRACAO {
     string EXTRACAO_IDT PK
     string ARQUIVO_IDT FK
+    string INFERENCIA_INDIC
     string FERRAMENTA_NOME
     string MODELO_NOME
     string PROMPT_VERSAO_COD
+    string SAIDA_TXT
   }
   EVENTO {
     string EVENTO_IDT PK
@@ -895,22 +901,25 @@ s3a://lakehouse/landing/perseu_2024/relper/relper_bi511_2024-11-27_matutino.json
       </li>
 
       <li>
-        <h3><code>EXTRACAO</code> — nenhuma linha, neste caso <span class="tag bronze">bronze</span></h3>
+        <h3><code>EXTRACAO</code> — uma linha, sem IA <span class="tag bronze">bronze</span></h3>
         <p><code>ARQUIVO</code> e <code>EXTRACAO</code> são duas tabelas Bronze com papéis
           distintos, apesar do nome parecido: <code>ARQUIVO</code> diz <em>que arquivo
-          chegou</em> — todo binário ganha uma linha, a planilha inclusive;
-          <code>EXTRACAO</code> diz <em>o que uma IA leu de dentro dele</em>, e só ganha linha
-          quando alguma IA roda.</p>
+          chegou</em> — todo binário ganha uma linha, a planilha inclusive, e a ingestão nunca o
+          abre; <code>EXTRACAO</code> diz <em>o que foi lido de dentro dele, por quem e como</em>.
+          Todo binário passa pelas duas: <code>ARQUIVO → EXTRACAO → EVENTO</code>, um caminho só.</p>
         <p>Aqui a planilha é lida direto com uma biblioteca (<code>openpyxl</code>), célula por
-          célula, resultado determinístico: nenhuma IA, logo <strong>nenhuma linha em
-          <code>EXTRACAO</code></strong>. <em>O mesmo formulário impresso, assinado e
-          escaneado</em> chegaria como PDF, passaria por reconhecimento óptico, e aí sim cada
-          leitura geraria uma linha em <code>EXTRACAO</code> (ferramenta, modelo, confiança). No
-          YAML esse caminho é a receita <code>situacao_digitalizada</code> — um
-          <strong>bloco de mapeamento</strong>, não uma tabela: escreve nas mesmas
-          <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code> que a planilha nativa. Ter os dois
-          caminhos sobre o mesmo formulário dá a taxa de erro do OCR de graça: um lado tem o
-          número certo, o outro tem o número que o OCR leu.</p>
+          célula, resultado determinístico — mesma entrada, mesma saída. Isso gera uma linha em
+          <code>EXTRACAO</code> com <code>INFERENCIA_INDIC = N</code>, <code>FERRAMENTA_NOME =
+          'openpyxl 3.1.5'</code>, <code>MODELO_NOME</code> nulo (não há modelo) e as células em
+          <code>SAIDA_TXT</code>. A versão da biblioteca fica registrada de propósito: bibliotecas
+          têm defeitos, e sem ela um erro de leitura seria indistinguível de um erro no arquivo.
+          <em>O mesmo formulário impresso, assinado e escaneado</em> chegaria como PDF e passaria
+          por reconhecimento óptico: a linha teria <code>INFERENCIA_INDIC = S</code>, a ferramenta
+          e o modelo do OCR. No YAML esse caminho é a receita <code>situacao_digitalizada</code> —
+          um <strong>bloco de mapeamento</strong>, não uma tabela: escreve nas mesmas
+          <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code> que a planilha nativa. Uma pergunta
+          de banca — <em>quantos números passaram por IA?</em> — vira uma condição:
+          <code>WHERE INFERENCIA_INDIC = 'S'</code>.</p>
       </li>
 
       <li>
@@ -984,18 +993,20 @@ ponteiros de linhagem:
         <p>Pergunta de auditoria: <em>de onde veio o 118 de efetivo presente da 1ª Cia?</em></p>
         <div class="trace">SITUACAO_UNIDADE.EF_PRESENTE_QNT = 118   (linha evt_3a0091)
    └─ EVENTO_IDT evt_3a0091   (OPERACAO_COD = PERSEU_2024)
-        ├─ EVENTO.ARQUIVO_IDT = arq_7b91f2
-        │    └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/perseu_2024/relper/…matutino.xlsx
-        │         hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)
-        │         └─ abre o .xlsx → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔
+        ├─ EVENTO.EXTRACAO_IDT = ext_5d20c7
+        │    └─ EXTRACAO: INFERENCIA_INDIC = N · FERRAMENTA_NOME = 'openpyxl 3.1.5' · MODELO_NOME nulo
+        │         SAIDA_TXT → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔
+        │         └─ EXTRACAO.ARQUIVO_IDT = arq_7b91f2
+        │              └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/perseu_2024/relper/…matutino.xlsx
+        │                   hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)   ✔
         └─ EVENTO.RECEPCAO_IDT = rcp_c4d80a
              └─ RECEPCAO_BRUTA.ORIGEM_URI_TXT = s3a://…/…matutino.json
                   └─ o sidecar que disse "operacao: PERSEU_2024, remetente 1º/511º BI"   ✔</div>
-        <p>Dois ramos: o número saiu da planilha, o contexto (operação, remetente) saiu do
-          sidecar. Se fosse a versão escaneada, o ramo do <code>.xlsx</code> passaria também por
-          <code>EXTRACAO</code>, que responderia <em>com que ferramenta e modelo</em> aquele
-          <code>118</code> foi lido da imagem, e com que confiança. É a tese de linhagem inteira
-          num único número.</p>
+        <p>Dois ramos: o número saiu da planilha — e <code>EXTRACAO</code> diz com que
+          biblioteca, em que versão, sem IA —, o contexto (operação, remetente) saiu do sidecar.
+          Se fosse a versão escaneada, o mesmo ramo diria <code>INFERENCIA_INDIC = S</code> e
+          <em>com que ferramenta e modelo</em> aquele <code>118</code> foi lido da imagem. É a
+          tese de linhagem inteira num único número.</p>
       </li>
 
     </ol>
@@ -1051,7 +1062,7 @@ ponteiros de linhagem:
             <td><code>situacao</code></td>
             <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
             <td>sidecar</td>
-            <td>Não — leitura direta de célula, sem <code>EXTRACAO</code></td>
+            <td>Não — leitura direta de célula (<code>EXTRACAO</code> com <code>INFERENCIA_INDIC = N</code>)</td>
           </tr>
           <tr>
             <th scope="row">RELPER</th>
@@ -1086,8 +1097,9 @@ ponteiros de linhagem:
             <td>Transcrição de fala + LLM: prioridade, função. A hora vem do gravador</td>
           </tr>
         </tbody>
-        <caption>Toda linha marcada com IA gera pelo menos uma linha em <code>EXTRACAO</code> —
-          é o que torna a extração auditável.</caption>
+        <caption>Todo binário gera pelo menos uma linha em <code>EXTRACAO</code>; nas linhas
+          marcadas com IA ela traz <code>INFERENCIA_INDIC = S</code>, modelo e prompt — é o que
+          torna a extração auditável.</caption>
       </table>
     </div>
   </section>
@@ -1118,7 +1130,7 @@ ponteiros de linhagem:
   </section>
 
   <footer>
-    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 9 de
+    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 11 de
       setembro de 2026). Em caso de divergência, o YAML é a fonte de verdade — os diagramas
       seguem ele, não o contrário.</p>
     <p>Sistemas de origem identificados por código genérico (<code>C2_A</code>,

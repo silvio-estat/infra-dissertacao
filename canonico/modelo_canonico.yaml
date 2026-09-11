@@ -93,6 +93,24 @@ metadados:
     EB70-MC-10.238. Decisao do usuario: a extracao por IA e APONTADA (modelo,
     prompt, confianca declarada) e a conferencia fica com o estado-maior — nao
     se calcula taxa de acerto contra gabarito.
+  nota_2026_09_11: >-
+    TODO binario passa por EXTRACAO — nao so o que exige IA. Antes, a leitura
+    direta (celula de planilha por openpyxl, camada de texto do PDF) ia para
+    ARQUIVO.EXTRAIDO_TXT e so a inferencia gerava linha em EXTRACAO: dois
+    caminhos para o mesmo papel. Agora ha um so: ARQUIVO (manifesto) ->
+    EXTRACAO (como o conteudo saiu do binario) -> EVENTO. EXTRAIDO_TXT sai de
+    ARQUIVO; o texto lido mora sempre em EXTRACAO.SAIDA_TXT. Tres ganhos: a
+    ingestao so cataloga (nunca abre o binario); a biblioteca e sua versao
+    ficam registradas tambem na leitura direta (versoes tem defeitos); e uma
+    releitura vira linha nova em vez de alteracao numa tabela append-only.
+    Decisao do usuario: CONFIANCA_PCTL sai e entra INFERENCIA_INDIC (S/N).
+    O que as ferramentas entregam nao e probabilidade calibrada nem e a mesma
+    grandeza (Tesseract: indice por palavra; Whisper: media de log-verossimilhanca
+    por trecho; modelo de linguagem: nada) — uma coluna numerica sugeriria uma
+    comparabilidade que nao existe. O indicador responde a unica pergunta que
+    a tese faz: houve inferencia ou nao. MODELO_NOME passa a ser nulo quando
+    nao houve; FERRAMENTA_NOME (biblioteca + versao) e sempre obrigatorio.
+    EVENTO.EXTRACAO_IDT anda junto com ARQUIVO_IDT: ou os dois, ou nenhum.
 
 
 # =============================================================================
@@ -261,7 +279,7 @@ dominios:
 #
 #   RECEPCAO_BRUTA   registro estruturado cru de todo evento: o JSON ou o sidecar
 #   ARQUIVO          manifesto do binario bruto (planilha, imagem, audio, PDF)
-#   EXTRACAO         registro de cada inferencia de IA
+#   EXTRACAO         como o conteudo saiu de cada binario: leitura direta ou IA
 #   EVENTO           onde todas as fontes convergem
 #   SITUACAO_UNIDADE os numeros que so o relatorio periodico tem
 #   REF_OPERACAO     as operacoes que delimitam o estudo, para consulta
@@ -389,10 +407,10 @@ entidades:
          descricao: "Arquivo binario bruto por tras do evento (foto, planilha, PDF, audio), quando ha um. Vazio so para C2_A e para o relato em texto do C2_B. Quando preenchido, vem JUNTO com RECEPCAO_IDT — o sidecar e o binario sao dois registros brutos do mesmo evento."}
       EXTRACAO_IDT:
         {tipo: string, nulo: true, referencia: EXTRACAO,
-         descricao: "Inferencia que produziu o dado. Segundo elo: leva ate o modelo e a versao de prompt. So existe quando houve IA no caminho (ARQUIVO -> EXTRACAO); as fontes JSON puras nao preenchem."}
+         descricao: "Extracao que produziu o dado: a leitura do binario, direta ou por IA. Segundo elo: leva ate a ferramenta, o modelo e a versao de prompt. Anda junto com ARQUIVO_IDT — todo evento que veio de arquivo passou por EXTRACAO (ARQUIVO -> EXTRACAO -> EVENTO); nulo so para as fontes JSON puras, que nao tem binario."}
       EXTRACAO_MODELO_NOME:
         {tipo: string, nulo: true,
-         descricao: "Modelo que extraiu o dado, repetido aqui de proposito para que a consulta mostre a origem sem precisar de juncao."}
+         descricao: "Modelo que extraiu o dado, repetido aqui de proposito para que a consulta mostre a origem sem precisar de juncao. Nulo quando nao houve modelo (leitura direta ou fonte JSON)."}
 
   # ---------------------------------------------------------------------------
   SITUACAO_UNIDADE:
@@ -521,8 +539,10 @@ entidades:
     descricao: >-
       Manifesto de um arquivo binario bruto: planilha, imagem, audio ou
       documento. O binario fica no armazenamento de objetos; aqui ficam o
-      endereco, o hash e o conteudo ja extraido. E o equivalente de
-      RECEPCAO_BRUTA para o dado que nao cabe numa coluna.
+      endereco, o hash e os metadados tecnicos (tamanho, tipo, captura). O
+      conteudo NAO esta aqui: a ingestao so cataloga, nunca abre o binario; o
+      que foi lido dele mora em EXTRACAO. E o equivalente de RECEPCAO_BRUTA
+      para o dado que nao cabe numa coluna.
     abreviatura: ARQ
     camada: bronze
     chave: [ARQUIVO_IDT]
@@ -536,30 +556,34 @@ entidades:
       ARQUIVO_TAMANHO_QNT: {tipo: bigint, nulo: false, descricao: Tamanho em bytes.}
       CAPTURA_DATA:      {tipo: timestamp, nulo: true, descricao: "Instante da captura, lido do metadado tecnico do proprio arquivo."}
       CAPTURA_GEOMETRIA_WKT: {tipo: string, nulo: true, descricao: "Coordenada lida do metadado da foto. E uma fonte independente do que o operador digitou, o que permite confrontar as duas."}
-      EXTRAIDO_TXT:      {tipo: string, nulo: true, descricao: "Texto obtido do arquivo, por leitura direta ou por reconhecimento optico."}
-      DIGITALIZADO_INDIC: {tipo: string, nulo: true, valores: [S, N], descricao: "S ou N. Se S, o texto veio de OCR e a qualidade e menor. Sufixo INDIC conforme o termo INDICADOR do Art. 138."}
+      DIGITALIZADO_INDIC: {tipo: string, nulo: true, valores: [S, N], descricao: "S ou N. S: o documento e imagem digitalizada, sem camada de texto — a extracao precisara de OCR e a qualidade e menor. Detectado no catalogo, sem ler o conteudo; e o que decide qual ferramenta a extracao chama. Sufixo INDIC conforme o termo INDICADOR do Art. 138."}
       RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o arquivo chegou.}
 
   # ---------------------------------------------------------------------------
   EXTRACAO:
     descricao: >-
-      Uma linha para cada inferencia de IA — reconhecimento optico, transcricao
-      de audio ou modelo de linguagem. E esta tabela que permite responder "de
-      onde veio este numero" quando o dado foi produzido por um modelo.
+      Uma linha para cada vez que conteudo saiu de um binario — por leitura
+      direta (celula de planilha, camada de texto de PDF) ou por inferencia
+      (reconhecimento optico, transcricao de audio, modelo de linguagem). TODO
+      binario passa por aqui: e o unico caminho de ARQUIVO ate EVENTO. E esta
+      tabela que permite responder "de onde veio este numero, quem o leu e
+      com que versao" — e, pelo INFERENCIA_INDIC, se houve IA no caminho. Um
+      arquivo pode ter varias linhas: reprocessar com ferramenta nova
+      acrescenta uma, nunca altera a anterior.
     abreviatura: EXTR
     camada: bronze
     chave: [EXTRACAO_IDT]
     campos:
-      EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da inferencia.}
+      EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da extracao.}
       ARQUIVO_IDT:       {tipo: string, nulo: false, referencia: ARQUIVO, descricao: Arquivo de entrada.}
-      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta usada. Ex.: tesseract, faster-whisper, ollama. Leitura deterministica (celula de planilha por openpyxl) NAO gera linha aqui: so ha extracao quando ha inferencia."}
-      MODELO_NOME:       {tipo: string, nulo: false, descricao: "Modelo usado. Ex.: qwen3.5:4b, ou o modelo do OCR/transcritor (por, small-int8)."}
-      PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "Versao do prompt. Sem ela, a pergunta de auditoria fica sem resposta completa."}
-      SAIDA_TXT:         {tipo: string, nulo: true, descricao: Saida da inferencia.}
-      CONFIANCA_PCTL:    {tipo: double, nulo: true, descricao: "Confianca declarada pela ferramenta, de 0 a 1."}
-      INFERENCIA_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto na inferencia.}
-      STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA."}
-      EXECUCAO_DATA:     {tipo: timestamp, nulo: false, descricao: Quando a inferencia rodou.}
+      INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
+      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
+      MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, por (Tesseract), small-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}
+      PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "Versao do prompt (ou do vocabulario inicial do transcritor). Sem ela, a pergunta de auditoria fica sem resposta completa. Nulo na leitura direta."}
+      SAIDA_TXT:         {tipo: string, nulo: true, descricao: "O que saiu do binario: as celulas, o texto do PDF, a transcricao, os campos que o modelo devolveu. E daqui — nunca do binario — que o de/para le o conteudo."}
+      EXTRACAO_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto.}
+      STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA. FALHA cobre tambem a leitura direta: planilha corrompida, PDF que nao abre."}
+      EXECUCAO_DATA:     {tipo: timestamp, nulo: false, descricao: Quando a extracao rodou.}
 
   # ---------------------------------------------------------------------------
   REF_OPERACAO:
@@ -669,7 +693,9 @@ entidades:
 #   direto             copia o valor
 #   json               extrai pelo caminho indicado do payload JSON, que fica
 #                      preservado em RECEPCAO_BRUTA.CONTEUDO_JSON_TXT
-#   celula             le uma celula da planilha pelo cabecalho decretado
+#   celula             le uma celula da planilha pelo cabecalho decretado, a
+#                      partir de EXTRACAO.SAIDA_TXT (a leitura direta e uma
+#                      extracao sem inferencia)
 #   ts_iso / ts_br     texto -> data
 #   ponto_de_latlon    par de numeros -> ponto
 #   geojson_para_wkt   GeoJSON -> WKT
@@ -692,8 +718,9 @@ entidades:
 # radio. O sidecar entra em RECEPCAO_BRUTA como qualquer registro estruturado;
 # o binario entra em ARQUIVO; os dois se ligam por ARQUIVO_IDT. O bloco da fonte
 # declara o sidecar em `sidecar:` e mapeia os campos dele como mapearia um JSON.
-# O CONTEUDO do arquivo (celulas, colunas) continua vindo do binario, via
-# `celula`/OCR — o sidecar so carrega o que e ABOUT o arquivo.
+# O CONTEUDO do arquivo (celulas, colunas) vem do binario por EXTRACAO — leitura
+# direta ou OCR, sempre registrada — e o sidecar so carrega o que e ABOUT o
+# arquivo.
 # =============================================================================
 
 fontes:
@@ -897,11 +924,12 @@ fontes:
         extraidos_por_llm: [UNIDADE_REPORTANTE_COD]
         observacao: >-
           Herda o sidecar da irma: a operacao, a data e o turno vem do .json,
-          iguais nas duas. So o CONTEUDO muda de caminho — os numeros passam por
-          OCR antes de virar celula, e por isso esta entidade gera linha em
-          EXTRACAO enquanto a irma nao gera. Comparar as duas sobre o mesmo
-          formulario da a taxa de erro do OCR contra o valor verdadeiro — ground
-          truth de graca.
+          iguais nas duas. So o CONTEUDO muda de caminho: as duas geram linha em
+          EXTRACAO, a irma por leitura direta (openpyxl, INFERENCIA_INDIC = N) e
+          esta por OCR (INFERENCIA_INDIC = S) antes de virar celula. Comparar as
+          duas sobre o mesmo formulario daria a taxa de erro do OCR contra o
+          valor verdadeiro — nao se calcula (decisao de 2026-09-10), mas fica
+          disponivel.
 
   # --- FOGOS: Relatorio de Bombardeio (Anexo I do EB60-ME-12.301). PDF, OCR + LLM.
   # Absorve o `paf` da fonte SIM, que era duplicata empobrecida disto.
@@ -911,7 +939,7 @@ fontes:
   # (colunas A a L), 2a Outras Fontes (M a R), 3a Execucao do Tiro (S a V).
   # So a 1a parte vira evento: cada linha e um informe de observador sobre
   # bombardeio INIMIGO, que e o que o relatorio existe para registrar. A 2a e a
-  # 3a partes ficam no PDF e em ARQUIVO.EXTRAIDO_TXT, mapeaveis depois (ver
+  # 3a partes ficam no PDF e em EXTRACAO.SAIDA_TXT, mapeaveis depois (ver
   # "PARA AUMENTAR O ESCOPO").
   #
   # A avaliacao 'B2' NAO existe no Anexo I: saiu daqui e mora na fonte INTEL,
@@ -935,7 +963,7 @@ fontes:
                         regra: "Nr do relatorio (cabecalho) + col_A",
                         observacao: "col_A e 'Informe de / Hora' (nota 1 do Anexo I): codinome do observador + grupo data-hora, ex. 'TROVAO 1 / 210900 NOV 16'"}
           col_F:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
-                        observacao: "'Area Bombardeada' (nota 5), ex. '06700-13150': e ONDE o fato ocorreu. A col_B e a posicao do OBSERVADOR (nota 2), nao do evento — fica em EXTRAIDO_TXT, sem coluna canonica."}
+                        observacao: "'Area Bombardeada' (nota 5), ex. '06700-13150': e ONDE o fato ocorreu. A col_B e a posicao do OBSERVADOR (nota 2), nao do evento — fica em EXTRACAO.SAIDA_TXT, sem coluna canonica."}
           _relato:     {campo: RELATO_TXT, transformacao: derivado,
                         regra: "colunas G a L da linha, concatenadas",
                         observacao: "armamento inimigo (ex. '2/Ob/Me' = 2 obuses medios, nota 6), classificacao do tiro (Ntz, Dest, Itd..., nota 7), municao (nota 8), tempo clarao-som em segundos, efeito dos fogos (nota 9)"}
