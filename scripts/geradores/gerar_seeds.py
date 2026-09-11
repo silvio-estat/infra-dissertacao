@@ -33,7 +33,6 @@ SIGLAS
 """
 
 import csv
-import hashlib
 import math
 from pathlib import Path
 
@@ -197,15 +196,13 @@ def gerar_gazetteer():
 # e os fatos gerados sao sinteticos.
 def gerar_operacoes():
     cod = "PERSEU_2024"
-    # o hash que o C2_A usaria internamente: deterministico, para o de/para resolver
-    hash_c2a = hashlib.sha1(cod.encode()).hexdigest()[:16]
     # area de operacoes: faixa de 15 km para cada lado do eixo, do km -10 ao km 130
     cantos = [_latlon(-10, 15), _latlon(130, 15), _latlon(130, -15), _latlon(-10, -15), _latlon(-10, 15)]
     area = "POLYGON((" + ", ".join(f"{lon:.6f} {lat:.6f}" for lat, lon in cantos) + "))"
-    linhas = [[cod, "Operacao Perseu 2024", "ADESTRAMENTO", hash_c2a,
+    linhas = [[cod, "Operacao Perseu 2024", "ADESTRAMENTO",
                "2024-11-25T03:00:00Z", "2024-12-06T02:59:59Z", area, "BDA51"]]
     _escrever("operacoes.csv", "REF_OPERACAO — operacoes que delimitam o estudo",
-              ["OPERACAO_COD", "OPERACAO_NOME", "OPERACAO_TIPO_COD", "OPERACAO_ORIGEM_C2A_COD",
+              ["OPERACAO_COD", "OPERACAO_NOME", "OPERACAO_TIPO_COD",
                "INICIO_DATA", "FIM_DATA", "AREA_WKT", "UNIDADE_RESP_COD"], linhas)
 
 

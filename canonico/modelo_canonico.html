@@ -542,7 +542,7 @@ flowchart TD
   EXT -->|"conteudo do arquivo (celulas, colunas, texto)<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
 
   subgraph SEEDS["TABELAS DE CONSULTA · seeds"]
-    ROPE["REF_OPERACAO<br/>hash do C2 / 'Perseu 2024' / pasta<br/>viram PERSEU_2024"]
+    ROPE["REF_OPERACAO<br/>'Perseu' + '2024' do C2_A, sidecar, pasta<br/>tudo vira PERSEU_2024"]
     RUNI["REF_UNIDADE<br/>'1a Cia Fuz' vira BI511C1"]
     RGAZ["REF_GAZETTEER<br/>'BR-154 km 43' vira ponto"]
     RABV["REF_ABREVIATURA<br/>'Fz' vira Fuzil"]
@@ -668,7 +668,6 @@ erDiagram
   REF_OPERACAO {
     string OPERACAO_COD PK
     string OPERACAO_NOME
-    string OPERACAO_ORIGEM_C2A_COD
     timestamp INICIO_DATA
     string AREA_WKT
   }
@@ -746,17 +745,17 @@ erDiagram
       não é nulo: evento fora de operação não existe neste estudo.</p>
 
     <h3>A tabela <code>REF_OPERACAO</code></h3>
-    <p>Uma seed pequena e curada, no molde de <code>REF_UNIDADE</code>. O código é
-      <strong>legível</strong> — nome + ano — e não o <em>hash</em> que o <code>C2_A</code> usa
-      por dentro; o hash entra como chave alternativa, e é por ele que o dado do
-      <code>C2_A</code> encontra a linha.</p>
+    <p>Uma seed pequena e curada, no molde de <code>REF_UNIDADE</code>. O código é a
+      <strong>chave natural</strong> da operação — nome + ano, escrita <code>NOME_ANO</code>.
+      É a mesma chave que o <code>C2_A</code> usa por dentro: ele exporta <code>"operacao":
+      "Perseu"</code> e <code>"ano": "2024"</code>, formatados pelo próprio sistema, e não há
+      dicionário a consultar — só juntar e pôr em maiúsculas.</p>
     <div class="scroll">
       <table class="mini">
         <tbody>
           <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code></td></tr>
           <tr><th scope="row">OPERACAO_NOME</th><td>Operação Perseu</td></tr>
           <tr><th scope="row">OPERACAO_TIPO_COD</th><td><code>ADESTRAMENTO</code></td></tr>
-          <tr><th scope="row">OPERACAO_ORIGEM_C2A_COD</th><td><code>a3f9c1e0…</code> &nbsp;(o hash do C2_A)</td></tr>
           <tr><th scope="row">INICIO_DATA · FIM_DATA</th><td><code>2026-05-04</code> … <code>2026-05-18</code></td></tr>
           <tr><th scope="row">AREA_WKT</th><td><code>POLYGON((…))</code> &nbsp;(a área de operações)</td></tr>
           <tr><th scope="row">UNIDADE_RESP_COD</th><td><code>BDA51</code></td></tr>
@@ -801,7 +800,7 @@ landing/perseu_2024/relper/relper_bi511_matutino.json     ← o sidecar    → R
           <tr><th scope="col">Fonte</th><th scope="col">A operação vem de</th></tr>
         </thead>
         <tbody>
-          <tr><td><span class="mod">JSON</span> C2_A</td><td>campo nativo — é o <em>hash</em>, resolvido contra a chave alternativa</td></tr>
+          <tr><td><span class="mod">JSON</span> C2_A</td><td>campos nativos <code>operacao</code> + <code>ano</code> — a chave natural do sistema, formatada por ele</td></tr>
           <tr><td><span class="mod">JSON</span> C2_B relato</td><td>campo nativo no payload</td></tr>
           <tr><td>C2_B incidente · RELPER · FOGOS · INTEL · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
           <tr><td>arquivo sem sidecar (fallback)</td><td>hora + geo de captura dentro da janela e da área de <code>REF_OPERACAO</code></td></tr>
@@ -1037,7 +1036,7 @@ ponteiros de linhagem:
             <td><span class="mod">JSON</span></td>
             <td><code>posicao</code>, <code>mcc</code></td>
             <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
-            <td>hash no payload</td>
+            <td>nome + ano no payload</td>
             <td>Não — geometria já vem nativa</td>
           </tr>
           <tr>

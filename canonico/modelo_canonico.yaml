@@ -112,6 +112,15 @@ metadados:
     nao houve; FERRAMENTA_NOME (biblioteca + versao) e sempre obrigatorio.
     EVENTO.EXTRACAO_IDT anda junto com ARQUIVO_IDT: ou os dois, ou nenhum.
 
+    Tambem hoje, decisao do usuario: o C2_A identifica a operacao pela CHAVE
+    NATURAL (nome, ano), formatada pelo proprio sistema — e nao por um hash
+    interno. Cai a chave alternativa OPERACAO_ORIGEM_C2A_COD de REF_OPERACAO e
+    o "dicionario" hash -> codigo. O codigo canonico PERSEU_2024 e a mesma chave
+    escrita como NOME_ANO; a ingestao ja grava assim em RECEPCAO_BRUTA, e a
+    Bronze inteira fica filtravel por operacao. A grafia so pode variar onde uma
+    pessoa digita — o cabecalho do PDF, a celula da planilha — e ali o valor do
+    documento e conferencia contra o do sidecar, nao referencia.
+
 
 # =============================================================================
 # DOMINIOS — listas de valores permitidos
@@ -311,7 +320,7 @@ dominios:
 # AREA_WKT de REF_OPERACAO (transformacao contexto_operacao).
 #
 # O estudo de caso e de UMA operacao: a seed operacoes.csv tem uma linha. O
-# aparato (resolucao do hash do C2_A, fallback por contexto) esta modelado para
+# aparato (fallback por contexto) esta modelado para
 # que uma segunda operacao entre sem tocar em codigo, mas nao e exercitado aqui.
 #
 # A regra que separa EVENTO de SITUACAO_UNIDADE, e que vale para qualquer fonte
@@ -526,7 +535,7 @@ entidades:
     campos:
       RECEPCAO_IDT:      {tipo: string, nulo: false, descricao: "Identificador do registro bruto. Calculado do sistema de origem, do identificador de origem e do hash, para que reprocessar o mesmo registro nao gere linha nova."}
       SISTEMA_ORIGEM_COD: {tipo: string, nulo: false, dominio: sistema_origem, descricao: Sistema que produziu o registro.}
-      OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao declarada no proprio registro (campo do JSON ou do sidecar). Valor de referencia da linhagem: e o que EVENTO herda, e o que se confere contra o palpite da pasta em ARQUIVO."}
+      OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao declarada no proprio registro, no codigo NOME_ANO: o sidecar ja traz assim; o C2_A traz nome e ano em dois campos e a ingestao os junta. Valor de referencia da linhagem: e o que EVENTO herda, e o que se confere contra o palpite da pasta em ARQUIVO."}
       MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: "Modalidade do registro: JSON (C2_A, C2_B) ou a do arquivo que o sidecar acompanha (PLANILHA, PDF, IMAGEM, AUDIO)."}
       CONTEUDO_JSON_TXT: {tipo: string, nulo: false, descricao: "O registro cru, JSON inteiro, como texto. Nenhum campo foi lido ainda. Mesma propriedade CONTEUDO do hash abaixo."}
       CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo registro reenviado nao gera linha nova."}
@@ -593,11 +602,11 @@ entidades:
       dados de adestramentos diferentes se misturariam e as visoes Gold nao
       teriam recorte.
 
-      O codigo e legivel — nome + ano, como PERSEU_2024 — e nao o hash que o
-      C2_A usa internamente. O hash entra como chave alternativa
-      (OPERACAO_ORIGEM_C2A_COD): e por ele que o dado do C2_A resolve para o
-      codigo legivel, e o mesmo codigo legivel que aparece no cabecalho da
-      planilha, no sidecar da foto e no nome da pasta em landing/.
+      O codigo e a chave natural da operacao, nome + ano, escrita como
+      NOME_ANO (PERSEU_2024). E a mesma chave que o C2_A usa por dentro — ele
+      exporta nome e ano em dois campos, formatados pelo sistema — e a que
+      aparece no sidecar de todo arquivo e no nome da pasta em landing/. Nao ha
+      dicionario a consultar: so formatar.
 
       A janela (INICIO_DATA / FIM_DATA) e a AREA_WKT servem de criterio de
       atribuicao por contexto: um arquivo que chegou pelado, sem se identificar,
@@ -611,7 +620,6 @@ entidades:
       OPERACAO_COD:            {tipo: string, nulo: false, descricao: "Codigo legivel: nome + ano, sem acento, termos separados por _. Ex.: PERSEU_2024."}
       OPERACAO_NOME:           {tipo: string, nulo: false, descricao: "Designacao por extenso. Ex.: Operacao Perseu."}
       OPERACAO_TIPO_COD:       {tipo: string, nulo: false, dominio: tipo_operacao, descricao: Exercicio de adestramento ou operacao real.}
-      OPERACAO_ORIGEM_C2A_COD: {tipo: string, nulo: true, descricao: "Identificador interno que o C2_A da a operacao (um hash). Chave alternativa: e por aqui que o dado do C2_A casa com a linha."}
       INICIO_DATA:             {tipo: timestamp, nulo: false, descricao: Inicio da janela da operacao.}
       FIM_DATA:                {tipo: timestamp, nulo: true, descricao: "Fim da janela. Vazio enquanto a operacao esta em curso."}
       AREA_WKT:                {tipo: string, nulo: true, descricao: "Area de operacoes, em WKT. Criterio de atribuicao por contexto para arquivo sem identificacao propria."}
@@ -747,7 +755,9 @@ fontes:
                         observacao: "sigla, como o C2_A exporta ('2o Pel Fuz/1a Cia Fuz/511o Btl Inf Mtz'); casa com REF_UNIDADE.UNIDADE_SIGLA"}
           coordenadas: {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
-                        observacao: "o C2_A manda o hash da operacao; casa com REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD"}
+                        observacao: "chave natural do C2_A: `operacao` ('Perseu') + `ano` ('2024') -> PERSEU_2024, que precisa existir em REF_OPERACAO"}
+          ano:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "segunda metade da chave; ver `operacao`"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
@@ -770,7 +780,9 @@ fontes:
           especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
                         observacao: "'campo de minas' -> OBSTACULO; 'linha de fase' -> MCC. A especie decide o tipo E a funcao (regra de _funcao)."}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
-                        observacao: "hash da operacao; casa com REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD"}
+                        observacao: "chave natural do C2_A: `operacao` + `ano` -> PERSEU_2024"}
+          ano:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "segunda metade da chave; ver `operacao`"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}

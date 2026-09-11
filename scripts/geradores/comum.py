@@ -65,11 +65,20 @@ class Operacao:
     cod: str
     nome: str
     tipo: str
-    hash_c2a: str
     inicio: datetime
     fim: datetime
     area_wkt: str
     unidade_resp: str
+
+    # O C2_A identifica a operacao pela chave natural (nome, ano) — e o que ele
+    # exporta. O codigo canonico e a mesma coisa formatada: NOME_ANO.
+    @property
+    def nome_c2a(self) -> str:
+        return self.cod.rsplit("_", 1)[0].capitalize()
+
+    @property
+    def ano(self) -> str:
+        return self.cod.rsplit("_", 1)[1]
 
     @property
     def dias(self) -> list[date]:
@@ -83,7 +92,6 @@ def carregar_operacao() -> Operacao:
     linha = _ler_csv(DIR_SEEDS / "operacoes.csv")[0]
     return Operacao(
         cod=linha["OPERACAO_COD"], nome=linha["OPERACAO_NOME"], tipo=linha["OPERACAO_TIPO_COD"],
-        hash_c2a=linha["OPERACAO_ORIGEM_C2A_COD"],
         inicio=datetime.fromisoformat(linha["INICIO_DATA"].replace("Z", "+00:00")),
         fim=datetime.fromisoformat(linha["FIM_DATA"].replace("Z", "+00:00")),
         area_wkt=linha["AREA_WKT"], unidade_resp=linha["UNIDADE_RESP_COD"])

@@ -77,6 +77,17 @@ def hash_de(conteudo: bytes) -> str:
     return hashlib.sha256(conteudo).hexdigest()
 
 
+def codigo_da_operacao(registro) -> str | None:
+    """O codigo canonico e NOME_ANO. O sidecar ja traz assim ('PERSEU_2024');
+    o C2_A traz a chave natural dele em dois campos ('Perseu' + '2024')."""
+    if not isinstance(registro, dict) or not registro.get("operacao"):
+        return None
+    operacao = str(registro["operacao"]).strip().upper().replace(" ", "_")
+    if registro.get("ano"):
+        operacao = f"{operacao}_{registro['ano']}"
+    return operacao
+
+
 # =============================================================================
 # 2. Uma linha de ARQUIVO para cada binario
 # =============================================================================
@@ -155,14 +166,14 @@ def abrir_json(linha, arquivos_por_nome: dict):
 
     linhas = []
     for registro in registros:
-        # o registro cru, inteiro, como texto — nenhum campo foi lido, exceto `operacao`,
-        # que o modelo exige na Bronze porque e o elo entre as fontes
+        # o registro cru, inteiro, como texto — nenhum campo foi lido, exceto a
+        # operacao, que o modelo exige na Bronze porque e o elo entre as fontes
         texto = json.dumps(registro, ensure_ascii=False, separators=(",", ":"))
         hash_hex = hash_de(texto.encode("utf-8"))
         linhas.append({
             "RECEPCAO_IDT": "rcp_" + hash_de(f"{fonte}|{hash_hex}".encode())[:16],
             "SISTEMA_ORIGEM_COD": fonte,
-            "OPERACAO_COD": registro.get("operacao") if isinstance(registro, dict) else None,
+            "OPERACAO_COD": codigo_da_operacao(registro),
             "MODALIDADE_COD": modalidade,
             "CONTEUDO_JSON_TXT": texto,
             "CONTEUDO_HASH_COD": "sha256:" + hash_hex,

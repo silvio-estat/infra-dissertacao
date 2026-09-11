@@ -16,8 +16,9 @@ Duas exportacoes, como o aplicativo faria:
              na mesma tela. A `especie` e o que separa MCC de OBSTACULO no
              de/para (sinonimos do dominio tipo_evento).
 
-O campo `operacao` leva o HASH interno do C2_A, nao o codigo legivel: o
-de/para resolve contra REF_OPERACAO.OPERACAO_ORIGEM_C2A_COD. A fracao vai
+A operacao vai como o C2_A a identifica: chave natural nome + ano, em dois
+campos (`operacao`: 'Perseu', `ano`: '2024'), formatados pelo proprio sistema.
+O codigo canonico PERSEU_2024 e so NOME_ANO em maiusculas. A fracao vai
 como SIGLA ('2o Pel Fuz/1a Cia Fuz/511o Btl Inf Mtz'), como o sistema exporta.
 
 Defeito plantado: um lote de posicoes reenviado com outro nome de arquivo
@@ -78,7 +79,7 @@ def gerar_posicoes(ctx: Contexto) -> dict:
                         "coordenadas": geojson_ponto(lat, lon),
                         "precisao_m": round(rng.uniform(3, 14), 1),
                         "velocidade_kmh": round(abs(rng.gauss(8, 6)), 1),
-                        "operacao": ctx.operacao.hash_c2a,
+                        "operacao": ctx.operacao.nome_c2a, "ano": ctx.operacao.ano,
                     })
             nome = f"posicao_{dia.isoformat()}T{hora:02d}.json"
             escrever_json(pasta / nome, registros)
@@ -145,7 +146,7 @@ def gerar_mcc(ctx: Contexto) -> dict:
             "nome": f"{f.especie.upper()} {f.local_nome.upper()}",
             "geometria": geometria,
             "observacao": f.descricao,
-            "operacao": ctx.operacao.hash_c2a,
+            "operacao": ctx.operacao.nome_c2a, "ano": ctx.operacao.ano,
         })
     # 2) medidas de coordenacao de fundo — planejamento da brigada e das OM
     n_fundo = ctx.n(200) - len(registros)
@@ -170,7 +171,7 @@ def gerar_mcc(ctx: Contexto) -> dict:
             "especie": especie,
             "nome": nome,
             "geometria": _geometria(ctx, especie, tipo_geo, km, perp),
-            "operacao": ctx.operacao.hash_c2a,
+            "operacao": ctx.operacao.nome_c2a, "ano": ctx.operacao.ano,
         })
     registros.sort(key=lambda r: r["hora"])
     pasta = ctx.pasta("c2a", "mcc")
