@@ -45,3 +45,6 @@ RUN PYSPARK_JARS=$(python3 -c "import pyspark, os; print(os.path.join(os.path.di
         https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
     && curl -fsSL -o ${PYSPARK_JARS}/openlineage-spark_2.12-${OPENLINEAGE_VERSION}.jar \
         https://repo1.maven.org/maven2/io/openlineage/openlineage-spark_2.12/${OPENLINEAGE_VERSION}/openlineage-spark_2.12-${OPENLINEAGE_VERSION}.jar
+
+# Extracao por leitura direta (DAG extracao_planilha): abre .xlsx dentro do Airflow.
+RUN pip install --no-cache-dir "openpyxl==3.1.5"
