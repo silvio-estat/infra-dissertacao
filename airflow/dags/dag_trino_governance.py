@@ -89,7 +89,6 @@ source:
       schemaFilterPattern:
         excludes:
           - information_schema
-          - bronze
 processor:
   type: orm-profiler
   config: {{}}
