@@ -88,7 +88,7 @@ def conferir_landing() -> str:
 
 
 with DAG(
-    dag_id="ingestao",
+    dag_id="1_ingestao",
     description="landing/ -> Bronze (RECEPCAO_BRUTA + ARQUIVO), so se houver arquivo novo",
     schedule=None,                           # disparo manual; agendar quando o pipeline estiver inteiro
     start_date=datetime(2026, 9, 1),

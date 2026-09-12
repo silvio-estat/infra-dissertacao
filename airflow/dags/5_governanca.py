@@ -378,7 +378,7 @@ default_args = {
 }
 
 with DAG(
-    "dag_trino_governance",
+    "5_governanca",
     default_args=default_args,
     description="Governança Trino: metadados → profiler → sample data (sequencial)",
     schedule_interval=None,

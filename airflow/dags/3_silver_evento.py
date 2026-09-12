@@ -103,7 +103,7 @@ def transformar(nome: str, fonte: str, receita: str, callbacks: list) -> SparkSu
 
 
 with DAG(
-    dag_id="canonico_silver",
+    dag_id="3_silver_evento",
     description="Bronze -> EVENTO + SITUACAO_UNIDADE pelo de/para do modelo canonico",
     schedule=None,
     start_date=datetime(2026, 9, 1),
