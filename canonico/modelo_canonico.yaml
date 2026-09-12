@@ -825,7 +825,8 @@ fontes:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           data:        {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss"}
           relator:     {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
-                        observacao: "'<posto> <funcao> <fracao> - <IDENTIDADE_MIL>'; a fracao casa com REF_UNIDADE.UNIDADE_SIGLA"}
+                        busca: contido,
+                        observacao: "'<posto> <funcao> <fracao> - <IDENTIDADE_MIL>': a sigla vem no MEIO do texto, entre o posto e a identidade. Tres siglas casam por conteudo (pelotao, companhia e batalhao, porque a sigla do pelotao termina com a das duas) — vale a MAIS LONGA, que e a mais especifica."}
           localizacao: {campo: GEOMETRIA_WKT, transformacao: dms_para_ponto,
                         observacao: "'Sem localizacao' vira vazio, e nao erro: relato sem coordenada e caso legitimo."}
           situacao:    {campo: RELATO_TXT, transformacao: direto}
@@ -833,6 +834,8 @@ fontes:
                         observacao: "campo nativo do JSON do C2_B (no faz de conta, o gerador o inclui)"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
@@ -863,6 +866,8 @@ fontes:
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA,
                         observacao: "o registro JSON do incidente (o sidecar); a foto em si vai para ARQUIVO pelo campo foto"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: IMAGEM}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: INCIDENTE}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: PROTECAO}
@@ -905,7 +910,7 @@ fontes:
           _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
                         regra: "sidecar (OM remetente + data + turno) + celula (unidade da linha)"}
           Fração:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
-                        contexto: om_remetente,
+                        busca: comeca_por, contexto: om_remetente,
                         observacao: "celula preenchida a mao, em varias grafias para a mesma unidade: '1a Cia', '1a Cia Fuz', '1ª Cia Fuz', '1 Cia Fuz', '1a Cia Fuz/511'. Duas coisas resolvem: comparar sem acento e sem a letra do ordinal ('1a'='1ª'='1'), e aceitar o inicio da sigla. Sozinho isso seria AMBIGUO — '1a Cia' existe em todo batalhao —, e por isso entra o `contexto`: a OM que remeteu o arquivo, que vem do sidecar. O que ainda nao casar e reportado, nao descartado."}
           _arquivo:    {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}

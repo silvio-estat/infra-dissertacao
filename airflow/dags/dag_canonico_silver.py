@@ -1,7 +1,11 @@
 """
 DAG canonico_silver — aplica o de/para do modelo canonico e escreve a Silver.
 
-    conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► relper_situacao
+    conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato
+                       │                                      │
+                       │                    c2b_incidente ◄───┘
+                       │                          │
+                       │                          └──► relper_situacao
                        └─► nada_a_fazer
 
 Cada tarefa processa UMA receita do YAML (um bloco dentro de `fontes:`). Elas
@@ -35,7 +39,7 @@ PENDENTES_SQL = """
     FROM iceberg.bronze.recepcao_bruta r
     LEFT JOIN iceberg.silver.evento e ON e.recepcao_idt = r.recepcao_idt
     WHERE e.recepcao_idt IS NULL
-      AND (r.sistema_origem_cod = 'C2_A'
+      AND (r.sistema_origem_cod IN ('C2_A', 'C2_B')
            OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA'))
 """
 
@@ -129,6 +133,25 @@ with DAG(
         }),
     ])
 
+    # C2_B chega em duas modalidades. No relato, o texto livre e o campo; cinco
+    # colunas ficam vazias ate a DAG de modelo de linguagem existir. No incidente,
+    # a coordenada vem do EXIF da FOTO — fonte independente do que foi digitado.
+    relato = transformar("c2b_relato", "C2_B", "relato", [
+        linhagem(le=["bronze.recepcao_bruta"], escreve=["silver.evento"], colunas={
+            "relato_txt":             [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "geometria_wkt":          [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+    incidente = transformar("c2b_incidente", "C2_B", "incidente", [
+        linhagem(le=["bronze.recepcao_bruta", "bronze.arquivo"], escreve=["silver.evento"], colunas={
+            "geometria_wkt":  [("bronze.arquivo", "captura_geometria_wkt")],
+            "arquivo_idt":    [("bronze.arquivo", "arquivo_idt")],
+            "relato_txt":     [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "prioridade_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+
     # RELPER chega como planilha: os numeros so existem depois da extracao, e por
     # isso a linhagem tem tres entradas. Escreve em duas tabelas.
     bronze_do_arquivo = ["bronze.extracao", "bronze.arquivo", "bronze.recepcao_bruta"]
@@ -150,4 +173,4 @@ with DAG(
     ])
 
     conferir >> [posicao, nada_a_fazer]
-    posicao >> mcc >> relper
+    posicao >> mcc >> relato >> incidente >> relper

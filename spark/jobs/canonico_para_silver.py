@@ -251,6 +251,11 @@ def _t_split_escala(origem, regra, ctx, alvo=None):
     return f"substring(trim({origem}), {posicao}, 1)"
 
 
+# Nome da coluna que a view `origem_bruta` ja traz, por tabela da Bronze referida.
+_ELO_DA_BRONZE = {"ARQUIVO": "ARQUIVO_IDT", "RECEPCAO_BRUTA": "RECEPCAO_IDT",
+                  "EXTRACAO": "EXTRACAO_IDT"}
+
+
 def _comparavel(expressao: str) -> str:
     """Deixa dois textos comparaveis: sem acento, sem marca de ordinal e sem a
     letra que a acompanha. '1ª Cia', '1a Cia' e '1 Cia' viram todas '1 cia'."""
@@ -270,22 +275,38 @@ def _t_referencia(origem, regra, ctx, alvo=None):
     """
     referida = regra["referencia"]
     tabela, coluna = (referida.split(".", 1) + [None])[:2] if "." in referida else (referida, None)
+
+    # Referencia a uma tabela da BRONZE nao e consulta: o valor ja veio na view,
+    # porque e um elo de linhagem (ou um metadado tecnico do proprio arquivo).
+    if tabela in _ELO_DA_BRONZE:
+        return coluna or _ELO_DA_BRONZE[tabela]
+
     entidade = ctx["modelo"]["entidades"][tabela]
     chave = entidade["chave"][0]
     devolve = coluna or chave
     casa = "UNIDADE_SIGLA" if tabela == "REF_UNIDADE" else chave
+    de = f"FROM {CATALOGO}.silver.{tabela} r"
+    guardado, digitado = _comparavel(f"r.{casa}"), _comparavel(origem)
 
-    if not regra.get("contexto"):
-        return (f"(SELECT max(r.{devolve}) FROM {CATALOGO}.silver.{tabela} r "
-                f"WHERE lower(trim(r.{casa})) = lower(trim({origem})))")
+    # `contexto` nao e modo de busca: e um estreitamento. Restringe as linhas
+    # candidatas ao que pertence a unidade que remeteu o arquivo.
+    estreita = ""
+    if regra.get("contexto"):
+        contexto = _comparavel(_registrar(ctx, "sc", regra["contexto"], f"SIDECAR['{regra['contexto']}']"))
+        estreita = (f" AND ({guardado} LIKE concat('%', {contexto}) OR {guardado} = {contexto})")
 
-    contexto = _registrar(ctx, "sc", regra["contexto"], f"SIDECAR['{regra['contexto']}']")
-    sigla, digitado, da_om = _comparavel(f"r.{casa}"), _comparavel(origem), _comparavel(contexto)
-    return (
-        f"(SELECT max(r.{devolve}) FROM {CATALOGO}.silver.{tabela} r "
-        f"WHERE {sigla} LIKE concat({digitado}, '%') "
-        f"AND ({sigla} LIKE concat('%', {da_om}) OR {sigla} = {da_om}))"
-    )
+    busca = regra.get("busca", "igual")
+    if busca == "comeca_por":
+        # o que foi digitado e o COMECO do valor guardado: '1a Cia' -> '1a Cia Fuz/511o...'
+        return f"(SELECT max(r.{devolve}) {de} WHERE {guardado} LIKE concat({digitado}, '%'){estreita})"
+    if busca == "contido":
+        # o valor guardado aparece DENTRO do que foi digitado. Varios podem caber
+        # (a sigla do pelotao termina com a da companhia, que termina com a do
+        # batalhao) — vale o MAIS LONGO, que e o mais especifico. O max sobre um
+        # par (tamanho, valor) escolhe justamente esse.
+        return (f"(SELECT max(named_struct('tamanho', length(r.{casa}), 'valor', r.{devolve})).valor "
+                f"{de} WHERE {digitado} LIKE concat('%', {guardado}, '%'){estreita})")
+    return f"(SELECT max(r.{devolve}) {de} WHERE {guardado} = {digitado}{estreita})"
 
 
 def _t_gazetteer(origem, regra, ctx, alvo=None):
@@ -395,6 +416,34 @@ def _wkt_de_geojson(texto):
     return f"{tipo}({corpo})"
 
 
+def _ponto_de_dms(texto):
+    """'22° 41\' 38.8" S, 45° 07\' 10.7" W' -> POINT(-45.119639 -22.694111).
+
+    Grau-minuto-segundo e como um militar le uma carta e digita a coordenada.
+    O hemisferio vem por letra: S e W (ou O, de Oeste) sao negativos. Texto que
+    nao traz duas coordenadas — 'Sem localizacao', por exemplo — devolve vazio,
+    e nao erro: relato sem coordenada e caso legitimo.
+    """
+    if not texto:
+        return None
+    import re
+    partes = re.findall(r"(\d+)\D+(\d+)\D+([\d.]+)\D*([NSEWLO])", texto.upper())
+    if len(partes) != 2:
+        return None
+
+    def decimal(grau, minuto, segundo, hemisferio):
+        valor = int(grau) + int(minuto) / 60 + float(segundo) / 3600
+        return -valor if hemisferio in ("S", "W", "O") else valor
+
+    latitude, longitude = decimal(*partes[0]), decimal(*partes[1])
+    return f"POINT({longitude:.6f} {latitude:.6f})"
+
+
+def _t_dms_para_ponto(origem, regra, ctx, alvo=None):
+    """Coordenada em grau-minuto-segundo, escrita por extenso, vira ponto."""
+    return f"dms_para_ponto({origem})"
+
+
 def _t_geojson_para_wkt(origem, regra, ctx, alvo=None):
     """Geometria em GeoJSON -> o mesmo desenho em WKT, o texto que o modelo usa."""
     return f"geojson_para_wkt({origem})"
@@ -424,9 +473,9 @@ TRANSFORMACOES = {
     "sobra":           _t_sobra,
     "derivado":        _t_derivado,
     "geojson_para_wkt": _t_geojson_para_wkt,
+    "dms_para_ponto":  _t_dms_para_ponto,
     # Declaradas no modelo, sem implementacao ainda: nao ha dado para exercita-las.
     # O job so falha se voce tentar processar a fonte que as usa.
-    "dms_para_ponto":         _pendente("Fase 3 (C2_B)"),
     "decametrica_para_ponto": _pendente("Fase 4 (FOGOS)"),
 }
 
@@ -561,6 +610,8 @@ def _abrir_grade(registro, cabecalhos, principais):
                 RECEPCAO_IDT=registro["RECEPCAO_IDT"],
                 EXTRACAO_IDT=registro["EXTRACAO_IDT"],
                 RECEBIMENTO_DATA=registro["RECEBIMENTO_DATA"],
+                CAPTURA_GEOMETRIA_WKT=registro["CAPTURA_GEOMETRIA_WKT"],
+                CAPTURA_DATA=registro["CAPTURA_DATA"],
                 SIDECAR={k: (None if v is None else str(v)) for k, v in sidecar.items()},
                 CAMPOS={k: str(v) for k, v in valores.items() if k in declarados},
                 SOBRA_JSON=_sobra_como_json(valores, declarados),
@@ -607,6 +658,10 @@ def _origem_do_payload(spark, fonte, tipo):
     geometria do C2_A) vem como o proprio texto JSON, que e o que a conversao
     de geometria espera receber.
 
+    A juncao com ARQUIVO traz o metadado tecnico do binario quando ha um: a
+    coordenada do EXIF da foto, que e fonte INDEPENDENTE do que o operador
+    digitou — e por isso a que vale para o incidente.
+
     Como se separam as receitas da mesma fonte: pela PASTA em que o arquivo
     pousou. A convencao da landing e landing/<operacao>/<fonte>/<receita>/, e
     RECEPCAO_BRUTA guarda esse endereco em ORIGEM_URI_TXT.
@@ -618,8 +673,10 @@ def _origem_do_payload(spark, fonte, tipo):
                from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>') AS CAMPOS,
                map() AS SIDECAR,
                CAST(NULL AS STRING) AS SOBRA_JSON,
-               CAST(NULL AS STRING) AS FORMULARIO_VERSAO
+               CAST(NULL AS STRING) AS FORMULARIO_VERSAO,
+               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA
         FROM {CATALOGO}.bronze.RECEPCAO_BRUTA r
+        LEFT JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = r.ARQUIVO_IDT
         WHERE r.SISTEMA_ORIGEM_COD = '{fonte}'
           AND r.ORIGEM_URI_TXT LIKE '%/{tipo}/%'
     """).createOrReplaceTempView("origem_bruta")
@@ -646,7 +703,8 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
 
     grade = spark.sql(f"""
         SELECT e.EXTRACAO_IDT, e.SAIDA_TXT, a.ARQUIVO_IDT,
-               r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA
+               r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA,
+               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA
         FROM {CATALOGO}.bronze.EXTRACAO e
         JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = e.ARQUIVO_IDT
         JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
@@ -713,11 +771,6 @@ def montar_select(modelo, fonte, tipo=None):
     for entrada, regra, coluna in derivados:
         projecoes[coluna] = _t_derivado(entrada, regra, ctx, coluna)
 
-    # os elos de linhagem nao se "resolvem": ja vieram da Bronze prontos
-    for elo in ("ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT"):
-        if elo in projecoes and da_bronze_v3:
-            projecoes[elo] = elo
-
     # --- campos derivados: calculados a partir dos ja mapeados, nao vem da origem
     if {"SISTEMA_ORIGEM_COD", "REGISTRO_ORIGEM_COD", "OCORRENCIA_DATA"} <= set(projecoes):
         projecoes["EVENTO_IDT"] = (
@@ -747,7 +800,7 @@ def montar_select(modelo, fonte, tipo=None):
     if da_bronze_v3:
         # camada de baixo: cada campo lido de um mapa vira coluna simples
         fixas = ["ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT", "RECEBIMENTO_DATA",
-                 "SOBRA_JSON", "FORMULARIO_VERSAO"]
+                 "SOBRA_JSON", "FORMULARIO_VERSAO", "CAPTURA_GEOMETRIA_WKT", "CAPTURA_DATA"]
         lidas = [f"{expressao} AS {apelido}" for apelido, expressao in sorted(ctx["origens"].items())]
         de = ("(SELECT " + ", ".join(fixas + lidas) + " FROM origem_bruta)")
         onde = ""
@@ -762,6 +815,7 @@ def processar(spark, modelo, fonte, tipo, mostrar=False):
     if spec.get("entidades") and not mostrar:
         from pyspark.sql.types import StringType
         spark.udf.register("geojson_para_wkt", _wkt_de_geojson, StringType())
+        spark.udf.register("dms_para_ponto", _ponto_de_dms, StringType())
         montar_origem(spark, modelo, fonte, tipo or next(iter(spec["entidades"])))
 
     consulta = montar_select(modelo, fonte, tipo)
@@ -793,11 +847,12 @@ def processar(spark, modelo, fonte, tipo, mostrar=False):
 def _relatar_dominios(spark, modelo, fonte, tipo):
     """A promessa do dominio controlado: valor que nao casa nao passa em silencio."""
     campos = modelo["entidades"]["EVENTO"]["campos"]
-    mapeadas = {a.split(".")[-1]
-                for _, mapa in _blocos_de_mapeamento(modelo["fontes"][fonte])
-                for r in mapa.values() for a in _lista(r["campo"])}
-    # so faz sentido cobrar dominio de coluna que ESTA fonte mapeia; as demais
-    # sao nulas por nao terem origem, e nao por o valor nao ter casado.
+    blocos = modelo["fontes"][fonte].get("entidades") or {}
+    mapa = _mapa_do_bloco(blocos[tipo]) if tipo in blocos else {}
+    mapeadas = {a.split(".")[-1] for r in mapa.values() for a in _lista(r["campo"])}
+    # so faz sentido cobrar dominio de coluna que ESTA RECEITA mapeia. As demais
+    # sao nulas por nao terem origem — o TIPO_COD do relato, por exemplo, esta
+    # em `extraidos_por_llm` e so sera preenchido quando a DAG de IA existir.
     com_dominio = [c for c, s in campos.items()
                    if isinstance(s, dict) and s.get("dominio") and c in mapeadas]
     if not com_dominio:
