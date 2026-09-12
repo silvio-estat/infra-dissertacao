@@ -4,6 +4,21 @@ Coisas que custaram tempo para descobrir e que não estão óbvias no código.
 Lista corrida, do mais novo para o mais antigo. Serve de lembrete — e boa parte
 vira texto na dissertação.
 
+## PENDENTE — governança parou de rodar (12/set/2026)
+
+Depois de um ciclo `down`/`up` da stack, **toda** tarefa do OpenMetadata que fala
+com o Trino falha: `ingestao_metadados` com `SourceConnectionException: CheckAccess`
+(sem dizer por quê) e os 7 testes de qualidade voltam `Aborted`.
+
+Já descartado: o Trino está saudável e responde com as mesmas credenciais pelo
+cliente comum (`SHOW SCHEMAS`, `SHOW TABLES`, `SELECT count(*)`); o metastore
+está íntegro (93 colunas legíveis em `information_schema.columns`); o OM
+responde e autentica (HTTP 200 com o JWT); reiniciar a stack inteira não muda.
+
+Não é problema de dado — a Silver está completa e correta. É o SDK de ingestão
+do OM. Retomar com cabeça fresca: suspeita é a configuração do serviço
+`trino_lakehouse` gravada no OM divergir do `serviceConnection` que a DAG envia.
+
 ## Modelo de linguagem sobre a transcrição (12/set/2026)
 
 - **O classificador recupera o que a transcrição perde — e perde o que ela acerta.**
