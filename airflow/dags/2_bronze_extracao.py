@@ -1,7 +1,7 @@
 """
 DAG extracao — tira o conteudo de dentro dos binarios e grava em EXTRACAO.
 
-    conferir_pendentes ──► planilha ──► ocr ──► voz
+    conferir_pendentes ──► planilha ──► ocr ──► voz ──► texto
                        └─► nada_a_fazer
 
 Uma etapa do fluxo, uma DAG: ingestao ──► EXTRACAO ──► canonico_silver ──► gold.
@@ -16,6 +16,12 @@ O que separa as tres e so COMO o conteudo e lido:
     planilha  openpyxl abre o .xlsx e copia as celulas      leitura direta, sem IA
     ocr       tesseract adivinha as letras dos pixels       inferencia
     voz       faster-whisper adivinha as palavras do som    inferencia
+    texto     um modelo de linguagem le o que a VOZ escreveu e devolve campos
+
+A ultima e a unica cuja entrada NAO e um binario: ela le a SAIDA de outra
+extracao. Por isso grava EXTRACAO_ORIGEM_IDT — sem essa coluna as duas
+inferencias ficariam penduradas no mesmo .wav como se fossem independentes, e se
+perderia que uma leu a outra.
 
 Tudo o mais — achar o que falta, baixar do MinIO, gravar — e o mesmo, e por isso
 esta escrito uma vez so.
@@ -48,8 +54,16 @@ OCR_IDIOMA, OCR_RESOLUCAO, OCR_SEGMENTACAO = "por", 200, 4
 # --- transcricao. medium contra small, sobre os mesmos 150 audios:
 #     WER 21,6% contra 29,4% · codinome 93% contra 65% · 5,6 s contra 2,2 s
 # O codinome vira TIPO_COD, entao o ganho compensa o triplo do tempo.
-VOZ_MODELO, VOZ_PRECISAO, VOZ_IDIOMA = "medium", "int8", "pt"
+VOZ_MODELO, VOZ_IDIOMA = "medium", "pt"
 VOZ_VOCABULARIO = "vocab-v1"
+
+# --- modelo de linguagem. Roda FORA do Docker, no host: o Docker Desktop para
+# Linux nao expoe a placa de video a um conteiner. Medido: 0,8 s por mensagem na
+# GPU (RTX 5060 Ti) contra 18,2 s em CPU (i5 12400F) — a arquitetura nao exige
+# GPU, so termina mais cedo com uma.
+LLM_ENDERECO = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
+LLM_MODELO = "qwen3.5:4b"
+LLM_PROMPT_VERSAO = "voz-v1"
 
 
 # =============================================================================
@@ -126,28 +140,32 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None):
             print(f"FALHA {uri}: {erro}")
         idt = "ext_" + hashlib.sha256(
             f"{arquivo_idt}|{ferramenta}|{agora.isoformat()}".encode()).hexdigest()[:16]
-        linhas.append((idt, arquivo_idt, inferencia, ferramenta, modelo, ajuste, saida,
+        linhas.append((idt, arquivo_idt, None, inferencia, ferramenta, modelo, ajuste, saida,
                        round(time.perf_counter() - inicio, 3), status, agora))
         if len(linhas) % 25 == 0:
             print(f"  {len(linhas)} lidos")
 
+    gravar(linhas, modalidade, ferramenta)
+
+
+COLUNAS = ("extracao_idt, arquivo_idt, extracao_origem_idt, inferencia_indic, ferramenta_nome, "
+           "modelo_nome, prompt_versao_cod, saida_txt, extracao_segundos, status_cod, execucao_data")
+
+
+def gravar(linhas, rotulo, ferramenta):
+    """Uma insercao so: um snapshot Iceberg por rodada, nao um por arquivo."""
     if not linhas:
-        print(f"nada a extrair em {modalidade}")
+        print(f"nada a extrair em {rotulo}")
         return
-    # uma insercao so: um snapshot Iceberg por rodada, nao um por arquivo
     cur = conexao_trino().cursor()
-    marcadores = ", ".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"] * len(linhas))
-    cur.execute(
-        "INSERT INTO iceberg.bronze.extracao (extracao_idt, arquivo_idt, inferencia_indic, "
-        "ferramenta_nome, modelo_nome, prompt_versao_cod, saida_txt, extracao_segundos, "
-        f"status_cod, execucao_data) VALUES {marcadores}",
-        [v for linha in linhas for v in linha],
-    )
+    marcadores = ", ".join(["(" + ", ".join(["?"] * 11) + ")"] * len(linhas))
+    cur.execute(f"INSERT INTO iceberg.bronze.extracao ({COLUNAS}) VALUES {marcadores}",
+                [v for linha in linhas for v in linha])
     cur.fetchall()
-    segundos = sum(l[7] for l in linhas)
-    print(f"EXTRACAO: {len(linhas)} linhas de {modalidade} com {ferramenta}, "
-          f"{segundos:.0f}s no total, {segundos/len(linhas):.1f}s por arquivo "
-          f"({sum(1 for l in linhas if l[8] == 'FALHA')} falhas)")
+    segundos = sum(l[8] for l in linhas)
+    print(f"EXTRACAO: {len(linhas)} linhas de {rotulo} com {ferramenta}, "
+          f"{segundos:.0f}s no total, {segundos/len(linhas):.1f}s cada "
+          f"({sum(1 for l in linhas if l[9] == 'FALHA')} falhas)")
 
 
 # =============================================================================
@@ -200,9 +218,105 @@ def vocabulario() -> str:
 # As tarefas
 # =============================================================================
 
+# =============================================================================
+# A quarta: um modelo de linguagem le o que a transcricao escreveu
+# =============================================================================
+
+def transcricoes_sem_interpretacao() -> list:
+    """[(extracao_idt, arquivo_idt, texto)] das transcricoes ainda nao interpretadas.
+
+    A conta e pela propria coluna de cadeia: uma transcricao esta pendente
+    enquanto nao existir outra extracao que a tenha lido.
+    """
+    sql = """
+        SELECT t.extracao_idt, t.arquivo_idt, t.saida_txt
+        FROM iceberg.bronze.extracao t
+        JOIN iceberg.bronze.arquivo a ON a.arquivo_idt = t.arquivo_idt
+        LEFT JOIN iceberg.bronze.extracao filha ON filha.extracao_origem_idt = t.extracao_idt
+        WHERE a.modalidade_cod = 'AUDIO' AND t.status_cod = 'OK'
+          AND filha.extracao_idt IS NULL
+        ORDER BY t.extracao_idt
+    """
+    try:
+        cur = conexao_trino().cursor()
+        cur.execute(sql)
+        return cur.fetchall()
+    except Exception as erro:
+        print(f"EXTRACAO nao consultada ({type(erro).__name__}); tratando como vazia")
+        return []
+
+
+def instrucao() -> str:
+    """O prompt, montado a partir do modelo canonico e dos seeds.
+
+    As listas sao as MESMAS que alimentam o vocabulario do transcritor. E a
+    exigencia central e devolver o termo COMO ESTA NA LISTA: o que vem depois e
+    consulta exata (`dominio` casa por sinonimo, `gazetteer` casa por nome), entao
+    o trabalho do modelo nao e interpretar, e NORMALIZAR — transformar
+    'posto mangavo' em 'Posto Mangaba'. Inventar um valor e pior que devolver
+    nulo, porque um valor inventado nao casa e some em silencio.
+    """
+    modelo = yaml.safe_load(open(f"{CANONICO}/modelo_canonico.yaml", encoding="utf-8"))
+    codinomes = sorted({s for v in modelo["dominios"]["tipo_evento"]["valores"].values()
+                        for s in (v.get("sinonimos") or [])})
+    with open(f"{CANONICO}/seeds/gazetteer.csv", encoding="utf-8") as fh:
+        lugares = sorted({l["LOCAL_NOME"] for l in csv.DictReader(x for x in fh if not x.startswith("#"))})
+    return (
+        "Voce le a transcricao de uma mensagem de radio militar. A transcricao TEM ERROS: "
+        "nomes proprios saem trocados por palavras parecidas. Reconheca, apesar do erro, qual "
+        "termo das listas abaixo foi dito.\n\n"
+        f"CODINOMES: {', '.join(codinomes)}\n\n"
+        f"LUGARES: {', '.join(lugares)}\n\n"
+        "Devolva so um JSON com tres chaves:\n"
+        '  "codinome": um termo COPIADO da lista CODINOMES, ou null se nenhum foi dito\n'
+        '  "referencia_local": um nome COPIADO da lista LUGARES, ou null\n'
+        '  "texto": a mensagem sem o indicativo da estacao e sem as palavras de protocolo\n\n'
+        "Regra rigida: codinome e referencia_local so podem conter texto que exista "
+        "LITERALMENTE nas listas. Se o que foi dito nao estiver na lista, devolva null. "
+        "Nunca escreva coordenadas, quadriculas ou nomes proprios que nao estejam listados.\n"
+    )
+
+
+def extrair_texto():
+    """Cada transcricao vira uma linha NOVA em EXTRACAO, que aponta para ela."""
+    import urllib.request
+
+    prompt_base = instrucao()
+    pendentes_ = transcricoes_sem_interpretacao()
+    print(f"transcricoes sem interpretacao: {len(pendentes_)}")
+
+    linhas = []
+    for extracao_origem, arquivo_idt, saida_voz in pendentes_:
+        texto = json.loads(saida_voz)["texto"]
+        inicio = time.perf_counter()
+        agora = datetime.now(timezone.utc)
+        try:
+            corpo = json.dumps({"model": LLM_MODELO, "prompt": prompt_base + f"\nTRANSCRICAO: {texto}\n",
+                                "stream": False, "format": "json", "think": False,
+                                "options": {"temperature": 0}}).encode()
+            req = urllib.request.Request(f"{LLM_ENDERECO}/api/generate", data=corpo,
+                                         headers={"Content-Type": "application/json"})
+            resposta = json.loads(urllib.request.urlopen(req, timeout=600).read())["response"]
+            json.loads(resposta)        # so aceita o que e JSON de verdade
+            saida, status = resposta, "OK"
+        except Exception as erro:
+            saida, status = None, "FALHA"
+            print(f"FALHA {extracao_origem}: {erro}")
+        idt = "ext_" + hashlib.sha256(
+            f"{extracao_origem}|{LLM_MODELO}|{agora.isoformat()}".encode()).hexdigest()[:16]
+        linhas.append((idt, arquivo_idt, extracao_origem, "S", "ollama", LLM_MODELO,
+                       LLM_PROMPT_VERSAO, saida, round(time.perf_counter() - inicio, 3),
+                       status, agora))
+        if len(linhas) % 25 == 0:
+            print(f"  {len(linhas)} interpretados")
+
+    gravar(linhas, "TEXTO", f"ollama/{LLM_MODELO}")
+
+
 def conferir_pendentes() -> str:
     quantos = {m: len(pendentes(m)) for m in ("PLANILHA", "PDF", "AUDIO")}
-    print("binarios sem extracao:", quantos)
+    quantos["transcricoes a interpretar"] = len(transcricoes_sem_interpretacao())
+    print("pendente:", quantos)
     return "planilha" if sum(quantos.values()) else "nada_a_fazer"
 
 
@@ -218,10 +332,29 @@ def extrair_ocr():
              ajuste=f"psm{OCR_SEGMENTACAO}-{OCR_RESOLUCAO}dpi")
 
 
+def aceleracao() -> tuple:
+    """(dispositivo, precisao) — usa a placa de video se houver uma visivel.
+
+    A stack roda em CPU por padrao, porque e o hardware do ambiente de destino.
+    Quando ha GPU o mesmo trabalho termina em uma fracao do tempo, sem mudar o
+    resultado: e conveniencia de quem esta desenvolvendo, nao requisito.
+    Em CPU a precisao e int8 (quantizada, para caber e andar); em GPU, float16.
+    """
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() > 0:
+            return "cuda", "float16"
+    except Exception:
+        pass
+    return "cpu", "int8"
+
+
 def extrair_voz():
     import faster_whisper
 
-    transcritor = faster_whisper.WhisperModel(VOZ_MODELO, device="cpu", compute_type=VOZ_PRECISAO)
+    dispositivo, precisao = aceleracao()
+    print(f"transcrevendo em {dispositivo} ({precisao})")
+    transcritor = faster_whisper.WhisperModel(VOZ_MODELO, device=dispositivo, compute_type=precisao)
     vocab = vocabulario()
     print(f"vocabulario inicial: {len(vocab)} caracteres")
 
@@ -231,7 +364,7 @@ def extrair_voz():
         return {"texto": " ".join(t.text.strip() for t in trechos).strip()}
 
     executar("AUDIO", ler, f"faster-whisper {faster_whisper.__version__}", inferencia="S",
-             modelo=f"{VOZ_MODELO}-{VOZ_PRECISAO}", ajuste=VOZ_VOCABULARIO)
+             modelo=f"{VOZ_MODELO}-{precisao}", ajuste=VOZ_VOCABULARIO)
 
 
 def tarefa(nome, funcao) -> PythonOperator:
@@ -267,6 +400,16 @@ with DAG(
     planilha = tarefa("planilha", extrair_planilha)
     ocr = tarefa("ocr", extrair_ocr)
     voz = tarefa("voz", extrair_voz)
+    texto = PythonOperator(
+        task_id="texto",
+        python_callable=extrair_texto,
+        # a entrada e outra EXTRACAO, nao o arquivo: a linhagem e da tabela para ela mesma
+        on_success_callback=linhagem(
+            le=["bronze.extracao"], escreve=["bronze.extracao"],
+            colunas={"saida_txt": [("bronze.extracao", "saida_txt")],
+                     "extracao_origem_idt": [("bronze.extracao", "extracao_idt")]},
+        ),
+    )
 
     conferir >> [planilha, nada_a_fazer]
-    planilha >> ocr >> voz
+    planilha >> ocr >> voz >> texto

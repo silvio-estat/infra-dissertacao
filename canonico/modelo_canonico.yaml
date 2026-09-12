@@ -900,7 +900,7 @@ fontes:
     entidades:
 
       situacao:
-        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
+        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
         modalidade: PLANILHA
         sidecar:
           operacao:      {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
@@ -955,7 +955,7 @@ fontes:
       # fonte so, e e o caso mais realista que existe: a OM que nao tem o
       # arquivo imprime, preenche, assina e fotografa.
       situacao_digitalizada:
-        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
+        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
         modalidade: PDF
         herda: situacao
         campos:
@@ -994,7 +994,7 @@ fontes:
     destino: EVENTO
     entidades:
       relatorio_bombardeio:
-        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
+        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
           origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
@@ -1038,7 +1038,7 @@ fontes:
     destino: EVENTO
     entidades:
       informe:
-        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
+        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
           origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
@@ -1077,7 +1077,7 @@ fontes:
     destino: EVENTO
     entidades:
       transcricao:
-        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
+        conteudo: extracao_campos   # a extracao ja devolve campos NOMEADOS: o modelo de linguagem leu a transcricao e os montou
         modalidade: AUDIO
         sidecar:
           operacao:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
@@ -1094,6 +1094,8 @@ fontes:
                              referencia: REF_GAZETTEER,
                              observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}
           audio:       {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a interpretacao do modelo de linguagem, que por sua vez aponta para a transcricao em EXTRACAO_ORIGEM_IDT. Dois elos, dois modelos."}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: VOZ}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: AUDIO}

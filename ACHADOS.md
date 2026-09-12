@@ -4,6 +4,31 @@ Coisas que custaram tempo para descobrir e que não estão óbvias no código.
 Lista corrida, do mais novo para o mais antigo. Serve de lembrete — e boa parte
 vira texto na dissertação.
 
+## Modelo de linguagem sobre a transcrição (12/set/2026)
+
+- **O classificador recupera o que a transcrição perde — e perde o que ela acerta.**
+  Sobre os mesmos 150 áudios:
+
+  | | comparação literal | `qwen3.5:4b` |
+  |---|---|---|
+  | codinome | 93% | 87% |
+  | topônimo | 71% | **87%** |
+
+  Onde a transcrição erra o nome (`posto mangavo`), o modelo reconhece e
+  normaliza; a comparação literal não tinha chance. Mas onde a transcrição
+  acertou, o modelo às vezes escolhe outro termo da lista. Combinar os dois —
+  literal primeiro, modelo como reserva — daria ~95% e 87%.
+- **3 de 150 lugares foram inventados**, apesar de a instrução exigir cópia
+  literal da lista. Viram nulo na consulta: falham em silêncio, não em erro.
+- **GPU vale 22×, mas só depois de aquecida.** 0,8 s por mensagem na RTX 5060 Ti
+  contra 18,2 s em CPU — e a primeira chamada leva 58 s carregando o modelo. Sem
+  descartar esse aquecimento a média dava 12,3 s e o ganho parecia 1,5×.
+- **Docker Desktop no Linux não expõe a GPU ao contêiner** (o daemon roda numa
+  VM). O Ollama escapou por ser um *servidor*: saiu do Docker e fala por HTTP.
+  Uma biblioteca no lugar dele — Docling, por exemplo — ficaria presa em CPU.
+- Raciocínio (`think`) **ligado piora**: mesmo tempo e resposta vazia, porque o
+  modelo gasta o orçamento pensando num campo separado e não sobra JSON.
+
 ## Transcrição de voz (12/set/2026)
 
 - **`medium` compensa, e o ganho está onde importa.** Sobre os mesmos 150 áudios:

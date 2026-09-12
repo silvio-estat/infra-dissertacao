@@ -316,7 +316,7 @@ def _t_gazetteer(origem, regra, ctx, alvo=None):
         filtro = f"AND g.LOCAL_TIPO_COD = '{regra['parametros']['tipo']}' "
     return (
         f"(SELECT max(g.GEOMETRIA_WKT) FROM {CATALOGO}.silver.REF_GAZETTEER g "
-        f"WHERE lower(trim(g.REFERENCIA_TEXTO)) = lower(trim({origem})) {filtro})"
+        f"WHERE lower(trim(g.REFERENCIA_TXT)) = lower(trim({origem})) {filtro})"
     )
 
 
@@ -659,7 +659,37 @@ def montar_origem(spark, modelo, fonte, tipo):
     bloco = modelo["fontes"][fonte]["entidades"][tipo]
     if bloco["conteudo"] == "payload":
         return _origem_do_payload(spark, fonte, tipo)
+    if bloco["conteudo"] == "extracao_campos":
+        return _origem_dos_campos_extraidos(spark, fonte)
     return _origem_da_extracao(spark, modelo, fonte, tipo, bloco)
+
+
+def _origem_dos_campos_extraidos(spark, fonte):
+    """A extracao ja devolveu campos NOMEADOS — nao ha grade a abrir.
+
+    E o caso da cadeia de dois modelos: o transcritor devolveu texto corrido, e o
+    modelo de linguagem leu esse texto e montou {codinome, referencia_local,
+    texto}. Uma linha por interpretacao; o elo com a transcricao que a originou
+    fica em EXTRACAO_ORIGEM_IDT, e e por ele que se reconhece qual extracao e a
+    do modelo de linguagem.
+    """
+    spark.sql(f"""
+        SELECT a.ARQUIVO_IDT, r.RECEPCAO_IDT, i.EXTRACAO_IDT, r.RECEBIMENTO_DATA,
+               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
+               from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>') AS SIDECAR,
+               from_json(i.SAIDA_TXT, 'map<string,string>') AS CAMPOS,
+               CAST(NULL AS STRING) AS SOBRA_JSON,
+               CAST(NULL AS STRING) AS FORMULARIO_VERSAO
+        FROM {CATALOGO}.bronze.EXTRACAO i
+        JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = i.ARQUIVO_IDT
+        JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
+        WHERE i.EXTRACAO_ORIGEM_IDT IS NOT NULL AND i.STATUS_COD = 'OK'
+          AND r.SISTEMA_ORIGEM_COD = '{fonte}'
+    """).createOrReplaceTempView("origem_bruta")
+    total = spark.table("origem_bruta").count()
+    if not total:
+        raise SystemExit(f"\nnenhuma interpretacao de {fonte} na Bronze — rode a extracao antes\n")
+    print(f"  {total} interpretacoes -> {total} observacoes")
 
 
 def _origem_do_payload(spark, fonte, tipo):
