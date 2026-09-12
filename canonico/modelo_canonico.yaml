@@ -533,7 +533,7 @@ entidades:
     camada: bronze
     chave: [RECEPCAO_IDT]
     campos:
-      RECEPCAO_IDT:      {tipo: string, nulo: false, descricao: "Identificador do registro bruto. Calculado do sistema de origem, do identificador de origem e do hash, para que reprocessar o mesmo registro nao gere linha nova."}
+      RECEPCAO_IDT:      {tipo: string, nulo: false, descricao: "Identificador do registro bruto. Calculado do sistema de origem, do hash do conteudo e do ARQUIVO que ele acompanha, para que reprocessar o mesmo registro nao gere linha nova. O arquivo entra na conta porque receber um sidecar PARA UM arquivo e distinto de receber o mesmo texto para outro: a mesma remessa enviada em planilha e em escaneado tem sidecares de texto identico e mesmo assim sao duas recepcoes."}
       SISTEMA_ORIGEM_COD: {tipo: string, nulo: false, dominio: sistema_origem, descricao: Sistema que produziu o registro.}
       OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao declarada no proprio registro, no codigo NOME_ANO: o sidecar ja traz assim; o C2_A traz nome e ano em dois campos e a ingestao os junta. Valor de referencia da linhagem: e o que EVENTO herda, e o que se confere contra o palpite da pasta em ARQUIVO."}
       MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: "Modalidade do registro: JSON (C2_A, C2_B) ou a do arquivo que o sidecar acompanha (PLANILHA, PDF, IMAGEM, AUDIO)."}
@@ -588,7 +588,7 @@ entidades:
       INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
       FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
       MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, por (Tesseract), small-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}
-      PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "Versao do prompt (ou do vocabulario inicial do transcritor). Sem ela, a pergunta de auditoria fica sem resposta completa. Nulo na leitura direta."}
+      PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "O AJUSTE com que a ferramenta foi chamada, sem o qual o resultado nao se reproduz: a versao do prompt do modelo de linguagem, o vocabulario inicial do transcritor, o modo de segmentacao e a resolucao do reconhecimento optico (ex.: psm4-200dpi). Nulo na leitura direta, que nao tem ajuste."}
       SAIDA_TXT:         {tipo: string, nulo: true, descricao: "O que saiu do binario: as celulas, o texto do PDF, a transcricao, os campos que o modelo devolveu. E daqui — nunca do binario — que o de/para le o conteudo."}
       EXTRACAO_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto.}
       STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA. FALHA cobre tambem a leitura direta: planilha corrompida, PDF que nao abre."}

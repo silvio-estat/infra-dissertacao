@@ -171,7 +171,13 @@ def abrir_json(linha, arquivos_por_nome: dict):
         texto = json.dumps(registro, ensure_ascii=False, separators=(",", ":"))
         hash_hex = hash_de(texto.encode("utf-8"))
         linhas.append({
-            "RECEPCAO_IDT": "rcp_" + hash_de(f"{fonte}|{hash_hex}".encode())[:16],
+            # A identidade da recepcao inclui o ARQUIVO que ela acompanha: receber
+            # um sidecar PARA UM arquivo e diferente de receber o mesmo texto para
+            # outro. Sem isso, a mesma remessa enviada em dois formatos — a
+            # planilha e o escaneado assinado — colapsa numa linha so, e um dos
+            # dois binarios fica sem registro de recepcao. Para JSON sem binario
+            # nada muda: o ARQUIVO_IDT e vazio.
+            "RECEPCAO_IDT": "rcp_" + hash_de(f"{fonte}|{hash_hex}|{arquivo_idt or ''}".encode())[:16],
             "SISTEMA_ORIGEM_COD": fonte,
             "OPERACAO_COD": codigo_da_operacao(registro),
             "MODALIDADE_COD": modalidade,

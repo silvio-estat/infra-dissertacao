@@ -39,6 +39,16 @@ PENDENTES_SQL = f"""
     ORDER BY a.arquivo_uri_txt
 """
 
+# Quando EXTRACAO ainda nao existe — primeira rodada, ou a tabela foi recriada —
+# nada foi extraido e tudo esta pendente. Sem isso a DAG quebra com TABLE_NOT_FOUND
+# numa tarefa de decisao, que e o pior lugar para uma surpresa.
+TODOS_SQL = """
+    SELECT a.arquivo_idt, a.arquivo_uri_txt
+    FROM iceberg.bronze.arquivo a
+    WHERE a.modalidade_cod = 'PLANILHA'
+    ORDER BY a.arquivo_uri_txt
+"""
+
 
 def conexao_trino():
     import trino
@@ -46,10 +56,15 @@ def conexao_trino():
 
 
 def planilhas_pendentes() -> list:
-    """[(arquivo_idt, uri)] das planilhas que ainda nao tem linha em EXTRACAO."""
-    cur = conexao_trino().cursor()
-    cur.execute(PENDENTES_SQL)
-    return cur.fetchall()
+    """[(arquivo_idt, uri)] do que ainda nao tem linha em EXTRACAO."""
+    for sql in (PENDENTES_SQL, TODOS_SQL):
+        try:
+            cur = conexao_trino().cursor()
+            cur.execute(sql)
+            return cur.fetchall()
+        except Exception as erro:
+            print(f"EXTRACAO nao consultada ({type(erro).__name__}); tratando como vazia")
+    return []
 
 
 def baixar(uri: str) -> bytes:
