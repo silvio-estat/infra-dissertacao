@@ -152,7 +152,7 @@ def _expressao_origem(origem, regra, ctx):
     O nome da chave no de/para diz de onde ler:
       _alguma_coisa   pseudo-campo: nao existe na origem (constante ou derivado)
       no bloco sidecar -> SIDECAR['operacao'], o .json que acompanha o arquivo
-      qualquer outro   -> CELULAS['Ef Pres'], o cabecalho como esta na planilha
+      qualquer outro   -> CAMPOS['Ef Pres'], o cabecalho como esta na planilha
     """
     if regra.get("caminho"):
         return f"get_json_object({ctx['coluna_payload']}, '{regra['caminho']}')"
@@ -160,20 +160,28 @@ def _expressao_origem(origem, regra, ctx):
         return _registrar(ctx, "sc", origem, f"SIDECAR['{origem}']")
     if origem.startswith("_"):
         return "NULL"       # pseudo-campo: nao existe na origem
-    if ctx.get("de_grade"):
+    if ctx.get("campos_em_mapa"):
         # `grafias` lista outros rotulos para a MESMA medida: a revisao do
         # formulario renomeou a coluna, mas o significado nao mudou. Vale o
-        # primeiro que a planilha tiver.
+        # primeiro que o registro tiver.
         nomes = [origem] + list(regra.get("grafias") or [])
-        apelidos = [_registrar(ctx, "cel", n, f"CELULAS['{n}']") for n in nomes]
-        return apelidos[0] if len(apelidos) == 1 else f"coalesce({', '.join(apelidos)})"
+        apelidos = [_registrar(ctx, "cmp", n, f"CAMPOS['{n}']") for n in nomes]
+        valor = apelidos[0] if len(apelidos) == 1 else f"coalesce({', '.join(apelidos)})"
+
+        # `compoe_com` junta varios campos num valor so: a chave natural da
+        # operacao no C2_A chega partida em `operacao` ('Perseu') e `ano`
+        # ('2024'), e o codigo canonico e a juncao — PERSEU_2024.
+        for outro in (regra.get("compoe_com") or []):
+            apelido = _registrar(ctx, "cmp", outro, f"CAMPOS['{outro}']")
+            valor = f"concat_ws('_', {valor}, {apelido})"
+        return valor
     return origem
 
 
 def _registrar(ctx, prefixo, nome, expressao) -> str:
     """Guarda a leitura do mapa para virar coluna simples, e devolve o apelido.
 
-    Por que nao usar CELULAS['Ef Pres'] direto na expressao final: o Spark recusa
+    Por que nao usar CAMPOS['Ef Pres'] direto na expressao final: o Spark recusa
     subconsulta correlacionada que aponte para uma coluna do tipo mapa — e
     `referencia`, `gazetteer` e `abreviatura` sao exatamente isso. Resolvendo as
     celulas numa camada de baixo, o que chega as consultas e texto comum.
@@ -294,7 +302,7 @@ def _t_gazetteer(origem, regra, ctx, alvo=None):
 def _t_celula(origem, regra, ctx, alvo=None):
     """Le uma celula pelo cabecalho decretado no formulario.
 
-    Irma da `json`: a origem ja foi resolvida para CELULAS['<cabecalho>'] — a
+    Irma da `json`: a origem ja foi resolvida para CAMPOS['<cabecalho>'] — a
     grade da planilha virou um mapa cabecalho -> valor antes de chegar aqui.
     Cabecalho que a planilha nao tem devolve NULL, e nao erro: uma OM que usa
     formulario antigo perde a coluna, nao a remessa inteira.
@@ -344,7 +352,52 @@ def _t_derivado(origem, regra, ctx, alvo=None):
         return "FORMULARIO_VERSAO"          # calculada ao abrir a grade
     if alvo == "CHEGADA_DATA":
         return "RECEBIMENTO_DATA"           # quando a Bronze recebeu o arquivo
+    if alvo == "FUNCAO_COMBATE_COD":
+        # a especie do desenho decide a funcao: um campo de minas e PROTECAO,
+        # uma linha de fase e MOV_MANOBRA. O tipo ja foi resolvido pelo dominio.
+        tipo = ctx["projecoes"].get("TIPO_COD", "NULL")
+        return f"CASE WHEN {tipo} = 'OBSTACULO' THEN 'PROTECAO' ELSE 'MOV_MANOBRA' END"
     raise TransformacaoPendente(f"derivado sem regra implementada para {alvo}")
+
+
+def _wkt_de_geojson(texto):
+    """GeoJSON -> WKT, os tres desenhos que um sistema de C2 produz.
+
+    Escrito em Python e registrado como funcao de SQL: a alternativa seria um
+    CASE de tres ramos com manipulacao de listas aninhadas dentro do SQL, que
+    ninguem consegue ler. Aqui a conversao cabe em dez linhas.
+
+    GeoJSON poe [longitude, latitude]; WKT tambem, nessa ordem.
+    """
+    if not texto:
+        return None
+    import json as _json
+    try:
+        geometria = _json.loads(texto)
+    except ValueError:
+        return None
+    tipo = str(geometria.get("type", "")).upper()
+    coordenadas = geometria.get("coordinates")
+    if not coordenadas:
+        return None
+
+    def par(p):
+        return f"{p[0]} {p[1]}"
+
+    if tipo == "POINT":
+        corpo = par(coordenadas)
+    elif tipo == "LINESTRING":
+        corpo = ", ".join(par(p) for p in coordenadas)
+    elif tipo == "POLYGON":
+        corpo = ", ".join("(" + ", ".join(par(p) for p in anel) + ")" for anel in coordenadas)
+    else:
+        return None
+    return f"{tipo}({corpo})"
+
+
+def _t_geojson_para_wkt(origem, regra, ctx, alvo=None):
+    """Geometria em GeoJSON -> o mesmo desenho em WKT, o texto que o modelo usa."""
+    return f"geojson_para_wkt({origem})"
 
 
 def _pendente(fase):
@@ -370,9 +423,9 @@ TRANSFORMACOES = {
     "abreviatura":     _t_abreviatura,
     "sobra":           _t_sobra,
     "derivado":        _t_derivado,
+    "geojson_para_wkt": _t_geojson_para_wkt,
     # Declaradas no modelo, sem implementacao ainda: nao ha dado para exercita-las.
     # O job so falha se voce tentar processar a fonte que as usa.
-    "geojson_para_wkt":       _pendente("Fase 1 (C2_A)"),
     "dms_para_ponto":         _pendente("Fase 3 (C2_B)"),
     "decametrica_para_ponto": _pendente("Fase 4 (FOGOS)"),
 }
@@ -509,7 +562,7 @@ def _abrir_grade(registro, cabecalhos, principais):
                 EXTRACAO_IDT=registro["EXTRACAO_IDT"],
                 RECEBIMENTO_DATA=registro["RECEBIMENTO_DATA"],
                 SIDECAR={k: (None if v is None else str(v)) for k, v in sidecar.items()},
-                CELULAS={k: str(v) for k, v in valores.items() if k in declarados},
+                CAMPOS={k: str(v) for k, v in valores.items() if k in declarados},
                 SOBRA_JSON=_sobra_como_json(valores, declarados),
                 FORMULARIO_VERSAO=versao,
             ))
@@ -524,15 +577,65 @@ def _sobra_como_json(valores: dict, declarados: set):
     return _json.dumps(sobra, ensure_ascii=False) if sobra else None
 
 
+# As duas formas devolvem a MESMA view, `origem_bruta`, com as mesmas colunas:
+#   ARQUIVO_IDT · RECEPCAO_IDT · EXTRACAO_IDT · RECEBIMENTO_DATA   os elos de linhagem
+#   CAMPOS       mapa nome -> valor: e daqui que o de/para le todo campo
+#   SIDECAR      mapa nome -> valor do .json que acompanha o binario
+#   SOBRA_JSON · FORMULARIO_VERSAO    so as fontes que chegam em formulario usam
+# Dai para a frente o de/para e igual para as seis fontes.
+
 def montar_origem(spark, modelo, fonte, tipo):
     """Cria a view `origem_bruta`, com uma linha por observacao.
 
-    Junta as tres tabelas da Bronze que contam a historia de um arquivo:
-    o que foi LIDO dele (EXTRACAO), o arquivo em si (ARQUIVO) e o que veio
-    ESCRITO ao lado dele (RECEPCAO_BRUTA, o sidecar). Os tres identificadores
-    seguem junto: sao os elos de linhagem que EVENTO vai guardar.
+    Duas formas, conforme o `conteudo:` declarado no modelo:
+      payload   o registro ja vem com os campos nomeados (o JSON do C2_A, do
+                relato e do incidente). Uma linha da Bronze e uma observacao.
+      extracao  os campos vem do que foi lido do binario, numa grade que
+                precisa ser aberta — e um arquivo vira N observacoes.
     """
     bloco = modelo["fontes"][fonte]["entidades"][tipo]
+    if bloco["conteudo"] == "payload":
+        return _origem_do_payload(spark, fonte, tipo)
+    return _origem_da_extracao(spark, modelo, fonte, tipo, bloco)
+
+
+def _origem_do_payload(spark, fonte, tipo):
+    """O registro estruturado vira mapa nome -> valor, sem mais nada.
+
+    Nao ha o que abrir: cada linha de RECEPCAO_BRUTA ja e uma observacao — a
+    ingestao desdobrou o lote JSON registro a registro. Campo aninhado (como a
+    geometria do C2_A) vem como o proprio texto JSON, que e o que a conversao
+    de geometria espera receber.
+
+    Como se separam as receitas da mesma fonte: pela PASTA em que o arquivo
+    pousou. A convencao da landing e landing/<operacao>/<fonte>/<receita>/, e
+    RECEPCAO_BRUTA guarda esse endereco em ORIGEM_URI_TXT.
+    """
+    spark.sql(f"""
+        SELECT r.ARQUIVO_IDT, r.RECEPCAO_IDT,
+               CAST(NULL AS STRING) AS EXTRACAO_IDT,
+               r.RECEBIMENTO_DATA,
+               from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>') AS CAMPOS,
+               map() AS SIDECAR,
+               CAST(NULL AS STRING) AS SOBRA_JSON,
+               CAST(NULL AS STRING) AS FORMULARIO_VERSAO
+        FROM {CATALOGO}.bronze.RECEPCAO_BRUTA r
+        WHERE r.SISTEMA_ORIGEM_COD = '{fonte}'
+          AND r.ORIGEM_URI_TXT LIKE '%/{tipo}/%'
+    """).createOrReplaceTempView("origem_bruta")
+    total = spark.table("origem_bruta").count()
+    if not total:
+        raise SystemExit(f"\nnenhum registro de {fonte}/{tipo} na Bronze — rode a DAG de ingestao antes\n")
+    print(f"  {total} registros na Bronze -> {total} observacoes")
+
+
+def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
+    """A grade de celulas que a extracao gravou vira uma linha por observacao.
+
+    Junta as tres tabelas da Bronze que contam a historia de um arquivo:
+    o que foi LIDO dele (EXTRACAO), o arquivo em si (ARQUIVO) e o que veio
+    ESCRITO ao lado dele (RECEPCAO_BRUTA, o sidecar).
+    """
     do_sidecar = bloco.get("sidecar") if isinstance(bloco.get("sidecar"), dict) else {}
     mapa = _mapa_do_bloco(bloco)
     principais = [c for c in mapa if not c.startswith("_") and c not in do_sidecar]
@@ -571,9 +674,9 @@ def montar_select(modelo, fonte, tipo=None):
     """
     spec = modelo["fontes"][fonte]
     blocos = spec.get("entidades") or {}
-    de_grade = bool(blocos)
+    da_bronze_v3 = bool(blocos)          # le da view origem_bruta, com o mapa CAMPOS
 
-    if de_grade:
+    if da_bronze_v3:
         if tipo is None and len(blocos) == 1:
             tipo = next(iter(blocos))
         if tipo not in blocos:
@@ -586,23 +689,33 @@ def montar_select(modelo, fonte, tipo=None):
         mapa.update((spec.get("tipos") or {})[tipo])
         sidecar = ()
 
-    ctx = {"modelo": modelo, "fonte": fonte, "sidecar": sidecar, "de_grade": de_grade,
-           "origens": {}, "coluna_payload": spec.get("coluna_payload", "payload")}
+    ctx = {"modelo": modelo, "fonte": fonte, "sidecar": sidecar,
+           "campos_em_mapa": da_bronze_v3, "origens": {},
+           "coluna_payload": spec.get("coluna_payload", "payload")}
     # de qual celula sai a unidade da linha — o derivado de REGISTRO_ORIGEM_COD precisa
     unidade = next((o for o, r in mapa.items()
                     if "UNIDADE_REPORTANTE_COD" in _lista(r["campo"]) and not o.startswith("_")), None)
-    ctx["coluna_unidade"] = _registrar(ctx, "cel", unidade, f"CELULAS['{unidade}']") if unidade else None
+    ctx["coluna_unidade"] = _registrar(ctx, "cmp", unidade, f"CAMPOS['{unidade}']") if unidade else None
 
-    projecoes = {}
+    # `projecoes` no ctx porque um derivado pode depender de outra coluna ja
+    # resolvida — a funcao de combate do MCC sai do tipo, por exemplo. Por isso
+    # os derivados sao resolvidos numa segunda passada.
+    projecoes = ctx["projecoes"] = {}
+    derivados = []
     for origem, regra in mapa.items():
         entrada = _expressao_origem(origem, regra, ctx)
         for alvo in _lista(regra["campo"]):
             coluna = alvo.split(".")[-1]
+            if regra["transformacao"] == "derivado":
+                derivados.append((entrada, regra, coluna))
+                continue
             projecoes[coluna] = TRANSFORMACOES[regra["transformacao"]](entrada, regra, ctx, coluna)
+    for entrada, regra, coluna in derivados:
+        projecoes[coluna] = _t_derivado(entrada, regra, ctx, coluna)
 
     # os elos de linhagem nao se "resolvem": ja vieram da Bronze prontos
     for elo in ("ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT"):
-        if elo in projecoes and de_grade:
+        if elo in projecoes and da_bronze_v3:
             projecoes[elo] = elo
 
     # --- campos derivados: calculados a partir dos ja mapeados, nao vem da origem
@@ -631,8 +744,8 @@ def montar_select(modelo, fonte, tipo=None):
             expressao = projecoes.get(coluna, "NULL")
             select.append(f"CAST({expressao} AS {tipo_sql}) AS {coluna}")
 
-    if de_grade:
-        # camada de baixo: cada celula e cada campo do sidecar vira coluna simples
+    if da_bronze_v3:
+        # camada de baixo: cada campo lido de um mapa vira coluna simples
         fixas = ["ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT", "RECEBIMENTO_DATA",
                  "SOBRA_JSON", "FORMULARIO_VERSAO"]
         lidas = [f"{expressao} AS {apelido}" for apelido, expressao in sorted(ctx["origens"].items())]
@@ -647,6 +760,8 @@ def montar_select(modelo, fonte, tipo=None):
 def processar(spark, modelo, fonte, tipo, mostrar=False):
     spec = modelo["fontes"][fonte]
     if spec.get("entidades") and not mostrar:
+        from pyspark.sql.types import StringType
+        spark.udf.register("geojson_para_wkt", _wkt_de_geojson, StringType())
         montar_origem(spark, modelo, fonte, tipo or next(iter(spec["entidades"])))
 
     consulta = montar_select(modelo, fonte, tipo)
@@ -708,6 +823,11 @@ def get_spark():
         .config("spark.sql.catalog.lakehouse.uri", "thrift://hive-metastore:9083")
         .config("spark.sql.catalog.lakehouse.warehouse", "s3a://lakehouse/warehouse")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        # O leitor VETORIZADO do Iceberg (Arrow, memoria fora do heap da JVM)
+        # derruba o executor sem excecao Java — codigo 134 — ao reler a tabela
+        # durante um MERGE que atualiza linhas. Desligado: a leitura fica um
+        # pouco mais lenta e nao quebra. Diagnosticado em 12/09/2026.
+        .config("spark.sql.iceberg.vectorization.enabled", "false")
         .getOrCreate()
     )
 

@@ -110,11 +110,27 @@ with DAG(
         env_vars={"MODELO_CANONICO": "/opt/canonico/modelo_canonico.yaml"},
         conf={
             "spark.cores.max": "1",
+            # O spark-defaults.conf da imagem limita o executor a 1 GB, e o driver do
+            # SparkSubmitOperator roda dentro do Airflow, que nem le esse arquivo. Um
+            # MERGE que ATUALIZA (reprocessar dado que ja esta na Silver) reescreve a
+            # tabela e nao cabe em 1 GB — o executor morre com codigo 134. O worker
+            # oferece 20 GB; 4 basta.
+            "spark.executor.memory": "4g",
+            "spark.driver.memory": "2g",
             "spark.executor.cores": "1",
             "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
             "spark.sql.catalog.lakehouse": "org.apache.iceberg.spark.SparkCatalog",
             "spark.sql.catalog.lakehouse.type": "hive",
             "spark.sql.catalog.lakehouse.uri": "thrift://hive-metastore:9083",
+            # ATENCAO: o driver do SparkSubmitOperator roda DENTRO do Airflow, que nao
+            # tem o spark-defaults.conf da imagem do Spark. Tudo o que aquele arquivo
+            # ajusta precisa ser repetido aqui, ou o job roda com outra configuracao —
+            # sem io-impl e com 200 particoes, o leitor vetorizado do Iceberg estoura a
+            # memoria FORA do heap e o executor morre sem excecao Java (codigo 134).
+            "spark.sql.catalog.lakehouse.io-impl": "org.apache.iceberg.hadoop.HadoopFileIO",
+            "spark.sql.shuffle.partitions": "4",
+            "spark.default.parallelism": "4",
+            "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
             "spark.sql.catalog.lakehouse.warehouse": "s3a://lakehouse/warehouse",
             "spark.hadoop.fs.s3a.endpoint": "http://minio:9000",
             "spark.hadoop.fs.s3a.path.style.access": "true",

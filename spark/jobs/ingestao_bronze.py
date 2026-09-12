@@ -218,6 +218,11 @@ def get_spark():
         .config("spark.sql.catalog.lakehouse.uri", "thrift://hive-metastore:9083")
         .config("spark.sql.catalog.lakehouse.warehouse", "s3a://lakehouse/warehouse")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        # O leitor VETORIZADO do Iceberg (Arrow, memoria fora do heap da JVM)
+        # derruba o executor sem excecao Java — codigo 134 — ao reler a tabela
+        # durante um MERGE que atualiza linhas. Desligado: a leitura fica um
+        # pouco mais lenta e nao quebra. Diagnosticado em 12/09/2026.
+        .config("spark.sql.iceberg.vectorization.enabled", "false")
         .getOrCreate()
     )
 

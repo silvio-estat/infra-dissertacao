@@ -752,17 +752,21 @@ fontes:
     entidades:
 
       posicao:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
           fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
                         observacao: "sigla, como o C2_A exporta ('2o Pel Fuz/1a Cia Fuz/511o Btl Inf Mtz'); casa com REF_UNIDADE.UNIDADE_SIGLA"}
           coordenadas: {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt}
+          precisao_m:  {campo: PRECISAO_METRO, transformacao: direto,
+                        observacao: "erro estimado do GPS, em metros, como o aparelho reporta"}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
-                        observacao: "chave natural do C2_A: `operacao` ('Perseu') + `ano` ('2024') -> PERSEU_2024, que precisa existir em REF_OPERACAO"}
-          ano:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
-                        observacao: "segunda metade da chave; ver `operacao`"}
+                        compoe_com: [ano],
+                        observacao: "a chave natural do C2_A vem em DOIS campos — `operacao` ('Perseu') e `ano` ('2024') — e o codigo canonico e a juncao dos dois: PERSEU_2024. `compoe_com` diz quais campos entram na juncao, nesta ordem."}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma, nao quando o fato ocorreu"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: POSICAO}
@@ -774,6 +778,7 @@ fontes:
       # mao livre. E aqui que o antigo `obstaculo` passa a viver, e melhora —
       # obstaculo e feicao grafica no mapa, nao ponto.
       mcc:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
           hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
@@ -784,10 +789,11 @@ fontes:
           especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
                         observacao: "'campo de minas' -> OBSTACULO; 'linha de fase' -> MCC. A especie decide o tipo E a funcao (regra de _funcao)."}
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
-                        observacao: "chave natural do C2_A: `operacao` + `ano` -> PERSEU_2024"}
-          ano:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
-                        observacao: "segunda metade da chave; ver `operacao`"}
+                        compoe_com: [ano],
+                        observacao: "chave natural em dois campos; ver o bloco posicao"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma, nao quando o fato ocorreu"}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: derivado,
@@ -813,6 +819,7 @@ fontes:
     entidades:
 
       relato:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
         modalidade: TEXTO
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
@@ -838,6 +845,7 @@ fontes:
                             FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD]
 
       incidente:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
         modalidade: IMAGEM
         sidecar: "o proprio registro JSON do incidente acompanha a foto (mesmo nome, .json)"
         campos:
@@ -884,6 +892,7 @@ fontes:
     entidades:
 
       situacao:
+        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
         modalidade: PLANILHA
         sidecar:
           operacao:      {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
@@ -938,6 +947,7 @@ fontes:
       # fonte so, e e o caso mais realista que existe: a OM que nao tem o
       # arquivo imprime, preenche, assina e fotografa.
       situacao_digitalizada:
+        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
         modalidade: PDF
         herda: situacao
         campos:
@@ -976,6 +986,7 @@ fontes:
     destino: EVENTO
     entidades:
       relatorio_bombardeio:
+        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
           origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
@@ -1019,6 +1030,7 @@ fontes:
     destino: EVENTO
     entidades:
       informe:
+        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
           origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
@@ -1057,6 +1069,7 @@ fontes:
     destino: EVENTO
     entidades:
       transcricao:
+        conteudo: extracao          # os campos vem do que foi LIDO do binario (EXTRACAO), numa grade que precisa ser aberta
         modalidade: AUDIO
         sidecar:
           operacao:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
