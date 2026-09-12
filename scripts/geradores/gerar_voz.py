@@ -147,6 +147,9 @@ def gerar(ctx: Contexto) -> dict:
         dur = round(len(degradado) / taxa, 2)
         total_s += dur
         escrever_sidecar(caminho, {"operacao": ctx.operacao.cod, "hora_transmissao": iso(t), "estacao": ctx.sigla(ucod), "duracao_s": dur})
+        # A frase EXATA que foi sintetizada. Sem ela nao ha como medir o acerto da
+        # transcricao — o audio e a unica testemunha, e ele nao se explica.
+        ctx.registrar_gabarito("VOZ", caminho.relative_to(ctx.saida), "texto", texto)
     r = {"mensagens": len(mensagens), "audio_segundos": round(total_s)}
     ctx.resumo["VOZ"] = r
     return r

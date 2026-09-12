@@ -186,13 +186,27 @@ def gerar(ctx: Contexto) -> dict:
                     ctx.registrar_defeito("RELPER", (destino / nome).relative_to(ctx.saida), "pasta_errada",
                                           "arquivo pousou em landing/perseu_2023/; o sidecar diz PERSEU_2024")
                 caminho = destino / nome
+                sidecar = {"operacao": ctx.operacao.cod, "om_remetente": om["UNIDADE_SIGLA"],
+                           "data_hora": iso(t), "turno": turno}
                 if ext == "xlsx":
                     _xlsx(caminho, om["UNIDADE_SIGLA"], data_txt, turno, cabecalho, linhas)
                 else:
                     _pdf(ctx, caminho, om["UNIDADE_SIGLA"], data_txt, turno, cabecalho, linhas)
-                escrever_sidecar(caminho, {"operacao": ctx.operacao.cod, "om_remetente": om["UNIDADE_SIGLA"],
-                                           "data_hora": iso(t), "turno": turno})
+                escrever_sidecar(caminho, sidecar)
                 arquivos += 1
+
+                # Algumas remessas vao NOS DOIS formatos: a OM manda a planilha e,
+                # para o arquivo, tambem o formulario impresso, assinado e
+                # digitalizado. Os mesmos numeros por dois caminhos — leitura
+                # direta de um lado, OCR do outro — e por isso o lado da planilha
+                # e a VERDADE por construcao, sem precisar de gabarito a parte.
+                if ext == "xlsx" and rng.random() < 0.12:
+                    gemeo = caminho.with_name(caminho.stem + "_digitalizado.pdf")
+                    _pdf(ctx, gemeo, om["UNIDADE_SIGLA"], data_txt, turno, cabecalho, linhas)
+                    escrever_sidecar(gemeo, sidecar)
+                    ctx.registrar_gabarito("RELPER", gemeo.relative_to(ctx.saida),
+                                           "planilha_equivalente", caminho.relative_to(ctx.saida))
+                    arquivos += 1
                 linhas_total += len(linhas)
     r = {"arquivos_binarios": arquivos, "linhas": linhas_total, "turnos_ausentes": ausentes}
     ctx.resumo["RELPER"] = r

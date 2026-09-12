@@ -354,6 +354,7 @@ class Contexto:
         self.setores = self._setores()
         self.fatos: list = []
         self.defeitos: list[dict] = []
+        self.gabarito: list[dict] = []
         self.resumo: dict = {}
 
     # --- unidades ---------------------------------------------------------
@@ -401,6 +402,16 @@ class Contexto:
     def registrar_defeito(self, fonte: str, arquivo: Path | str, tipo: str, descricao: str):
         """Defeito PROPOSITAL, plantado para o pipeline ter o que detectar. Fica na verdade/."""
         self.defeitos.append({"fonte": fonte, "arquivo": str(arquivo), "tipo": tipo, "descricao": descricao})
+
+    def registrar_gabarito(self, fonte: str, arquivo: Path | str, chave: str, valor: str):
+        """O que o gerador SABE que esta dentro de um binario, antes de qualquer
+        leitura. E o gabarito contra o qual se mede o acerto de um extrator de IA:
+        a transcricao correta de um audio, a planilha equivalente a um escaneado.
+
+        Nao e consumido pelo pipeline — fica em verdade/, para o script de metricas.
+        """
+        self.gabarito.append({"fonte": fonte, "arquivo": str(arquivo),
+                              "chave": chave, "valor": str(valor)})
 
     def n(self, base: int) -> int:
         """Volume escalado, nunca abaixo de 1."""

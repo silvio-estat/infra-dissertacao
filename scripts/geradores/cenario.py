@@ -174,6 +174,10 @@ def salvar_verdade(ctx: Contexto):
         w = csv.DictWriter(fh, fieldnames=["fonte", "arquivo", "tipo", "descricao"])
         w.writeheader()
         w.writerows(ctx.defeitos)
+    with open(ctx.verdade / "gabarito.csv", "w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["fonte", "arquivo", "chave", "valor"])
+        w.writeheader()
+        w.writerows(ctx.gabarito)
     (ctx.verdade / "resumo.json").write_text(
         json.dumps(ctx.resumo, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

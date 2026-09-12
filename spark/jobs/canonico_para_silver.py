@@ -569,6 +569,21 @@ def carregar_seeds(spark, modelo):
 # fracao, com as celulas num mapa cabecalho -> valor. Dai para a frente o de/para
 # volta a ser SQL, igual ao das fontes estruturadas.
 
+# O esquema da view de origem, declarado e nao adivinhado: numa planilha as
+# colunas de captura sao SEMPRE nulas, e o Spark nao consegue inferir o tipo de
+# uma coluna que so tem nulo. A ordem aqui e a ordem das tuplas de _abrir_grade.
+def _esquema_origem():
+    from pyspark.sql.types import (MapType, StringType, StructField, StructType, TimestampType)
+    texto, mapa = StringType(), MapType(StringType(), StringType())
+    return StructType([
+        StructField("ARQUIVO_IDT", texto), StructField("RECEPCAO_IDT", texto),
+        StructField("EXTRACAO_IDT", texto), StructField("RECEBIMENTO_DATA", TimestampType()),
+        StructField("CAPTURA_GEOMETRIA_WKT", texto), StructField("CAPTURA_DATA", TimestampType()),
+        StructField("SIDECAR", mapa), StructField("CAMPOS", mapa),
+        StructField("SOBRA_JSON", texto), StructField("FORMULARIO_VERSAO", texto),
+    ])
+
+
 def _abrir_grade(registro, cabecalhos, principais):
     """Uma linha de EXTRACAO (uma planilha) -> N linhas, uma por observacao.
 
@@ -577,7 +592,6 @@ def _abrir_grade(registro, cabecalhos, principais):
     OM e data — que sao do documento, nao das observacoes.
     """
     import json as _json
-    from pyspark.sql import Row
 
     celulas_por_aba = _json.loads(registro["SAIDA_TXT"])["abas"]
     sidecar = _json.loads(registro["SIDECAR_JSON"])
@@ -605,17 +619,15 @@ def _abrir_grade(registro, cabecalhos, principais):
             valores = {t: v for t, v in zip(titulos, linha) if t and v is not None}
             if not valores:
                 continue                  # linha em branco: fim da tabela
-            saida.append(Row(
-                ARQUIVO_IDT=registro["ARQUIVO_IDT"],
-                RECEPCAO_IDT=registro["RECEPCAO_IDT"],
-                EXTRACAO_IDT=registro["EXTRACAO_IDT"],
-                RECEBIMENTO_DATA=registro["RECEBIMENTO_DATA"],
-                CAPTURA_GEOMETRIA_WKT=registro["CAPTURA_GEOMETRIA_WKT"],
-                CAPTURA_DATA=registro["CAPTURA_DATA"],
-                SIDECAR={k: (None if v is None else str(v)) for k, v in sidecar.items()},
-                CAMPOS={k: str(v) for k, v in valores.items() if k in declarados},
-                SOBRA_JSON=_sobra_como_json(valores, declarados),
-                FORMULARIO_VERSAO=versao,
+            # tupla na ordem de _esquema_origem()
+            saida.append((
+                registro["ARQUIVO_IDT"], registro["RECEPCAO_IDT"], registro["EXTRACAO_IDT"],
+                registro["RECEBIMENTO_DATA"],
+                registro["CAPTURA_GEOMETRIA_WKT"], registro["CAPTURA_DATA"],
+                {k: (None if v is None else str(v)) for k, v in sidecar.items()},
+                {k: str(v) for k, v in valores.items() if k in declarados},
+                _sobra_como_json(valores, declarados),
+                versao,
             ))
     return saida
 
@@ -716,7 +728,7 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
         raise SystemExit(f"\nnenhuma extracao de {fonte}/{tipo} na Bronze — rode a DAG de extracao antes\n")
 
     linhas = grade.rdd.flatMap(lambda r: _abrir_grade(r, cabecalhos, principais))
-    spark.createDataFrame(linhas).createOrReplaceTempView("origem_bruta")
+    spark.createDataFrame(linhas, _esquema_origem()).createOrReplaceTempView("origem_bruta")
     print(f"  {grade.count()} arquivos -> {spark.table('origem_bruta').count()} observacoes")
 
 
