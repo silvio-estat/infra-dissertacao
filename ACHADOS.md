@@ -4,6 +4,32 @@ Coisas que custaram tempo para descobrir e que não estão óbvias no código.
 Lista corrida, do mais novo para o mais antigo. Serve de lembrete — e boa parte
 vira texto na dissertação.
 
+## Transcrição de voz (12/set/2026)
+
+- **`medium` compensa, e o ganho está onde importa.** Sobre os mesmos 150 áudios:
+
+  | | `small` | `medium` |
+  |---|---|---|
+  | tempo por áudio | 2,2 s | 5,6 s |
+  | WER global | 29,4% | 21,6% |
+  | **codinome reconhecido** | 65% | **93%** |
+  | topônimo reconhecido | 71% | 71% |
+
+  O codinome vira `TIPO_COD`: passou de um evento sem tipo a cada três para um a
+  cada catorze. O topônimo não mudou — são nomes inventados, que nenhum modelo
+  conhece; quem os resolve é o gazetteer, não o transcritor.
+- Só 1 de 150 transcrições sai **exata**, nos dois modelos.
+- **O WER engana.** Ele é dominado pelo indicativo (`aqui Tigre 4` → `Aqtive 4`)
+  e pelas palavras de protocolo (`Orvalho`, `Câmbio`) — nenhuma delas usada pelo
+  pipeline. O que o de/para consome sai melhor: **codinome 65%**, **topônimo
+  71%**. Ao medir transcrição, medir o que será consumido, não a frase inteira.
+- **Vocabulário inicial não resolveu.** Testados lista longa (codinomes +
+  70 topônimos, 1.387 caracteres), só codinomes, e o parâmetro `hotwords` do
+  faster-whisper 1.1: nenhum moveu o ponteiro. Corrige a impressão anterior
+  (09/set), que veio de um teste com poucas mensagens.
+- O modelo é baixado na **construção da imagem**, não na primeira execução: a
+  DAG não depende de rede e o resultado não muda por troca de versão.
+
 ## OCR (12/set/2026)
 
 - **Resolução maior piora.** Rasterizar o PDF a 300 dpi derrubou o acerto de 79%

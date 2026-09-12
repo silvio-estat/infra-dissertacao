@@ -573,7 +573,9 @@ entidades:
     descricao: >-
       Uma linha para cada vez que conteudo saiu de um binario — por leitura
       direta (celula de planilha, camada de texto de PDF) ou por inferencia
-      (reconhecimento optico, transcricao de audio, modelo de linguagem). TODO
+      (reconhecimento optico, transcricao de audio, modelo de linguagem) — e
+      tambem para cada inferencia feita sobre a SAIDA de outra: a cadeia
+      ARQUIVO -> transcricao -> classificacao e tres linhas, nao uma. TODO
       binario passa por aqui: e o unico caminho de ARQUIVO ate EVENTO. E esta
       tabela que permite responder "de onde veio este numero, quem o leu e
       com que versao" — e, pelo INFERENCIA_INDIC, se houve IA no caminho. Um
@@ -584,7 +586,8 @@ entidades:
     chave: [EXTRACAO_IDT]
     campos:
       EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da extracao.}
-      ARQUIVO_IDT:       {tipo: string, nulo: false, referencia: ARQUIVO, descricao: Arquivo de entrada.}
+      ARQUIVO_IDT:       {tipo: string, nulo: false, referencia: ARQUIVO, descricao: "Binario de onde tudo partiu. Fica preenchido mesmo quando a entrada imediata foi outra extracao — assim toda leitura sabe a qual arquivo pertence."}
+      EXTRACAO_ORIGEM_IDT: {tipo: string, nulo: true, referencia: EXTRACAO, descricao: "A extracao que esta leu, quando a entrada NAO foi o binario. E o caso de toda cadeia de dois modelos: o transcritor le o audio e devolve texto; o modelo de linguagem le ESSE TEXTO e devolve campos. Sem esta coluna as duas inferencias ficam penduradas no mesmo arquivo como se fossem independentes, e se perde a informacao de que uma leu a outra. Nulo quando a entrada foi o proprio binario."}
       INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
       FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
       MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, por (Tesseract), small-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}

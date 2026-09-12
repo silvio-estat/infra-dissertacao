@@ -59,3 +59,10 @@ RUN pip install --no-cache-dir "openpyxl==3.1.5"
 # Extracao por OCR (DAG extracao_ocr): pdf2image chama o pdftoppm, pytesseract
 # chama o tesseract, pypdf conta as paginas.
 RUN pip install --no-cache-dir "pytesseract==0.3.13" "pdf2image==1.17.0" "pypdf==5.1.0" "pillow==11.0.0"
+
+# Transcricao de voz (DAG extracao_voz). CPU: o CTranslate2 por tras do
+# faster-whisper roda quantizado em int8, sem GPU.
+RUN pip install --no-cache-dir "faster-whisper==1.1.0"
+# O modelo baixa na CONSTRUCAO da imagem, nao na primeira execucao: assim a DAG
+# nao depende de rede para rodar e o resultado nao muda por troca de versao.
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('medium', device='cpu', compute_type='int8')"
