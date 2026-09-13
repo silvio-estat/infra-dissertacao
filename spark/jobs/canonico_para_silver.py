@@ -76,11 +76,33 @@ def carregar_modelo(caminho: Path, validar_mapeamentos: bool = True) -> dict:
     criar tabelas e carregar seeds dependem apenas de `entidades`, e nao devem
     ficar reféns de uma transformacao ainda nao implementada."""
     modelo = yaml.safe_load(caminho.read_text(encoding="utf-8"))
+    _resolver_heranca(modelo)
     if validar_mapeamentos:
         validar(modelo)
     # os seeds sao relativos ao proprio modelo, e nao a raiz do repositorio
     modelo["_dir"] = caminho.parent
     return modelo
+
+
+def _resolver_heranca(modelo: dict) -> None:
+    """`herda: <irma>` — a receita comeca como copia da irma e troca so o que declara.
+
+    Nas secoes de mapeamento (sidecar, campos, extensao) a troca e campo a campo:
+    o escaneado do RELPER herda as treze colunas da planilha e muda apenas a
+    modalidade, o metodo e a leitura que produziu as celulas.
+    """
+    secoes = ("sidecar", "campos", "extensao")
+    for spec in (modelo.get("fontes") or {}).values():
+        blocos = spec.get("entidades") or {}
+        for nome, bloco in list(blocos.items()):
+            if not isinstance(bloco, dict) or not bloco.get("herda"):
+                continue
+            base = blocos[bloco["herda"]]
+            novo = {**base, **{k: v for k, v in bloco.items() if k not in secoes}}
+            for secao in secoes:
+                if isinstance(base.get(secao), dict) or isinstance(bloco.get(secao), dict):
+                    novo[secao] = {**(base.get(secao) or {}), **(bloco.get(secao) or {})}
+            blocos[nome] = novo
 
 
 def validar(modelo: dict) -> None:
@@ -275,6 +297,65 @@ def _comparavel(expressao: str) -> str:
     return f"regexp_replace(regexp_replace({sem_acento}, '([0-9]+)[ao]\\\\b', '$1'), ' +', ' ')"
 
 
+def _simples(texto):
+    """Minusculas, sem acento, espacos simples. O ordinal FICA ('1o' nao vira '1'):
+    e justamente a letra que o OCR troca por zero, e a distancia precisa ve-la."""
+    texto = unicodedata.normalize("NFKD", str(texto or "").strip().lower()).encode("ascii", "ignore").decode()
+    return re.sub(" +", " ", texto)
+
+
+def _distancia_edicao(a, b):
+    """Distancia de Levenshtein: quantas letras trocar, inserir ou apagar para ir de a a b."""
+    anterior = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        atual = [i]
+        for k, y in enumerate(b, 1):
+            atual.append(min(anterior[k] + 1, atual[k - 1] + 1, anterior[k - 1] + (x != y)))
+        anterior = atual
+    return anterior[-1]
+
+
+def _mais_parecido(lido, contexto, candidatos, limite):
+    """O valor da lista FECHADA mais parecido com o que foi lido, ou None.
+
+    `candidatos` e [(valor_a_devolver, texto_guardado)]. So concorrem os que terminam
+    com o `contexto` (a OM remetente). A comparacao e com o INICIO do texto guardado,
+    do tamanho do que foi lido: a celula escaneada vem truncada ('.../51o Esqd Ca').
+    Acima do `limite`, ou empatado, devolve None — melhor vazio e visivel do que a
+    unidade vizinha em silencio.
+    """
+    lido = _simples(lido)
+    if not lido:
+        return None
+    contexto = _simples(contexto) if contexto else ""
+    notas = sorted((_distancia_edicao(lido, _simples(texto)[:len(lido)]), valor)
+                   for valor, texto in candidatos
+                   if not contexto or _simples(texto).endswith(contexto))
+    if not notas or notas[0][0] > limite:
+        return None
+    if len(notas) > 1 and notas[1][0] == notas[0][0]:
+        return None
+    return notas[0][1]
+
+
+def _registrar_mais_parecido(spark, modelo, mapa):
+    """Registra no Spark uma funcao por tabela de referencia usada com `busca: mais_parecido`.
+    A tabela e lida UMA vez, aqui, e a lista viaja junto com a funcao para os executores."""
+    from pyspark.sql.types import StringType
+
+    for regra in mapa.values():
+        if not isinstance(regra, dict) or regra.get("busca") != "mais_parecido":
+            continue
+        tabela = regra["referencia"]
+        chave = modelo["entidades"][tabela]["chave"][0]
+        casa = "UNIDADE_SIGLA" if tabela == "REF_UNIDADE" else chave
+        candidatos = [(r[0], r[1]) for r in spark.table(f"{CATALOGO}.silver.{tabela}").select(chave, casa).collect()]
+        limite = int(regra.get("limite", 2))
+        spark.udf.register(f"mais_parecido_{tabela.lower()}",
+                           lambda lido, contexto, _c=candidatos, _l=limite: _mais_parecido(lido, contexto, _c, _l),
+                           StringType())
+
+
 def _t_referencia(origem, regra, ctx, alvo=None):
     """Consulta a uma tabela de referencia. Subconsulta escalar: continua sendo
     expressao, e por isso encaixa em qualquer lugar do SELECT. Precisa ser
@@ -292,6 +373,15 @@ def _t_referencia(origem, regra, ctx, alvo=None):
     # porque e um elo de linhagem (ou um metadado tecnico do proprio arquivo).
     if tabela in _ELO_DA_BRONZE:
         return coluna or _ELO_DA_BRONZE[tabela]
+
+    # `busca: mais_parecido` — o texto lido e atribuido ao valor MAIS PARECIDO da
+    # tabela (ver _mais_parecido). A escolha e feita em Python: a subconsulta
+    # correlacionada do Spark nao aceita a coluna de fora dentro da agregacao que
+    # escolheria o menor.
+    if regra.get("busca") == "mais_parecido":
+        contexto = (_registrar(ctx, "sc", regra["contexto"], f"SIDECAR['{regra['contexto']}']")
+                    if regra.get("contexto") else "CAST(NULL AS STRING)")
+        return f"mais_parecido_{tabela.lower()}({origem}, {contexto})"
 
     entidade = ctx["modelo"]["entidades"][tabela]
     chave = entidade["chave"][0]
@@ -596,39 +686,74 @@ def _esquema_origem():
     ])
 
 
-def _abrir_grade(registro, cabecalhos, principais):
+def _abrir_grade(registro, cabecalhos, principais, grafias=None, por_posicao=False):
     """Uma linha de EXTRACAO (uma planilha) -> N linhas, uma por observacao.
 
     A linha de cabecalho e PROCURADA, nunca fixada: e a primeira que contem pelo
     menos metade dos cabecalhos decretados. Acima dela ficam titulo, operacao,
     OM e data — que sao do documento, nao das observacoes.
+
+    Com `por_posicao` (o formulario escaneado), o rotulo lido NAO nomeia a coluna:
+    o OCR le 'Ef Prev' como 'Erev' e junta dois rotulos numa celula so. A linha de
+    cabecalho e achada por SEMELHANCA, e as colunas recebem os nomes decretados na
+    ORDEM do formulario; o que passar do numero decretado vai para a sobra com o
+    rotulo lido. Grade com MENOS colunas que o decretado nao e aberta: por posicao,
+    todos os valores dali em diante cairiam na coluna errada.
     """
+    import difflib
     import json as _json
+    import unicodedata as _ud
+
+    def _limpo(texto):
+        texto = _ud.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
+        return "".join(ch for ch in texto if ch.isalnum())
+
+    def _parecido(lido, nome):
+        return difflib.SequenceMatcher(None, _limpo(lido), _limpo(nome)).ratio()
 
     celulas_por_aba = _json.loads(registro["SAIDA_TXT"])["abas"]
     sidecar = _json.loads(registro["SIDECAR_JSON"])
     declarados, decretados = set(cabecalhos), set(principais)
+    grafias = grafias or {}
     saida = []
 
     for grade in celulas_por_aba.values():
-        titulos, primeira = None, 0
+        titulos, primeira, lidos = None, 0, []
         for i, linha in enumerate(grade):
-            presentes = {str(c).strip() for c in linha if c is not None}
-            if len(presentes & declarados) >= len(declarados) / 2:
-                titulos, primeira = [str(c).strip() if c is not None else "" for c in linha], i + 1
+            if por_posicao:
+                casados = sum(1 for c in linha if str(c or "").strip()
+                              and max(_parecido(c, n) for n in declarados) >= 0.75)
+                achou = casados >= len(principais) / 2
+            else:
+                presentes = {str(c).strip() for c in linha if c is not None}
+                achou = len(presentes & declarados) >= len(declarados) / 2
+            if achou:
+                lidos, primeira = [str(c).strip() if c is not None else "" for c in linha], i + 1
+                if not por_posicao:
+                    titulos = lidos
+                elif len(lidos) >= len(principais):
+                    titulos = list(principais) + [lidos[j] or f"coluna_{j + 1}"
+                                                  for j in range(len(principais), len(lidos))]
                 break
         if titulos is None:
-            continue                      # aba sem o formulario: um anexo, uma nota
+            continue                      # aba sem o formulario, ou escaneado com coluna faltando
 
-        # V1 quando a planilha traz todos os cabecalhos decretados; V2 quando
-        # falta algum, porque a revisao do formulario renomeou colunas. So os
-        # rotulos PRINCIPAIS contam: a grafia alternativa e justamente o sinal de
-        # que a planilha e da outra versao. Coluna a mais nao muda a versao — vai
-        # para a sobra.
-        versao = "V1" if decretados <= set(titulos) else "V2"
+        if por_posicao:
+            # a coluna que a revisao renomeou diz a versao: o rotulo lido parece
+            # mais com a grafia alternativa ('Comb %') do que com a original
+            versao = "V2" if any(_parecido(lidos[j], g) > _parecido(lidos[j], nome)
+                                 for j, nome in enumerate(principais) for g in grafias.get(nome, [])) else "V1"
+        else:
+            # V1 quando a planilha traz todos os cabecalhos decretados; V2 quando
+            # falta algum, porque a revisao do formulario renomeou colunas. So os
+            # rotulos PRINCIPAIS contam: a grafia alternativa e justamente o sinal de
+            # que a planilha e da outra versao. Coluna a mais nao muda a versao — vai
+            # para a sobra.
+            versao = "V1" if decretados <= set(titulos) else "V2"
 
         for linha in grade[primeira:]:
-            valores = {t: v for t, v in zip(titulos, linha) if t and v is not None}
+            # celula vazia e vazia: a planilha a devolve como None, o Docling como ''
+            valores = {t: v for t, v in zip(titulos, linha) if t and v is not None and str(v).strip() != ""}
             if not valores:
                 continue                  # linha em branco: fim da tabela
             # tupla na ordem de _esquema_origem()
@@ -768,7 +893,22 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
     # cairiam na sobra, como se a OM tivesse inventado a coluna. Mas nao entram
     # no conjunto que identifica a VERSAO do formulario — ver _abrir_grade.
     cabecalhos = principais + [g for c in principais for g in (mapa[c].get("grafias") or [])]
+    grafias = {c: list(mapa[c].get("grafias") or []) for c in principais}
+    por_posicao = bloco.get("cabecalho") == "posicao"
 
+    # `cede_a`: a mesma remessa que chegou tambem pela receita irma (sidecar de
+    # texto identico) fica so com a irma. O escaneado do RELPER cede a planilha:
+    # leitura direta vale mais que inferencia, e as duas juntas contariam a mesma
+    # situacao duas vezes.
+    sem_gemeo = ""
+    if bloco.get("cede_a"):
+        modalidade_irma = modelo["fontes"][fonte]["entidades"][bloco["cede_a"]]["modalidade"]
+        sem_gemeo = (f"AND NOT EXISTS (SELECT 1 FROM {CATALOGO}.bronze.RECEPCAO_BRUTA r2 "
+                     f"WHERE r2.SISTEMA_ORIGEM_COD = '{fonte}' AND r2.MODALIDADE_COD = '{modalidade_irma}' "
+                     f"AND r2.CONTEUDO_JSON_TXT = r.CONTEUDO_JSON_TXT)")
+
+    # So entra extracao que E grade (tem `abas`): o mesmo PDF tem tambem a leitura
+    # do tesseract, que e texto corrido e nao tem o que abrir.
     grade = spark.sql(f"""
         SELECT e.EXTRACAO_IDT, e.SAIDA_TXT, a.ARQUIVO_IDT,
                r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA,
@@ -779,11 +919,13 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
         WHERE a.MODALIDADE_COD = '{bloco["modalidade"]}'
           AND r.SISTEMA_ORIGEM_COD = '{fonte}'
           AND e.STATUS_COD = 'OK'
+          AND get_json_object(e.SAIDA_TXT, '$.abas') IS NOT NULL
+          {sem_gemeo}
     """)
     if grade.rdd.isEmpty():
         raise SystemExit(f"\nnenhuma extracao de {fonte}/{tipo} na Bronze — rode a DAG de extracao antes\n")
 
-    linhas = grade.rdd.flatMap(lambda r: _abrir_grade(r, cabecalhos, principais))
+    linhas = grade.rdd.flatMap(lambda r: _abrir_grade(r, cabecalhos, principais, grafias, por_posicao))
     spark.createDataFrame(linhas, _esquema_origem()).createOrReplaceTempView("origem_bruta")
     print(f"  {grade.count()} arquivos -> {spark.table('origem_bruta').count()} observacoes")
 
@@ -884,7 +1026,9 @@ def processar(spark, modelo, fonte, tipo, mostrar=False):
         from pyspark.sql.types import StringType
         spark.udf.register("geojson_para_wkt", _wkt_de_geojson, StringType())
         spark.udf.register("dms_para_ponto", _ponto_de_dms, StringType())
-        montar_origem(spark, modelo, fonte, tipo or next(iter(spec["entidades"])))
+        receita = tipo or next(iter(spec["entidades"]))
+        _registrar_mais_parecido(spark, modelo, _mapa_do_bloco(spec["entidades"][receita]))
+        montar_origem(spark, modelo, fonte, receita)
 
     consulta = montar_select(modelo, fonte, tipo)
     if mostrar:

@@ -148,6 +148,17 @@ metadados:
     a Silver — os numeros sairiam errados, e o limite fica registrado como achado.
     A voz ganha REGISTRO_ORIGEM_COD, sem o qual seus eventos nao tinham chave.
 
+    Revisao no mesmo dia: o RELPER escaneado VAI para a Silver. O OCR de texto
+    embaralhava a tabela; o Docling (servico `docling`, versao fixada) reconstroi
+    a grade, com 95,7% dos numeros na celula certa nos 7 pares. A receita
+    `situacao_digitalizada` passa a funcionar de fato — `herda` nao era lido pelo
+    job — com duas regras novas: coluna por POSICAO no escaneado, e `cede_a`, que
+    deixa a remessa que chegou nos dois formatos so com a planilha. Ideia do
+    usuario: como a estrutura das unidades e conhecida, a fracao lida por OCR
+    ('10 Pel', '510 GAC') e atribuida a sigla mais parecida da OM remetente
+    (`busca: mais_parecido`, ate 2 letras de diferenca) — de 73 para 145 linhas
+    com unidade, sem nenhuma atribuida errada nas remessas gemeas.
+
 
 # =============================================================================
 # DOMINIOS — listas de valores permitidos
@@ -1046,18 +1057,29 @@ fontes:
         conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
         modalidade: PDF
         herda: situacao
+        # O rotulo lido pelo OCR nao nomeia a coluna ('Erev' por 'Ef Prev', dois
+        # rotulos numa celula): as colunas recebem os nomes decretados na ORDEM do
+        # formulario, que e a ordem dos campos da irma.
+        cabecalho: posicao
+        # A remessa que tambem chegou em planilha fica so com a planilha.
+        cede_a: situacao
         campos:
+          Fração:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        busca: mais_parecido, limite: 2, contexto: om_remetente,
+                        observacao: "celula escrita a mao e lida por OCR, que troca o ordinal 'o' por zero ('10 Pel', '510 GAC') e trunca ('.../51o Esqd Ca'). A estrutura das unidades e conhecida: dentro da OM remetente, vale a sigla MAIS PARECIDA com o que foi lido (distancia de edicao contra o inicio da sigla), com ate `limite` letras de diferenca; acima disso, ou empatado, fica vazio. Medido em 13/09: 145 de 145 linhas com unidade (73 com a busca da planilha) e, nas remessas gemeas, 22 de 23 iguais a planilha irma — a que falhou ficou vazia, nao errada."}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a leitura do Docling, que reconstroi a grade (INFERENCIA_INDIC = S). O mesmo PDF tem tambem a leitura do tesseract, que e texto corrido e nao entra aqui."}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
-        extraidos_por_llm: [UNIDADE_REPORTANTE_COD]
+        # a unidade nao passa por modelo de linguagem: a lista fechada de REF_UNIDADE resolve
+        extraidos_por_llm: []
         observacao: >-
-          Herda o sidecar da irma: a operacao, a data e o turno vem do .json,
-          iguais nas duas. So o CONTEUDO muda de caminho: as duas geram linha em
-          EXTRACAO, a irma por leitura direta (openpyxl, INFERENCIA_INDIC = N) e
-          esta por OCR (INFERENCIA_INDIC = S) antes de virar celula. Comparar as
-          duas sobre o mesmo formulario daria a taxa de erro do OCR contra o
-          valor verdadeiro — nao se calcula (decisao de 2026-09-10), mas fica
-          disponivel.
+          Herda tudo da irma — sidecar, colunas, abreviaturas — e muda so o
+          caminho do CONTEUDO: a irma por leitura direta (openpyxl, sem IA), esta
+          pela grade que o Docling reconstroi do papel escaneado. So entram as OMs
+          que remetem apenas PDF; as 7 remessas que chegam nos dois formatos ficam
+          com a planilha e servem de medida: 95,7% dos numeros do escaneado caem na
+          celula certa (ACHADOS.md, 13/09).
 
   # --- FOGOS: Relatorio de Bombardeio (Anexo I do EB60-ME-12.301). PDF, OCR + LLM.
   # Absorve o `paf` da fonte SIM, que era duplicata empobrecida disto.

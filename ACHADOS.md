@@ -43,6 +43,17 @@ minutos, e os 5% são localizáveis".
   instalado) e `images_scale=1.0`.
 - No modo síncrono o serviço confere o término a cada 2 s: os tempos medidos
   pelo cliente saem redondos (4,01 s, 6,01 s).
+- **Número bem lido, unidade mal lida.** Na Silver, os 145 relatórios escaneados
+  entraram com todos os números, mas só 73 com unidade: o OCR — o do Docling e o
+  tesseract, igualmente — lê o ordinal "o" como zero ("10 Pel", "510 GAC") e a
+  célula chega truncada. Trocar de ferramenta não resolve; é limite da leitura de
+  letra pequena em papel.
+- **A estrutura conhecida corrige a leitura.** Dentro da OM remetente, a lista de
+  frações é fechada. Atribuir o texto lido à sigla **mais parecida** da
+  `REF_UNIDADE` (distância de edição contra o início da sigla, até 2 letras,
+  empate vira vazio) levou a unidade de 73 para **145/145**; nas remessas gêmeas,
+  22 de 23 iguais à planilha irmã, e a que falhou ficou vazia — nenhuma unidade
+  atribuída errada. É o modelo canônico trabalhando, não só descrevendo tabelas.
 
   12 dos 13 erros do RELPER são **uma linha inteira** que ele não achou. No
   FOGOS, a troca temida — a posição do observador no lugar da área

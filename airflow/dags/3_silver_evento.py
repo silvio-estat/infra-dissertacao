@@ -3,7 +3,7 @@ DAG canonico_silver — aplica o de/para do modelo canonico e escreve a Silver.
 
     conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato ──► c2b_incidente
                        │                                                    │
-                       │        intel_informe ◄── voz_transcricao ◄── relper_situacao
+                       │   intel_informe ◄── voz_transcricao ◄── relper_digitalizada ◄── relper_situacao
                        └─► nada_a_fazer
 
 Cada tarefa processa UMA receita do YAML (um bloco dentro de `fontes:`). Elas
@@ -44,6 +44,14 @@ PENDENTES_SQL = """
        WHERE e.recepcao_idt IS NULL
          AND (r.sistema_origem_cod IN ('C2_A', 'C2_B')
               OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA')
+              -- RELPER escaneado: so com a grade do Docling, e so a remessa que nao chegou em planilha
+              OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PDF'
+                  AND EXISTS (SELECT 1 FROM iceberg.bronze.extracao i
+                              WHERE i.arquivo_idt = r.arquivo_idt AND i.ferramenta_nome LIKE 'docling%'
+                                AND i.status_cod = 'OK')
+                  AND NOT EXISTS (SELECT 1 FROM iceberg.bronze.recepcao_bruta r2
+                                  WHERE r2.sistema_origem_cod = 'RELPER' AND r2.modalidade_cod = 'PLANILHA'
+                                    AND r2.conteudo_json_txt = r.conteudo_json_txt))
               -- voz e informe so viram evento DEPOIS que o modelo de linguagem leu
               OR (r.sistema_origem_cod IN ('VOZ', 'INTEL') AND EXISTS (
                     SELECT 1 FROM iceberg.bronze.extracao i
@@ -189,6 +197,25 @@ with DAG(
         }),
     ])
 
+    # O RELPER escaneado das OMs que so remetem PDF: mesma receita da planilha, com
+    # a grade vinda do Docling. A remessa que chegou tambem em planilha fica com ela.
+    relper_pdf = transformar("relper_digitalizada", "RELPER", "situacao_digitalizada", [
+        linhagem(le=bronze_do_arquivo, escreve=["silver.evento"], colunas={
+            "unidade_reportante_cod": [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "operacao_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+        }),
+        linhagem(le=bronze_do_arquivo, escreve=["silver.situacao_unidade"], colunas={
+            "ef_presente_qnt":     [("bronze.extracao", "saida_txt")],
+            "vtr_operacional_qnt": [("bronze.extracao", "saida_txt")],
+            "necessidade_txt":     [("bronze.extracao", "saida_txt")],
+            "atributo_extra_txt":  [("bronze.extracao", "saida_txt")],
+            "turno_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+
     # VOZ e INTEL chegam por uma cadeia de DOIS modelos: um le o binario (whisper,
     # tesseract) e devolve texto; o modelo de linguagem le esse texto e devolve os
     # campos. As tres tabelas da Bronze entram na linhagem.
@@ -222,4 +249,4 @@ with DAG(
     ])
 
     conferir >> [posicao, nada_a_fazer]
-    posicao >> mcc >> relato >> incidente >> relper >> voz >> intel
+    posicao >> mcc >> relato >> incidente >> relper >> relper_pdf >> voz >> intel
