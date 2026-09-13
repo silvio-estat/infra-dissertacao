@@ -4,20 +4,22 @@ Coisas que custaram tempo para descobrir e que não estão óbvias no código.
 Lista corrida, do mais novo para o mais antigo. Serve de lembrete — e boa parte
 vira texto na dissertação.
 
-## PENDENTE — governança parou de rodar (12/set/2026)
+## Governança: a mensagem de erro mentia (12/set/2026)
 
-Depois de um ciclo `down`/`up` da stack, **toda** tarefa do OpenMetadata que fala
-com o Trino falha: `ingestao_metadados` com `SourceConnectionException: CheckAccess`
-(sem dizer por quê) e os 7 testes de qualidade voltam `Aborted`.
-
-Já descartado: o Trino está saudável e responde com as mesmas credenciais pelo
-cliente comum (`SHOW SCHEMAS`, `SHOW TABLES`, `SELECT count(*)`); o metastore
-está íntegro (93 colunas legíveis em `information_schema.columns`); o OM
-responde e autentica (HTTP 200 com o JWT); reiniciar a stack inteira não muda.
-
-Não é problema de dado — a Silver está completa e correta. É o SDK de ingestão
-do OM. Retomar com cabeça fresca: suspeita é a configuração do serviço
-`trino_lakehouse` gravada no OM divergir do `serviceConnection` que a DAG envia.
+- **`SourceConnectionException: CheckAccess` não era problema de conexão.** Era
+  conflito de dependência Python: instalar as bibliotecas de extração
+  (`openpyxl`, `pytesseract`, `pdf2image`, `faster-whisper`) subiu o `click` para
+  8.5, e o `collate-sqlfluff` — dependência do `openmetadata-ingestion` — exige
+  `click<8.4.0`. O `CheckAccess` quebrava ao **carregar as bibliotecas**, antes
+  de tentar conectar. A imagem do Airflow agora fixa `click<8.4.0` por último.
+- **A causa estava na linha 17 do log, não nas últimas.** Procurar o erro pelo
+  fim custou: testei Trino, metastore, credenciais e reiniciei a stack inteira à
+  toa. Numa falha de ferramenta, ler o log do início é mais barato.
+- Sintoma associado: os 7 testes de qualidade voltam `Aborted` — mesmo motivo.
+- **Defeito separado, também corrigido:** a conexão do serviço `trino_lakehouse`
+  gravada no OM estava sem `connectionArguments: {http_scheme: http}`. Sem isso
+  o cliente tenta HTTPS num Trino que fala HTTP puro. Não era a causa acima, mas
+  quebraria qualquer ingestão disparada pela tela do OpenMetadata.
 
 ## Modelo de linguagem sobre a transcrição (12/set/2026)
 

@@ -161,15 +161,15 @@ dominios:
   tipo_evento:
     descricao: Natureza do fato relatado.
     valores:
-      POSICAO:             {rotulo: Relato de posicao, sinonimos: [tordilho]}
-      AVISTAMENTO:         {rotulo: Avistamento, sinonimos: [potro]}
-      AVISTAMENTO_INIMIGO: {rotulo: Avistamento de forca oponente, sinonimos: [cavalo]}
-      INCIDENTE:           {rotulo: Incidente, sinonimos: [brasa]}
-      OBSTACULO:           {rotulo: Obstaculo, sinonimos: [bigorna, campo de minas, cratera, barreira, fosso anticarro]}
-      MCC:                 {rotulo: Medida de coordenacao e controle, sinonimos: [linha de fase, zona de reuniao, limite, eixo de progressao, ponto de controle, objetivo, linha de partida]}
-      MISSAO_TIRO:         {rotulo: Missao de tiro, sinonimos: [martelo]}
-      BOMBARDEIO_INIMIGO:  {rotulo: Bombardeio inimigo observado, sinonimos: [tambor]}
-      SITUACAO_UNIDADE:    {rotulo: Situacao periodica da unidade, sinonimos: [celeiro]}
+      POSICAO:             {rotulo: Relato de posicao, quando: "a fracao informa onde esta e o que faz; nada de novo aconteceu", sinonimos: [tordilho]}
+      AVISTAMENTO:         {rotulo: Avistamento, quando: "viu algo digno de nota que NAO e forca oponente: pessoas, veiculos civis, movimento de populacao", sinonimos: [potro]}
+      AVISTAMENTO_INIMIGO: {rotulo: Avistamento de forca oponente, quando: "viu forca oponente: tropa, viatura militar ou indicio de presenca inimiga", sinonimos: [cavalo]}
+      INCIDENTE:           {rotulo: Incidente, quando: "algo deu errado ou exige providencia: acidente, avaria, obstaculo na via, pessoa ferida", sinonimos: [brasa]}
+      OBSTACULO:           {rotulo: Obstaculo, quando: "feicao que impede ou canaliza o movimento: campo de minas, cratera, barreira", sinonimos: [bigorna, campo de minas, cratera, barreira, fosso anticarro]}
+      MCC:                 {rotulo: Medida de coordenacao e controle, quando: "medida de coordenacao e controle desenhada no mapa: limite, eixo, linha de fase, objetivo", sinonimos: [linha de fase, zona de reuniao, limite, eixo de progressao, ponto de controle, objetivo, linha de partida]}
+      MISSAO_TIRO:         {rotulo: Missao de tiro, quando: "pedido ou execucao de fogo pela propria forca", sinonimos: [martelo]}
+      BOMBARDEIO_INIMIGO:  {rotulo: Bombardeio inimigo observado, quando: "fogo do inimigo observado, com local e efeito", sinonimos: [tambor]}
+      SITUACAO_UNIDADE:    {rotulo: Situacao periodica da unidade, quando: "numeros periodicos de pessoal e material de uma unidade; so o formulario produz", sinonimos: [celeiro]}
     # Os codinomes de radio entram como SINONIMOS, e nao como tabela separada:
     # 'cavalo' no audio transcrito casa direto com AVISTAMENTO_INIMIGO.
     #
@@ -210,9 +210,9 @@ dominios:
   prioridade:
     descricao: Urgencia atribuida ao tratamento do evento.
     valores:
-      URGENTE:     {rotulo: Urgente,     sinonimos: [Alta, Critica, Imediato, relampago]}
-      PRIORITARIO: {rotulo: Prioritario, sinonimos: [Media, Moderada, chuva]}
-      ROTINA:      {rotulo: Rotina,      sinonimos: [Baixa, Normal, orvalho]}
+      URGENTE:     {rotulo: Urgente, quando: "risco imediato a tropa ou a missao; exige acao agora",     sinonimos: [Alta, Critica, Imediato, relampago]}
+      PRIORITARIO: {rotulo: Prioritario, quando: "precisa de providencia, mas nao e imediato", sinonimos: [Media, Moderada, chuva]}
+      ROTINA:      {rotulo: Rotina, quando: "informativo; nada a fazer",      sinonimos: [Baixa, Normal, orvalho]}
 
   confiabilidade:
     descricao: Confiabilidade da fonte. Escala doutrinaria de A a F.
@@ -571,6 +571,12 @@ entidades:
   # ---------------------------------------------------------------------------
   EXTRACAO:
     descricao: >-
+      Toda inferencia deixa uma linha aqui, seja sobre o que saiu de um binario,
+      sobre a saida de outra inferencia, ou sobre um registro que nunca teve
+      binario. As tres entradas possiveis sao tres colunas: ARQUIVO_IDT,
+      EXTRACAO_ORIGEM_IDT e RECEPCAO_IDT — exatamente uma delas e a entrada
+      imediata.
+
       Uma linha para cada vez que conteudo saiu de um binario — por leitura
       direta (celula de planilha, camada de texto de PDF) ou por inferencia
       (reconhecimento optico, transcricao de audio, modelo de linguagem) — e
@@ -586,7 +592,8 @@ entidades:
     chave: [EXTRACAO_IDT]
     campos:
       EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da extracao.}
-      ARQUIVO_IDT:       {tipo: string, nulo: false, referencia: ARQUIVO, descricao: "Binario de onde tudo partiu. Fica preenchido mesmo quando a entrada imediata foi outra extracao — assim toda leitura sabe a qual arquivo pertence."}
+      ARQUIVO_IDT:       {tipo: string, nulo: true, referencia: ARQUIVO, descricao: "Binario de onde tudo partiu. Fica preenchido mesmo quando a entrada imediata foi outra extracao — assim toda leitura sabe a qual arquivo pertence. Nulo quando a inferencia foi feita sobre um registro que nunca teve binario: o relato em texto do C2_B."}
+      RECEPCAO_IDT:      {tipo: string, nulo: true, referencia: RECEPCAO_BRUTA, descricao: "Registro estruturado sobre o qual a inferencia foi feita, quando nao houve binario. E o caso do relato do C2_B: o texto livre chega dentro do proprio JSON, e o modelo de linguagem le dali."}
       EXTRACAO_ORIGEM_IDT: {tipo: string, nulo: true, referencia: EXTRACAO, descricao: "A extracao que esta leu, quando a entrada NAO foi o binario. E o caso de toda cadeia de dois modelos: o transcritor le o audio e devolve texto; o modelo de linguagem le ESSE TEXTO e devolve campos. Sem esta coluna as duas inferencias ficam penduradas no mesmo arquivo como se fossem independentes, e se perde a informacao de que uma leu a outra. Nulo quando a entrada foi o proprio binario."}
       INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
       FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
@@ -822,7 +829,18 @@ fontes:
     entidades:
 
       relato:
-        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
+        conteudo: payload
+        # O que o documento E. Sem isto, um modelo de linguagem que le o texto nao
+        # tem como saber o que esta lendo, e escolhe o valor cujo NOME parece mais
+        # com o assunto — foi o que levou 143 de 300 relatos a SITUACAO_UNIDADE.
+        documento: >-
+          Texto curto digitado no campo por um militar, dentro do aplicativo de C2,
+          descrevendo o que ele esta vendo ou fazendo naquele momento. Nao usa
+          codigos: e linguagem comum, as vezes abreviada. Quem relatou, quando e de
+          onde ja estao em outros campos do registro — o texto traz APENAS a situacao.
+        # Um observador relata estas quatro coisas, e so estas. Sem esta lista, o
+        # pedido oferece os nove tipos do dominio e convida ao erro.
+        tipos_possiveis: [POSICAO, AVISTAMENTO, AVISTAMENTO_INIMIGO, INCIDENTE]          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
         modalidade: TEXTO
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
@@ -836,19 +854,36 @@ fontes:
           operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
                         observacao: "campo nativo do JSON do C2_B (no faz de conta, o gerador o inclui)"}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a interpretacao do modelo de linguagem sobre ESTE relato. Sem ela nao ha como responder de onde veio o tipo ou a prioridade do evento — sao os unicos campos aqui que ninguem escreveu, foram inferidos."}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
           _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
                         regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+          # Os quatro abaixo NAO chegam no registro: sao inferidos por um modelo
+          # de linguagem que le `situacao`. `por: llm` e o que diz isso — e e o
+          # que faz a tarefa de extracao montar o pedido com estes campos e com
+          # os valores que cada dominio admite. A conversao `dominio` continua
+          # valendo por cima: valor que o modelo invente nao casa e vira NULO,
+          # em vez de entrar como se fosse bom.
+          TIPO_COD:                 {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, por: llm}
+          PRIORIDADE_COD:           {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm}
+          FONTE_CONFIABILIDADE_COD: {campo: FONTE_CONFIABILIDADE_COD, transformacao: dominio, dominio: confiabilidade, por: llm}
+          INFO_CREDIBILIDADE_COD:   {campo: INFO_CREDIBILIDADE_COD, transformacao: dominio, dominio: credibilidade, por: llm}
         # Estes NAO vem da origem: sao inferidos pelo modelo de linguagem a
         # partir de RELATO_TXT. Cada inferencia gera uma linha em EXTRACAO.
         # A confiabilidade entrou aqui porque o antigo relt_intel a trazia
         # pronta ('A1'); num relato livre de verdade ela e juizo do analista,
         # e portanto inferida.
-        extraidos_por_llm: [TIPO_COD, FUNCAO_COMBATE_COD, PRIORIDADE_COD,
+        extraidos_por_llm: [TIPO_COD, PRIORIDADE_COD,
                             FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD]
+        # FUNCAO_COMBATE_COD saiu desta lista: classificar funcao de combate e
+        # DOUTRINA, nao leitura de texto — pedir isso a um modelo de linguagem e
+        # indefensavel. Ela deriva do TIPO_COD por uma tabela de referencia, que
+        # esta pendente (ver a decisao do glossario). Ate la fica nula, e a
+        # lacuna aparece no dado em vez de ser preenchida por palpite.
 
       incidente:
         conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao

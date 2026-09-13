@@ -710,15 +710,22 @@ def _origem_do_payload(spark, fonte, tipo):
     """
     spark.sql(f"""
         SELECT r.ARQUIVO_IDT, r.RECEPCAO_IDT,
-               CAST(NULL AS STRING) AS EXTRACAO_IDT,
                r.RECEBIMENTO_DATA,
-               from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>') AS CAMPOS,
+               map_concat(from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>'),
+                          coalesce(from_json(i.SAIDA_TXT, 'map<string,string>'), map())) AS CAMPOS,
                map() AS SIDECAR,
                CAST(NULL AS STRING) AS SOBRA_JSON,
                CAST(NULL AS STRING) AS FORMULARIO_VERSAO,
-               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA
+               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
+               i.EXTRACAO_IDT
         FROM {CATALOGO}.bronze.RECEPCAO_BRUTA r
         LEFT JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = r.ARQUIVO_IDT
+        -- a interpretacao do modelo de linguagem sobre ESTE registro, se houve.
+        -- Os campos dela entram no mesmo mapa que os do registro: para o de/para
+        -- nao ha diferenca entre um campo que veio escrito e um que foi inferido
+        -- — a diferenca fica registrada aqui, em EXTRACAO, que e onde ela importa.
+        LEFT JOIN {CATALOGO}.bronze.EXTRACAO i
+               ON i.RECEPCAO_IDT = r.RECEPCAO_IDT AND i.STATUS_COD = 'OK'
         WHERE r.SISTEMA_ORIGEM_COD = '{fonte}'
           AND r.ORIGEM_URI_TXT LIKE '%/{tipo}/%'
     """).createOrReplaceTempView("origem_bruta")

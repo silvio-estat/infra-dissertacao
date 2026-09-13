@@ -1,7 +1,7 @@
 """
 DAG extracao — tira o conteudo de dentro dos binarios e grava em EXTRACAO.
 
-    conferir_pendentes ──► planilha ──► ocr ──► voz ──► texto
+    conferir_pendentes ──► planilha ──► ocr ──► voz ──► texto ──► relato
                        └─► nada_a_fazer
 
 Uma etapa do fluxo, uma DAG: ingestao ──► EXTRACAO ──► canonico_silver ──► gold.
@@ -64,6 +64,7 @@ VOZ_VOCABULARIO = "vocab-v1"
 LLM_ENDERECO = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 LLM_MODELO = "qwen3.5:4b"
 LLM_PROMPT_VERSAO = "voz-v1"
+LLM_PROMPT_VERSAO_RELATO = "relato-v5"
 
 
 # =============================================================================
@@ -140,7 +141,7 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None):
             print(f"FALHA {uri}: {erro}")
         idt = "ext_" + hashlib.sha256(
             f"{arquivo_idt}|{ferramenta}|{agora.isoformat()}".encode()).hexdigest()[:16]
-        linhas.append((idt, arquivo_idt, None, inferencia, ferramenta, modelo, ajuste, saida,
+        linhas.append((idt, arquivo_idt, None, None, inferencia, ferramenta, modelo, ajuste, saida,
                        round(time.perf_counter() - inicio, 3), status, agora))
         if len(linhas) % 25 == 0:
             print(f"  {len(linhas)} lidos")
@@ -148,8 +149,9 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None):
     gravar(linhas, modalidade, ferramenta)
 
 
-COLUNAS = ("extracao_idt, arquivo_idt, extracao_origem_idt, inferencia_indic, ferramenta_nome, "
-           "modelo_nome, prompt_versao_cod, saida_txt, extracao_segundos, status_cod, execucao_data")
+COLUNAS = ("extracao_idt, arquivo_idt, recepcao_idt, extracao_origem_idt, inferencia_indic, "
+           "ferramenta_nome, modelo_nome, prompt_versao_cod, saida_txt, extracao_segundos, "
+           "status_cod, execucao_data")
 
 
 def gravar(linhas, rotulo, ferramenta):
@@ -158,14 +160,14 @@ def gravar(linhas, rotulo, ferramenta):
         print(f"nada a extrair em {rotulo}")
         return
     cur = conexao_trino().cursor()
-    marcadores = ", ".join(["(" + ", ".join(["?"] * 11) + ")"] * len(linhas))
+    marcadores = ", ".join(["(" + ", ".join(["?"] * 12) + ")"] * len(linhas))
     cur.execute(f"INSERT INTO iceberg.bronze.extracao ({COLUNAS}) VALUES {marcadores}",
                 [v for linha in linhas for v in linha])
     cur.fetchall()
-    segundos = sum(l[8] for l in linhas)
+    segundos = sum(l[9] for l in linhas)
     print(f"EXTRACAO: {len(linhas)} linhas de {rotulo} com {ferramenta}, "
           f"{segundos:.0f}s no total, {segundos/len(linhas):.1f}s cada "
-          f"({sum(1 for l in linhas if l[9] == 'FALHA')} falhas)")
+          f"({sum(1 for l in linhas if l[10] == 'FALHA')} falhas)")
 
 
 # =============================================================================
@@ -304,7 +306,7 @@ def extrair_texto():
             print(f"FALHA {extracao_origem}: {erro}")
         idt = "ext_" + hashlib.sha256(
             f"{extracao_origem}|{LLM_MODELO}|{agora.isoformat()}".encode()).hexdigest()[:16]
-        linhas.append((idt, arquivo_idt, extracao_origem, "S", "ollama", LLM_MODELO,
+        linhas.append((idt, arquivo_idt, None, extracao_origem, "S", "ollama", LLM_MODELO,
                        LLM_PROMPT_VERSAO, saida, round(time.perf_counter() - inicio, 3),
                        status, agora))
         if len(linhas) % 25 == 0:
@@ -313,9 +315,158 @@ def extrair_texto():
     gravar(linhas, "TEXTO", f"ollama/{LLM_MODELO}")
 
 
+def relatos_sem_interpretacao() -> list:
+    """[(recepcao_idt, texto)] dos relatos em texto livre ainda nao interpretados.
+
+    Diferente da voz: aqui NAO ha binario nem transcricao. O texto chega dentro
+    do proprio registro JSON, e o elo da inferencia e o RECEPCAO_IDT.
+    """
+    sql = """
+        SELECT r.recepcao_idt, json_extract_scalar(r.conteudo_json_txt, '$.situacao')
+        FROM iceberg.bronze.recepcao_bruta r
+        LEFT JOIN iceberg.bronze.extracao i ON i.recepcao_idt = r.recepcao_idt
+        WHERE r.sistema_origem_cod = 'C2_B' AND r.origem_uri_txt LIKE '%/relato/%'
+          AND i.extracao_idt IS NULL
+        ORDER BY r.recepcao_idt
+    """
+    try:
+        cur = conexao_trino().cursor()
+        cur.execute(sql)
+        return cur.fetchall()
+    except Exception as erro:
+        print(f"EXTRACAO nao consultada ({type(erro).__name__}); tratando como vazia")
+        return []
+
+
+def instrucao_relato() -> str:
+    """O pedido, montado inteiro a partir do modelo canonico.
+
+    Tres coisas que faltavam na primeira versao e que o modelo agora fornece:
+    o que o DOCUMENTO e (`documento:` da receita), QUAIS valores essa fonte pode
+    produzir (`tipos_possiveis:`) e QUANDO cada valor se aplica (`quando:` do
+    dominio). Sem elas o pedido era uma lista de codigos sem criterio, e o modelo
+    escolhia pelo nome que mais lembrava o assunto.
+    """
+    modelo = yaml.safe_load(open(f"{CANONICO}/modelo_canonico.yaml", encoding="utf-8"))
+    receita = modelo["fontes"]["C2_B"]["entidades"]["relato"]
+    dominios = modelo["dominios"]
+
+    def listar(dominio, apenas=None):
+        valores = dominios[dominio]["valores"]
+        return "\n".join(f"  {k:22s} {v.get('quando', v.get('rotulo', ''))}"
+                          for k, v in valores.items() if apenas is None or k in apenas)
+
+    campos = [c for c, r in receita["campos"].items() if r.get("por") == "llm"]
+    # Cada lista vem AMARRADA a sua chave. Na versao anterior as duas listas
+    # apareciam soltas e o modelo escreveu ROTINA — valor de prioridade — dentro
+    # de TIPO_COD em 30 dos 300 relatos.
+    return (
+        f"Voce le RELATOS DE OBSERVADOR. {receita['documento']}\n\n"
+        "Responda so um JSON com exatamente estas quatro chaves:\n\n"
+        "1) \"TIPO_COD\" — o que o relato descreve. Use SO um destes:\n"
+        f"{listar('tipo_evento', receita.get('tipos_possiveis'))}\n\n"
+        "2) \"PRIORIDADE_COD\" — o que o relato exige de quem o recebe. Use SO um destes:\n"
+        f"{listar('prioridade')}\n"
+        "   Decida pela ACAO, nao pelo assunto. Exemplos:\n"
+        "     'Fracao instalada em BR-154 km 15, PC operando normalmente.'  -> ROTINA\n"
+        "     'Viatura da fracao atolada na via, solicito apoio.'           -> PRIORITARIO\n"
+        "     'Tropa inimiga a 500 m da posicao, em aproximacao.'           -> URGENTE\n"
+        "   Um relato que so informa e ROTINA. Um que pede providencia e PRIORITARIO.\n"
+        "   Um que indica risco agora e URGENTE.\n\n"
+        "3) \"FONTE_CONFIABILIDADE_COD\" e 4) \"INFO_CREDIBILIDADE_COD\" — juizo de\n"
+        "   analista sobre QUEM relatou e sobre a informacao. O texto de um relato\n"
+        "   quase nunca permite decidir: devolva null nas duas, salvo se o proprio\n"
+        "   texto trouxer a avaliacao.\n\n"
+        "Nunca use um valor de uma lista na chave da outra. Se o texto nao permitir\n"
+        "decidir um campo, devolva null. Nunca invente valor fora dos listados.\n"
+    )
+
+
+def perguntar(prompt: str, raciocinar: bool = False) -> str:
+    """Uma chamada ao modelo. `raciocinar` liga o modo de raciocinio do Ollama.
+
+    O parametro vale para a chamada INTEIRA — nao da para raciocinar sobre um
+    campo e nao sobre outro no mesmo pedido. Por isso a interpretacao do relato
+    e feita em duas: reconhecer o tipo nao precisa de raciocinio (ja acerta 100%)
+    e julgar a prioridade precisa.
+
+    O raciocinio volta num campo proprio (`thinking`) e e DESCARTADO: o que
+    interessa guardar e a resposta, nao o caminho.
+    """
+    import urllib.request
+
+    # ARMADILHA: `think` ligado JUNTO com `format: json` devolve resposta VAZIA —
+    # o modelo gasta o orcamento no campo de raciocinio e nao sobra saida. Com
+    # raciocinio, o formato nao e forcado e o JSON e recortado da resposta.
+    pedido = {"model": LLM_MODELO, "prompt": prompt, "stream": False,
+              "think": raciocinar, "options": {"temperature": 0}}
+    if not raciocinar:
+        pedido["format"] = "json"
+    corpo = json.dumps(pedido).encode()
+    req = urllib.request.Request(f"{LLM_ENDERECO}/api/generate", data=corpo,
+                                 headers={"Content-Type": "application/json"})
+    resposta = json.loads(urllib.request.urlopen(req, timeout=600).read())["response"]
+    if raciocinar:      # sem formato forcado, a resposta pode vir com texto em volta
+        inicio, fim = resposta.find("{"), resposta.rfind("}")
+        resposta = resposta[inicio:fim + 1] if inicio >= 0 < fim else "{}"
+    return resposta
+
+
+def instrucao_prioridade() -> str:
+    """Pedido separado, so para o juizo de prioridade."""
+    modelo = yaml.safe_load(open(f"{CANONICO}/modelo_canonico.yaml", encoding="utf-8"))
+    receita = modelo["fontes"]["C2_B"]["entidades"]["relato"]
+    valores = modelo["dominios"]["prioridade"]["valores"]
+    lista = "\n".join(f"  {k:14s} {v.get('quando', '')}" for k, v in valores.items())
+    return (
+        f"Voce le um RELATO DE OBSERVADOR. {receita['documento']}\n\n"
+        "Decida o que este relato exige de quem o recebe — pela ACAO necessaria,\n"
+        "nao pelo assunto:\n"
+        f"{lista}\n\n"
+        "  'Fracao instalada em BR-154 km 15, PC operando normalmente.'  -> ROTINA\n"
+        "  'Viatura da fracao atolada na via, solicito apoio.'           -> PRIORITARIO\n"
+        "  'Tropa inimiga a 500 m da posicao, em aproximacao.'           -> URGENTE\n\n"
+        'Responda so um JSON: {"PRIORIDADE_COD": <um dos tres>}\n'
+    )
+
+
+def extrair_relatos():
+    """Cada relato vira uma linha em EXTRACAO ligada ao registro, nao a um arquivo."""
+
+    prompt_base = instrucao_relato()
+    prompt_prioridade = instrucao_prioridade()
+    pendentes_ = relatos_sem_interpretacao()
+    print(f"relatos sem interpretacao: {len(pendentes_)}")
+
+    linhas = []
+    for recepcao_idt, texto in pendentes_:
+        inicio = time.perf_counter()
+        agora = datetime.now(timezone.utc)
+        try:
+            campos = json.loads(perguntar(prompt_base + f"\nRELATO: {texto}\n"))
+            # segunda chamada, so para a prioridade, com raciocinio ligado
+            juizo = json.loads(perguntar(prompt_prioridade + f"\nRELATO: {texto}\n", raciocinar=True))
+            if juizo.get("PRIORIDADE_COD"):
+                campos["PRIORIDADE_COD"] = juizo["PRIORIDADE_COD"]
+            saida, status = json.dumps(campos, ensure_ascii=False), "OK"
+        except Exception as erro:
+            saida, status = None, "FALHA"
+            print(f"FALHA {recepcao_idt}: {erro}")
+        idt = "ext_" + hashlib.sha256(
+            f"{recepcao_idt}|{LLM_MODELO}|{agora.isoformat()}".encode()).hexdigest()[:16]
+        linhas.append((idt, None, recepcao_idt, None, "S", "ollama", LLM_MODELO,
+                       LLM_PROMPT_VERSAO_RELATO, saida,
+                       round(time.perf_counter() - inicio, 3), status, agora))
+        if len(linhas) % 50 == 0:
+            print(f"  {len(linhas)} interpretados")
+
+    gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
+
+
 def conferir_pendentes() -> str:
     quantos = {m: len(pendentes(m)) for m in ("PLANILHA", "PDF", "AUDIO")}
     quantos["transcricoes a interpretar"] = len(transcricoes_sem_interpretacao())
+    quantos["relatos a interpretar"] = len(relatos_sem_interpretacao())
     print("pendente:", quantos)
     return "planilha" if sum(quantos.values()) else "nada_a_fazer"
 
@@ -411,5 +562,16 @@ with DAG(
         ),
     )
 
+    relato = PythonOperator(
+        task_id="relato",
+        python_callable=extrair_relatos,
+        # a entrada e o registro bruto, nao um arquivo: o relato nunca teve binario
+        on_success_callback=linhagem(
+            le=["bronze.recepcao_bruta"], escreve=["bronze.extracao"],
+            colunas={"saida_txt": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+                     "recepcao_idt": [("bronze.recepcao_bruta", "recepcao_idt")]},
+        ),
+    )
+
     conferir >> [planilha, nada_a_fazer]
-    planilha >> ocr >> voz >> texto
+    planilha >> ocr >> voz >> texto >> relato
