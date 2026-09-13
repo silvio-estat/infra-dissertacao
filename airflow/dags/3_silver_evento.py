@@ -30,17 +30,27 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 
 from helpers.lineage_emitter import linhagem
 
-# Registro da Bronze que ainda nao virou evento. Todo evento guarda o
-# RECEPCAO_IDT de onde nasceu, entao a conta e uma juncao so.
-# O filtro lista o que esta DAG SABE transformar hoje: as demais fontes entram
-# quando suas DAGs de extracao existirem, e ate la nao contam como pendencia.
+# Duas pendencias, somadas:
+#   1. registro da Bronze que ainda nao virou evento. Todo evento guarda o
+#      RECEPCAO_IDT de onde nasceu, entao a conta e uma juncao so;
+#   2. evento que nasceu ANTES da interpretacao do seu registro. O relato do C2_B
+#      vira evento sem tipo e sem prioridade, e so ganha os dois quando o modelo
+#      de linguagem responde; o MERGE da Silver atualiza a linha que ja existe.
+# O filtro da primeira lista o que esta DAG SABE transformar hoje: as demais
+# fontes entram quando suas receitas existirem, e ate la nao contam como pendencia.
 PENDENTES_SQL = """
-    SELECT count(*)
-    FROM iceberg.bronze.recepcao_bruta r
-    LEFT JOIN iceberg.silver.evento e ON e.recepcao_idt = r.recepcao_idt
-    WHERE e.recepcao_idt IS NULL
-      AND (r.sistema_origem_cod IN ('C2_A', 'C2_B')
-           OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA'))
+    SELECT
+      (SELECT count(*)
+       FROM iceberg.bronze.recepcao_bruta r
+       LEFT JOIN iceberg.silver.evento e ON e.recepcao_idt = r.recepcao_idt
+       WHERE e.recepcao_idt IS NULL
+         AND (r.sistema_origem_cod IN ('C2_A', 'C2_B')
+              OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA')))
+      +
+      (SELECT count(*)
+       FROM iceberg.silver.evento e
+       JOIN iceberg.bronze.extracao i ON i.recepcao_idt = e.recepcao_idt AND i.status_cod = 'OK'
+       WHERE e.extracao_idt IS NULL)
 """
 
 CONF_SPARK = {
@@ -83,7 +93,7 @@ def conferir_pendentes() -> str:
     cur = trino.dbapi.connect(host="trino", port=8090, user="airflow", http_scheme="http").cursor()
     cur.execute(PENDENTES_SQL)
     pendentes = cur.fetchone()[0]
-    print(f"registros da Bronze sem evento: {pendentes}")
+    print(f"pendencias (registro sem evento + evento sem interpretacao): {pendentes}")
     return "c2a_posicao" if pendentes else "nada_a_fazer"
 
 
@@ -133,14 +143,18 @@ with DAG(
         }),
     ])
 
-    # C2_B chega em duas modalidades. No relato, o texto livre e o campo; cinco
-    # colunas ficam vazias ate a DAG de modelo de linguagem existir. No incidente,
-    # a coordenada vem do EXIF da FOTO — fonte independente do que foi digitado.
+    # C2_B chega em duas modalidades. No relato, o texto livre e o campo, e tipo e
+    # prioridade vem da interpretacao do modelo de linguagem, gravada em EXTRACAO
+    # pela DAG 2_bronze_extracao. No incidente, a coordenada vem do EXIF da FOTO —
+    # fonte independente do que foi digitado.
     relato = transformar("c2b_relato", "C2_B", "relato", [
-        linhagem(le=["bronze.recepcao_bruta"], escreve=["silver.evento"], colunas={
+        linhagem(le=["bronze.recepcao_bruta", "bronze.extracao"], escreve=["silver.evento"], colunas={
             "relato_txt":             [("bronze.recepcao_bruta", "conteudo_json_txt")],
             "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
             "geometria_wkt":          [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "tipo_cod":               [("bronze.extracao", "saida_txt")],
+            "prioridade_cod":         [("bronze.extracao", "saida_txt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
         }),
     ])
     incidente = transformar("c2b_incidente", "C2_B", "incidente", [
