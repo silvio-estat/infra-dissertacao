@@ -11,6 +11,32 @@ informações** e deixa a origem de cada valor rastreável para quem confere. Um
 acerto de 95% não é "a IA erra 5%"; é "o cruzamento que levaria horas sai em
 minutos, e os 5% são localizáveis".
 
+## FOGOS na Silver: coordenada, hora e identidade do informe (13/set/2026)
+
+- **A coordenada decamétrica perde um dígito.** "50231-49457" é o par UTM em
+  dezenas de metros com só os cinco últimos dígitos: o Leste cabe inteiro, o Norte
+  perde o dígito dos milhares de quilômetros. Quem desempata é a **área da
+  operação** (`REF_OPERACAO`): as opções distam 1.000 km entre si, e só uma cai
+  perto dela. Ida e volta sobre 2.000 pontos, com a função do próprio gerador:
+  mediana 4,0 m, pior caso 6,9 m (o documento arredonda para 10 m). Nos 11
+  bombardeios do gabarito, partindo do texto lido pelo Docling: **1,3 a 6,1 m do
+  fato**.
+- **Cabeçalho mesclado sai com as palavras fora de ordem** ("Bombardeada (5) Área
+  F"). Comparar letra a letra falha; a linha de cabeçalho passou a ser achada
+  também pela fração de **palavras** do rótulo presentes na célula.
+- **O grupo data-hora nem sempre é legível.** Em 2 das 92 células da coluna A não
+  há um único grupo: uma perdeu a data, outra juntou a da linha vizinha. Com dois
+  grupos, qualquer escolha seria palpite — a hora fica vazia. As outras 90 batem
+  com o gabarito ao minuto.
+- **Mesmo observador, mesmo minuto, dois bombardeios.** No RB Nr 24, TATU 4
+  informou dois fogos às 14h58 de 03/12, a 11 km um do outro. Identificar o
+  informe por relatório + observador + hora dava a mesma chave para os dois —
+  92 eventos com 91 identificadores, e o `MERGE` seguinte falharia. A identidade
+  certa é **quem, quando e onde**: com a área bombardeada, 92 chaves únicas.
+- Resultado: 92 eventos de bombardeio inimigo, 92 com ponto, 90 com hora, todos
+  com unidade; a prioridade não é inferida — o efeito dos fogos fica no texto do
+  evento para o estado-maior julgar.
+
 ## PDF escaneado: o texto sai, a tabela não — até trocar de ferramenta (13/set/2026)
 
 - **OCR de texto corrido embaralha tabela.** O tesseract lê os valores, mas não

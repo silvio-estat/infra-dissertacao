@@ -157,7 +157,11 @@ metadados:
     usuario: como a estrutura das unidades e conhecida, a fracao lida por OCR
     ('10 Pel', '510 GAC') e atribuida a sigla mais parecida da OM remetente
     (`busca: mais_parecido`, ate 2 letras de diferenca) — de 73 para 145 linhas
-    com unidade, sem nenhuma atribuida errada nas remessas gemeas.
+    com unidade, sem nenhuma atribuida errada nas remessas gemeas. O FOGOS vai
+    pelo mesmo caminho: grade do Docling por posicao (as onze colunas da 1a parte
+    declaradas em `colunas:`), hora pelo grupo data-hora e lugar pela coordenada
+    decametrica, que perde o digito dos milhares de km do Norte e e desempatada
+    pela area da operacao — nos 11 bombardeios do gabarito, a 1,3-6,1 m do fato.
 
 
 # =============================================================================
@@ -1104,35 +1108,64 @@ fontes:
     destino: EVENTO
     entidades:
       relatorio_bombardeio:
-        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
+        conteudo: extracao_grade    # a grade que o Docling reconstruiu (EXTRACAO); cada linha da 1a parte e um informe
+        modalidade: PDF
+        # O Docling devolve ate tres tabelas (1a, 2a e 3a partes). So a 1a parte, de
+        # onze colunas, vira evento: as outras tem menos colunas e nao sao abertas.
+        cabecalho: posicao
+        # A 1a parte do Anexo I, na ordem. O rotulo so serve para ACHAR a linha de
+        # cabecalho, que o OCR le com as palavras fora de ordem ('Bombardeada (5) Area F').
+        colunas:
+          col_A: "Informe de Hora"
+          col_B: "Localizacao do Observador"
+          col_C: "Lancamento do Som ou Cratera"
+          col_D: "Hora Ativ De"
+          col_E: "As"
+          col_F: "Area Bombardeada"
+          col_G: "Qnt e Tipo de Armamento Ini"
+          col_H: "Classificacao do Tiro Ini"
+          col_I: "Qnt e Tipo de Municao Ini"
+          col_J: "Clarao-Som segundos"
+          col_L: "Efeito dos Fogos Ini"
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
           origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
                       observacao: "quem produziu o relatorio: o S-2 do GAC (cabecalho 'Do:')"}
+          nr:        {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                      observacao: "numero do relatorio ('RB Nr 01'). Nao tem coluna propria: entra na regra de _registro."}
         campos:
-          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
-                        regra: "Nr do relatorio (cabecalho) + col_A",
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado, celulas: [col_A, col_F],
+                        regra: "sidecar (operacao, origem, Nr do relatorio) + col_A + col_F da linha: quem observou, quando e ONDE. So col_A nao basta — no RB Nr 24 o mesmo observador informou dois bombardeios no mesmo minuto, em lugares diferentes (13/09).",
                         observacao: "col_A e 'Informe de / Hora' (nota 1 do Anexo I): codinome do observador + grupo data-hora, ex. 'TROVAO 1 / 210900 NOV 16'"}
+          col_A:       {campo: OCORRENCIA_DATA, transformacao: gdh, fuso: "-03:00",
+                        observacao: "o grupo data-hora da col_A ('250539 NOV 24'), em hora de Brasilia. O OCR ora poe o codinome antes, ora depois; so vale quando a celula tem EXATAMENTE UM grupo — sem nenhum, ou com dois (o da linha vizinha junto), fica vazio."}
           col_F:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
-                        observacao: "'Area Bombardeada' (nota 5), ex. '06700-13150': e ONDE o fato ocorreu. A col_B e a posicao do OBSERVADOR (nota 2), nao do evento — fica em EXTRACAO.SAIDA_TXT, sem coluna canonica."}
-          _relato:     {campo: RELATO_TXT, transformacao: derivado,
+                        observacao: "'Area Bombardeada' (nota 5), ex. '06700-13150': e ONDE o fato ocorreu. O Norte perde o digito dos milhares de km, e a area da operacao (REF_OPERACAO) desempata. Medido em 13/09: nos 11 bombardeios do gabarito, o ponto caiu a 1,3-6,1 m do fato. A col_B e a posicao do OBSERVADOR (nota 2), nao do evento — fica em EXTRACAO.SAIDA_TXT, sem coluna canonica."}
+          _relato:     {campo: RELATO_TXT, transformacao: derivado, celulas: [col_G, col_H, col_I, col_J, col_L],
                         regra: "colunas G a L da linha, concatenadas",
                         observacao: "armamento inimigo (ex. '2/Ob/Me' = 2 obuses medios, nota 6), classificacao do tiro (Ntz, Dest, Itd..., nota 7), municao (nota 8), tempo clarao-som em segundos, efeito dos fogos (nota 9)"}
-          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _arquivo:    {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a grade do Docling (INFERENCIA_INDIC = S). O mesmo PDF tem tambem a leitura do tesseract, que e texto corrido e nao entra aqui."}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: FOGOS}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: FOGOS}
           _tipo:       {campo: TIPO_COD, transformacao: constante, valor: BOMBARDEIO_INIMIGO}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
-        extraidos_por_llm: [OCORRENCIA_DATA, PRIORIDADE_COD]
+        # nenhum campo passa por modelo de linguagem nesta versao: a hora sai do grupo
+        # data-hora, e a prioridade fica vazia — o efeito dos fogos esta no RELATO_TXT
+        extraidos_por_llm: []
         observacao: >-
-          OCORRENCIA_DATA: dia do grupo data-hora da col_A com a hora de inicio
-          da col_D ('Hora da Atividade, De'). PRIORIDADE_COD: juizo do modelo a
-          partir do efeito (col_L): danos e baixas -> URGENTE. A IA aponta, com
-          modelo e prompt registrados em EXTRACAO; a conferencia e do
-          estado-maior.
+          Uma linha da 1a parte, um evento: o informe de um observador sobre fogos
+          INIMIGOS. Tudo sai da grade do Docling por posicao, sem inferencia alem da
+          leitura: a hora pelo grupo data-hora da col_A, o lugar pela col_F convertida
+          da forma decametrica. A prioridade, que o manual deixa ao julgamento de quem
+          recebe, nao e inferida: o efeito dos fogos segue no texto do evento para o
+          estado-maior avaliar.
 
   # --- INTEL: Informe de inteligencia. PDF assinado e digitalizado, OCR + LLM. --
   # E o documento que carrega a avaliacao de fonte e informacao ('B2'): a letra

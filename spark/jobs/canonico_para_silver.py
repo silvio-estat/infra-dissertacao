@@ -25,6 +25,7 @@ de/para declarado no modelo e monta o SQL correspondente.
 """
 
 import argparse
+import math
 import re
 import unicodedata
 import os
@@ -466,6 +467,8 @@ def _t_derivado(origem, regra, ctx, alvo=None):
         # mais a LINHA (a unidade daquela linha da planilha).
         partes = [_registrar(ctx, "sc", c, f"SIDECAR['{c}']") for c in ctx.get("sidecar", ())]
         partes.append(ctx.get("coluna_unidade") or "NULL")
+        # `celulas:` acrescenta celulas da propria linha — no FOGOS, a col_A (observador + hora)
+        partes += [_registrar(ctx, "cmp", c, f"CAMPOS['{c}']") for c in regra.get("celulas", [])]
         return f"concat_ws('-', {', '.join(partes)})"
     if alvo == "FUNCAO_C2_INDIC":
         # S quando o dado nasceu DENTRO de um sistema de C2; N quando o documento
@@ -480,6 +483,10 @@ def _t_derivado(origem, regra, ctx, alvo=None):
         # uma linha de fase e MOV_MANOBRA. O tipo ja foi resolvido pelo dominio.
         tipo = ctx["projecoes"].get("TIPO_COD", "NULL")
         return f"CASE WHEN {tipo} = 'OBSTACULO' THEN 'PROTECAO' ELSE 'MOV_MANOBRA' END"
+    if alvo == "RELATO_TXT" and regra.get("celulas"):
+        # varias celulas da linha num texto so, na ordem declarada — no FOGOS, col_G a col_L
+        lidas = [_registrar(ctx, "cmp", c, f"CAMPOS['{c}']") for c in regra["celulas"]]
+        return f"concat_ws(' | ', {', '.join(lidas)})"
     raise TransformacaoPendente(f"derivado sem regra implementada para {alvo}")
 
 
@@ -551,6 +558,114 @@ def _t_geojson_para_wkt(origem, regra, ctx, alvo=None):
     return f"geojson_para_wkt({origem})"
 
 
+# -----------------------------------------------------------------------------
+# Coordenada decametrica (Anexo I do EB60-ME-12.301) -> ponto
+# -----------------------------------------------------------------------------
+# 'EEEEE-NNNNN' e o par UTM (Leste, Norte) em DEZENAS de metros, so com os cinco
+# ultimos digitos. O Leste cabe inteiro; o Norte perde o digito dos milhares de
+# quilometros ('49457' pode ser 7.494.570 m ou 6.494.570 m). Quem desempata e a AREA
+# DE OPERACOES (REF_OPERACAO.AREA_WKT): ela da a zona UTM, e so uma das opcoes cai
+# perto dela — a area tem dezenas de km, e as opcoes distam 1.000 km entre si.
+
+_WGS84_A, _WGS84_F, _UTM_K0 = 6378137.0, 1 / 298.257223563, 0.9996
+
+
+def _utm_para_latlon(leste, norte, zona, sul):
+    """UTM -> (lat, lon) em graus, WGS84. Formulas classicas (Snyder, 1987); erro submetrico."""
+    e2 = _WGS84_F * (2 - _WGS84_F)
+    ep2 = e2 / (1 - e2)
+    x, y = leste - 500000.0, (norte - 10_000_000.0) if sul else norte
+    mu = y / _UTM_K0 / (_WGS84_A * (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256))
+    e1 = (1 - math.sqrt(1 - e2)) / (1 + math.sqrt(1 - e2))
+    phi1 = (mu + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * math.sin(2 * mu)
+            + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * math.sin(4 * mu)
+            + (151 * e1 ** 3 / 96) * math.sin(6 * mu) + (1097 * e1 ** 4 / 512) * math.sin(8 * mu))
+    n1 = _WGS84_A / math.sqrt(1 - e2 * math.sin(phi1) ** 2)
+    t1, c1 = math.tan(phi1) ** 2, ep2 * math.cos(phi1) ** 2
+    r1 = _WGS84_A * (1 - e2) / (1 - e2 * math.sin(phi1) ** 2) ** 1.5
+    d = x / (n1 * _UTM_K0)
+    lat = phi1 - (n1 * math.tan(phi1) / r1) * (
+        d ** 2 / 2 - (5 + 3 * t1 + 10 * c1 - 4 * c1 ** 2 - 9 * ep2) * d ** 4 / 24
+        + (61 + 90 * t1 + 298 * c1 + 45 * t1 ** 2 - 252 * ep2 - 3 * c1 ** 2) * d ** 6 / 720)
+    lon = (d - (1 + 2 * t1 + c1) * d ** 3 / 6
+           + (5 - 2 * c1 + 28 * t1 - 3 * c1 ** 2 + 8 * ep2 + 24 * t1 ** 2) * d ** 5 / 120) / math.cos(phi1)
+    return math.degrees(lat), (zona - 1) * 6 - 180 + 3 + math.degrees(lon)
+
+
+def _ponto_de_decametrica(texto, area_wkt, alcance_km=150):
+    """'50231-49457' + area de operacoes -> 'POINT(lon lat)', ou None.
+
+    O ponto sai no CENTRO da quadricula de 10 m que o documento escreveu. Se nenhuma
+    opcao do Norte cair a menos de `alcance_km` do centro da area, devolve None: um
+    digito que o OCR leu muito errado vira vazio visivel, e nao um bombardeio do
+    outro lado do mapa.
+    """
+    lido = re.search(r"(\d{5})\s*-\s*(\d{5})", str(texto or ""))
+    vertices = [(float(lon), float(lat)) for lon, lat in
+                re.findall(r"(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)", str(area_wkt or ""))]
+    if not lido or not vertices:
+        return None
+    if len(vertices) > 1 and vertices[0] == vertices[-1]:
+        vertices = vertices[:-1]           # o poligono WKT repete o primeiro vertice no fim
+    lon_c = sum(v[0] for v in vertices) / len(vertices)
+    lat_c = sum(v[1] for v in vertices) / len(vertices)
+    zona, sul = int((lon_c + 180) // 6) + 1, lat_c < 0
+    leste = int(lido.group(1)) * 10 + 5
+    melhor = None
+    for milhares in range(10):             # o digito perdido do Norte
+        lat, lon = _utm_para_latlon(leste, int(lido.group(2)) * 10 + 5 + milhares * 1_000_000, zona, sul)
+        km = 111.195 * math.hypot(lat - lat_c, (lon - lon_c) * math.cos(math.radians(lat_c)))
+        if melhor is None or km < melhor[0]:
+            melhor = (km, lat, lon)
+    if melhor[0] > alcance_km:
+        return None
+    return f"POINT({melhor[2]:.6f} {melhor[1]:.6f})"
+
+
+def _t_decametrica_para_ponto(origem, regra, ctx, alvo=None):
+    """'50231-49457' -> ponto WKT, ancorado na area da operacao do proprio registro."""
+    operacao = _registrar(ctx, "sc", "operacao", "SIDECAR['operacao']")
+    return f"decametrica_para_ponto({origem}, {operacao})"
+
+
+def _registrar_decametrica(spark, mapa):
+    """Registra a conversao decametrica, com as areas de REF_OPERACAO lidas uma vez."""
+    from pyspark.sql.types import StringType
+
+    if not any(isinstance(r, dict) and r.get("transformacao") == "decametrica_para_ponto" for r in mapa.values()):
+        return
+    areas = {r[0]: r[1] for r in spark.table(f"{CATALOGO}.silver.REF_OPERACAO").select("OPERACAO_COD", "AREA_WKT").collect()}
+    spark.udf.register("decametrica_para_ponto",
+                       lambda texto, operacao, _a=areas: _ponto_de_decametrica(texto, _a.get(operacao)),
+                       StringType())
+
+
+_MESES_GDH = {m: i for i, m in enumerate(
+    ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"], start=1)}
+_MESES_GDH.update({"FEB": 2, "APR": 4, "MAY": 5, "AUG": 8, "SEP": 9, "OCT": 10, "DEC": 12})
+
+
+def _instante_de_gdh(texto, fuso="+00:00"):
+    """Grupo data-hora militar -> texto ISO com fuso, ou None.
+
+    '250539 NOV 24' = dia 25, 05h39, novembro de 2024. So vale quando a celula tem
+    EXATAMENTE UM grupo data-hora: o OCR ora poe o codinome antes, ora depois, e as
+    vezes junta o grupo da linha vizinha — com dois, qualquer escolha seria palpite.
+    """
+    achados = [a for a in re.findall(r"\b(\d{2})(\d{2})(\d{2})\s*([A-Z]{3})\s*(\d{2})\b", str(texto or "").upper())
+               if a[3] in _MESES_GDH]
+    if len(achados) != 1:
+        return None
+    dia, hora, minuto, mes, ano = achados[0]
+    if not (1 <= int(dia) <= 31 and int(hora) < 24 and int(minuto) < 60):
+        return None
+    return f"{2000 + int(ano)}-{_MESES_GDH[mes]:02d}-{dia}T{hora}:{minuto}:00{fuso}"
+
+
+def _t_gdh(origem, regra, ctx, alvo=None):
+    return f"CAST(gdh_para_instante({origem}, '{regra.get('fuso', '+00:00')}') AS TIMESTAMP)"
+
+
 def _pendente(fase):
     def _f(origem, regra, ctx, alvo=None):
         raise TransformacaoPendente(
@@ -576,9 +691,8 @@ TRANSFORMACOES = {
     "derivado":        _t_derivado,
     "geojson_para_wkt": _t_geojson_para_wkt,
     "dms_para_ponto":  _t_dms_para_ponto,
-    # Declaradas no modelo, sem implementacao ainda: nao ha dado para exercita-las.
-    # O job so falha se voce tentar processar a fonte que as usa.
-    "decametrica_para_ponto": _pendente("Fase 4 (FOGOS)"),
+    "decametrica_para_ponto": _t_decametrica_para_ponto,
+    "gdh":             _t_gdh,
 }
 
 
@@ -686,7 +800,7 @@ def _esquema_origem():
     ])
 
 
-def _abrir_grade(registro, cabecalhos, principais, grafias=None, por_posicao=False):
+def _abrir_grade(registro, cabecalhos, principais, grafias=None, por_posicao=False, rotulos=None):
     """Uma linha de EXTRACAO (uma planilha) -> N linhas, uma por observacao.
 
     A linha de cabecalho e PROCURADA, nunca fixada: e a primeira que contem pelo
@@ -702,14 +816,23 @@ def _abrir_grade(registro, cabecalhos, principais, grafias=None, por_posicao=Fal
     """
     import difflib
     import json as _json
+    import re as _re
     import unicodedata as _ud
 
     def _limpo(texto):
         texto = _ud.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
         return "".join(ch for ch in texto if ch.isalnum())
 
+    def _palavras(texto):
+        texto = _ud.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
+        return {p for p in _re.findall(r"[a-z0-9]+", texto) if len(p) > 1}
+
     def _parecido(lido, nome):
-        return difflib.SequenceMatcher(None, _limpo(lido), _limpo(nome)).ratio()
+        # a maior de duas medidas: letras na ordem ('Erev' ~ 'Ef Prev') e palavras
+        # do rotulo presentes em qualquer ordem ('Bombardeada (5) Area F' ~ 'Area Bombardeada')
+        letras = difflib.SequenceMatcher(None, _limpo(lido), _limpo(nome)).ratio()
+        alvo = _palavras(nome)
+        return max(letras, len(alvo & _palavras(lido)) / len(alvo) if alvo else 0)
 
     celulas_por_aba = _json.loads(registro["SAIDA_TXT"])["abas"]
     sidecar = _json.loads(registro["SIDECAR_JSON"])
@@ -722,7 +845,7 @@ def _abrir_grade(registro, cabecalhos, principais, grafias=None, por_posicao=Fal
         for i, linha in enumerate(grade):
             if por_posicao:
                 casados = sum(1 for c in linha if str(c or "").strip()
-                              and max(_parecido(c, n) for n in declarados) >= 0.75)
+                              and max(_parecido(c, n) for n in (rotulos or declarados)) >= 0.75)
                 achou = casados >= len(principais) / 2
             else:
                 presentes = {str(c).strip() for c in linha if c is not None}
@@ -895,6 +1018,12 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
     cabecalhos = principais + [g for c in principais for g in (mapa[c].get("grafias") or [])]
     grafias = {c: list(mapa[c].get("grafias") or []) for c in principais}
     por_posicao = bloco.get("cabecalho") == "posicao"
+    # `colunas:` declara o formulario pela ORDEM das colunas, com um rotulo que so
+    # serve para achar a linha de cabecalho — o Relatorio de Bombardeio: col_A a col_L
+    rotulos = None
+    if isinstance(bloco.get("colunas"), dict):
+        principais = cabecalhos = list(bloco["colunas"])
+        rotulos, grafias = list(bloco["colunas"].values()), {}
 
     # `cede_a`: a mesma remessa que chegou tambem pela receita irma (sidecar de
     # texto identico) fica so com a irma. O escaneado do RELPER cede a planilha:
@@ -925,7 +1054,7 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
     if grade.rdd.isEmpty():
         raise SystemExit(f"\nnenhuma extracao de {fonte}/{tipo} na Bronze — rode a DAG de extracao antes\n")
 
-    linhas = grade.rdd.flatMap(lambda r: _abrir_grade(r, cabecalhos, principais, grafias, por_posicao))
+    linhas = grade.rdd.flatMap(lambda r: _abrir_grade(r, cabecalhos, principais, grafias, por_posicao, rotulos))
     spark.createDataFrame(linhas, _esquema_origem()).createOrReplaceTempView("origem_bruta")
     print(f"  {grade.count()} arquivos -> {spark.table('origem_bruta').count()} observacoes")
 
@@ -1026,8 +1155,11 @@ def processar(spark, modelo, fonte, tipo, mostrar=False):
         from pyspark.sql.types import StringType
         spark.udf.register("geojson_para_wkt", _wkt_de_geojson, StringType())
         spark.udf.register("dms_para_ponto", _ponto_de_dms, StringType())
+        spark.udf.register("gdh_para_instante", _instante_de_gdh, StringType())
         receita = tipo or next(iter(spec["entidades"]))
-        _registrar_mais_parecido(spark, modelo, _mapa_do_bloco(spec["entidades"][receita]))
+        mapa_receita = _mapa_do_bloco(spec["entidades"][receita])
+        _registrar_mais_parecido(spark, modelo, mapa_receita)
+        _registrar_decametrica(spark, mapa_receita)
         montar_origem(spark, modelo, fonte, receita)
 
     consulta = montar_select(modelo, fonte, tipo)

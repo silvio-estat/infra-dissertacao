@@ -4,6 +4,8 @@ DAG canonico_silver — aplica o de/para do modelo canonico e escreve a Silver.
     conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato ──► c2b_incidente
                        │                                                    │
                        │   intel_informe ◄── voz_transcricao ◄── relper_digitalizada ◄── relper_situacao
+                       │        │
+                       │        └──► fogos_bombardeio
                        └─► nada_a_fazer
 
 Cada tarefa processa UMA receita do YAML (um bloco dentro de `fontes:`). Elas
@@ -52,6 +54,11 @@ PENDENTES_SQL = """
                   AND NOT EXISTS (SELECT 1 FROM iceberg.bronze.recepcao_bruta r2
                                   WHERE r2.sistema_origem_cod = 'RELPER' AND r2.modalidade_cod = 'PLANILHA'
                                     AND r2.conteudo_json_txt = r.conteudo_json_txt))
+              -- FOGOS: so com a grade do Docling
+              OR (r.sistema_origem_cod = 'FOGOS' AND EXISTS (
+                    SELECT 1 FROM iceberg.bronze.extracao i
+                    WHERE i.arquivo_idt = r.arquivo_idt AND i.ferramenta_nome LIKE 'docling%'
+                      AND i.status_cod = 'OK'))
               -- voz e informe so viram evento DEPOIS que o modelo de linguagem leu
               OR (r.sistema_origem_cod IN ('VOZ', 'INTEL') AND EXISTS (
                     SELECT 1 FROM iceberg.bronze.extracao i
@@ -248,5 +255,20 @@ with DAG(
         }),
     ])
 
+    # FOGOS: a 1a parte do Relatorio de Bombardeio, um evento por informe de observador,
+    # na grade que o Docling reconstruiu. O lugar sai da coluna F, convertida da forma
+    # decametrica e ancorada na area da operacao — por isso REF_OPERACAO entra na linhagem.
+    fogos = transformar("fogos_bombardeio", "FOGOS", "relatorio_bombardeio", [
+        linhagem(le=bronze_do_arquivo + ["silver.ref_operacao"], escreve=["silver.evento"], colunas={
+            "geometria_wkt":          [("bronze.extracao", "saida_txt"), ("silver.ref_operacao", "area_wkt")],
+            "ocorrencia_data":        [("bronze.extracao", "saida_txt")],
+            "registro_origem_cod":    [("bronze.extracao", "saida_txt"), ("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "relato_txt":             [("bronze.extracao", "saida_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+        }),
+    ])
+
     conferir >> [posicao, nada_a_fazer]
-    posicao >> mcc >> relato >> incidente >> relper >> relper_pdf >> voz >> intel
+    posicao >> mcc >> relato >> incidente >> relper >> relper_pdf >> voz >> intel >> fogos
