@@ -72,6 +72,12 @@ LLM_PROMPT_VERSAO_RELATO = "relato-v3"
 # as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
 LLM_OPCOES = {"format": "json", "think": False, "options": {"temperature": 0}}
 
+# --- a cada quantos itens TODA tarefa grava. Uma queda do computador perde no
+# maximo um lote, e a rodada seguinte recomeca de onde parou: toda tarefa pergunta
+# antes o que ainda nao foi lido. Em 12/09 um reinicio no meio perdeu 250 relatos,
+# porque a gravacao era uma so, no fim.
+LOTE = 50
+
 
 # =============================================================================
 # O que e igual para as tres
@@ -150,7 +156,7 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
 
     `ler` e a unica coisa que muda entre as tres tarefas: recebe os bytes e
     devolve um dicionario com o conteudo. O resto — achar o que falta, baixar,
-    cronometrar, registrar a falha sem parar a fila, gravar numa insercao so —
+    cronometrar, registrar a falha sem parar a fila, gravar a cada LOTE —
     e identico, e por isso mora aqui.
 
     `ajuste`, `parametros` e `prompt` dizem COMO a ferramenta e chamada; sao
@@ -172,10 +178,12 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
             f"{arquivo_idt}|{ferramenta}|{agora.isoformat()}".encode()).hexdigest()[:16]
         linhas.append((idt, arquivo_idt, None, None, inferencia, ferramenta, modelo, ajuste, saida,
                        round(time.perf_counter() - inicio, 3), status, agora))
-        if len(linhas) % 25 == 0:
-            print(f"  {len(linhas)} lidos")
+        if len(linhas) == LOTE:
+            gravar(linhas, modalidade, ferramenta)
+            linhas = []
 
-    gravar(linhas, modalidade, ferramenta)
+    if linhas or not fila:      # o que sobrou, ou o aviso de que nao havia nada
+        gravar(linhas, modalidade, ferramenta)
 
 
 COLUNAS = ("extracao_idt, arquivo_idt, recepcao_idt, extracao_origem_idt, inferencia_indic, "
@@ -184,7 +192,7 @@ COLUNAS = ("extracao_idt, arquivo_idt, recepcao_idt, extracao_origem_idt, infere
 
 
 def gravar(linhas, rotulo, ferramenta):
-    """Uma insercao so: um snapshot Iceberg por rodada, nao um por arquivo."""
+    """Uma insercao por lote: um snapshot Iceberg a cada LOTE linhas, nao um por arquivo."""
     if not linhas:
         print(f"nada a extrair em {rotulo}")
         return
@@ -368,10 +376,12 @@ def extrair_texto():
         linhas.append((idt, arquivo_idt, None, extracao_origem, "S", "ollama", LLM_MODELO,
                        LLM_PROMPT_VERSAO, saida, round(time.perf_counter() - inicio, 3),
                        status, agora))
-        if len(linhas) % 25 == 0:
-            print(f"  {len(linhas)} interpretados")
+        if len(linhas) == LOTE:
+            gravar(linhas, "TEXTO", f"ollama/{LLM_MODELO}")
+            linhas = []
 
-    gravar(linhas, "TEXTO", f"ollama/{LLM_MODELO}")
+    if linhas or not pendentes_:
+        gravar(linhas, "TEXTO", f"ollama/{LLM_MODELO}")
 
 
 def relatos_sem_interpretacao() -> list:
@@ -459,17 +469,8 @@ def perguntar(prompt: str) -> str:
     return json.loads(urllib.request.urlopen(req, timeout=600).read())["response"]
 
 
-LOTE_RELATOS = 50
-
-
 def extrair_relatos():
-    """Cada relato vira uma linha em EXTRACAO ligada ao registro, nao a um arquivo.
-
-    Grava a cada LOTE_RELATOS, e nao uma vez so no fim: em 12/09 um reinicio no
-    relato 250 perdeu os 250. Agora uma interrupcao perde no maximo um lote, e a
-    rodada seguinte recomeca de onde parou — `relatos_sem_interpretacao` ja pula o
-    que foi gravado.
-    """
+    """Cada relato vira uma linha em EXTRACAO ligada ao registro, nao a um arquivo."""
 
     prompt_base = instrucao_relato()
     pendentes_ = relatos_sem_interpretacao()
@@ -493,11 +494,11 @@ def extrair_relatos():
         linhas.append((idt, None, recepcao_idt, None, "S", "ollama", LLM_MODELO,
                        LLM_PROMPT_VERSAO_RELATO, saida,
                        round(time.perf_counter() - inicio, 3), status, agora))
-        if len(linhas) == LOTE_RELATOS:
+        if len(linhas) == LOTE:
             gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
             linhas = []
 
-    if linhas:      # o que sobrou, menos de um lote
+    if linhas or not pendentes_:
         gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
 
 
