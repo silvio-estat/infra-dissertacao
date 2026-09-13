@@ -42,6 +42,7 @@ x-airflow-common: &airflow-common
     OPENLINEAGE_NAMESPACE: dlh
     OM_INGESTION_BOT_JWT: ${OM_INGESTION_BOT_JWT}
     OM_ADMIN_EMAIL: ${OM_ADMIN_EMAIL:-admin@open-metadata.org}
+    DOCLING_URL: ${DOCLING_URL:-http://docling:5001}
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - airflow_logs:/opt/airflow/logs
@@ -239,6 +240,31 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/v1/info"]
       interval: 20s
+      timeout: 10s
+      retries: 10
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  # ===========================================================
+  # EXTRACAO — Docling (tabela de PDF escaneado)
+  # ===========================================================
+  # Reconstroi a grade (linha e coluna de cada celula) que o OCR de texto
+  # perde. Servico separado, como o Ollama: as bibliotecas dele nao entram na
+  # imagem do Airflow, e a DAG so manda o PDF e recebe a tabela. Imagem fixada
+  # pelo digest: o acerto medido (ACHADOS.md, 13/09) vale para ESTA versao
+  # (docling-serve 1.32.0, docling 2.124.0). CPU; para usar GPU, rodar uma
+  # copia fora do Docker e apontar DOCLING_URL para ela no .env.
+  docling:
+    image: quay.io/docling-project/docling-serve-cpu@sha256:576fc2074ac77bcfbf3fe27633aa0dd89b452a170b2cd31689c8751e94d60f7a
+    container_name: dlh_docling
+    environment:
+      DOCLING_SERVE_MAX_SYNC_WAIT: "600"     # segundos por documento no pedido sincrono
+    ports:
+      - "127.0.0.1:5001:5001"   # API + documentacao em /docs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 30s
       timeout: 10s
       retries: 10
     networks:

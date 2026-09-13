@@ -1,7 +1,7 @@
 """
 DAG extracao — tira o conteudo de dentro dos binarios e grava em EXTRACAO.
 
-    conferir_pendentes ──► planilha ──► ocr ──► voz ──► texto ──► relato ──► informe
+    conferir_pendentes ──► planilha ──► ocr ──► tabela ──► voz ──► texto ──► relato ──► informe
                        └─► nada_a_fazer
 
 Uma etapa do fluxo, uma DAG: ingestao ──► EXTRACAO ──► canonico_silver ──► gold.
@@ -15,6 +15,7 @@ O que separa as tres e so COMO o conteudo e lido:
 
     planilha  openpyxl abre o .xlsx e copia as celulas      leitura direta, sem IA
     ocr       tesseract adivinha as letras dos pixels       inferencia
+    tabela    docling reconstroi a grade do PDF escaneado   inferencia
     voz       faster-whisper adivinha as palavras do som    inferencia
     texto     um modelo de linguagem le o que a VOZ escreveu e devolve campos
     informe   um modelo de linguagem le o que o OCR leu do INTEL e devolve campos
@@ -73,6 +74,17 @@ LLM_PROMPT_VERSAO_RELATO = "relato-v3"
 LLM_PROMPT_VERSAO_INTEL = "intel-v1"
 # as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
 LLM_OPCOES = {"format": "json", "think": False, "options": {"temperature": 0}}
+
+# --- tabela de PDF escaneado. O Docling reconstroi a GRADE (linha e coluna de cada
+# celula), o que o tesseract nao faz. Medido: RELPER 95,7% dos numeros na celula
+# certa (7 pares planilha x escaneado); FOGOS 11/11 areas bombardeadas na coluna
+# certa (ACHADOS.md, 13/09). Roda como servico, como o Ollama.
+DOCLING_URL = os.environ.get("DOCLING_URL", "http://docling:5001")
+DOCLING_AJUSTE = "docling-rapidocr-accurate-v1"
+# as opcoes com que o acerto foi medido: no OCR, `auto` pode escolher outro motor
+DOCLING_OPCOES = {"to_formats": "json", "do_ocr": "true", "force_ocr": "true",
+                  "do_table_structure": "true", "table_mode": "accurate",
+                  "ocr_preset": "rapidocr", "images_scale": "1.0", "include_images": "false"}
 
 # --- a cada quantos itens TODA tarefa grava. Uma queda do computador perde no
 # maximo um lote, e a rodada seguinte recomeca de onde parou: toda tarefa pergunta
@@ -153,7 +165,7 @@ def baixar(uri: str) -> bytes:
 
 
 def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
-             parametros=None, prompt=None):
+             parametros=None, prompt=None, fila=None):
     """Le todos os binarios pendentes de uma modalidade e grava o que saiu.
 
     `ler` e a unica coisa que muda entre as tres tarefas: recebe os bytes e
@@ -162,9 +174,11 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
     e identico, e por isso mora aqui.
 
     `ajuste`, `parametros` e `prompt` dizem COMO a ferramenta e chamada; sao
-    conferidos em AJUSTE_EXTRACAO antes do primeiro arquivo.
+    conferidos em AJUSTE_EXTRACAO antes do primeiro arquivo. `fila` substitui a
+    conta padrao de pendentes quando a pergunta e outra (ver `extrair_tabelas`).
     """
-    fila = pendentes(modalidade)
+    if fila is None:
+        fila = pendentes(modalidade)
     if fila and ajuste:
         registrar_ajuste(ajuste, ferramenta.split()[0], parametros, prompt)
     linhas = []
@@ -277,6 +291,65 @@ def ler_ocr(conteudo: bytes) -> dict:
     return {"paginas": [pytesseract.image_to_string(p, lang=OCR_IDIOMA,
                                                     config=f"--psm {OCR_SEGMENTACAO}")
                         for p in paginas]}
+
+
+def pdfs_sem_tabela() -> list:
+    """[(arquivo_idt, uri)] dos PDFs de tabela (RELPER, FOGOS) ainda nao lidos pelo Docling.
+
+    O mesmo PDF ja tem a leitura do tesseract: reler com ferramenta nova ACRESCENTA
+    uma linha em EXTRACAO, nunca altera a anterior. O INTEL fica de fora — e prosa, e
+    segue pela cadeia tesseract -> modelo de linguagem.
+    """
+    com_extracao = """
+        SELECT a.arquivo_idt, a.arquivo_uri_txt
+        FROM iceberg.bronze.arquivo a
+        JOIN iceberg.bronze.recepcao_bruta r ON r.arquivo_idt = a.arquivo_idt
+        LEFT JOIN iceberg.bronze.extracao e
+               ON e.arquivo_idt = a.arquivo_idt AND e.ferramenta_nome LIKE 'docling%'
+        WHERE a.modalidade_cod = 'PDF' AND r.sistema_origem_cod IN ('RELPER', 'FOGOS')
+          AND e.extracao_idt IS NULL
+        ORDER BY a.arquivo_uri_txt
+    """
+    sem_extracao = """
+        SELECT a.arquivo_idt, a.arquivo_uri_txt
+        FROM iceberg.bronze.arquivo a
+        JOIN iceberg.bronze.recepcao_bruta r ON r.arquivo_idt = a.arquivo_idt
+        WHERE a.modalidade_cod = 'PDF' AND r.sistema_origem_cod IN ('RELPER', 'FOGOS')
+        ORDER BY a.arquivo_uri_txt
+    """
+    return consultar(com_extracao, sem_extracao)
+
+
+def ler_tabela(conteudo: bytes) -> dict:
+    """Manda o PDF ao Docling e devolve as tabelas no MESMO formato da planilha:
+    {"abas": {"tabela_1": [[celula, ...], ...]}}. Assim a Silver abre a grade do
+    escaneado pelo caminho que ja abre a do .xlsx. Celula mesclada repete o texto
+    em todas as posicoes que cobre."""
+    import urllib.request
+    import uuid
+
+    fronteira = uuid.uuid4().hex
+    partes = [f'--{fronteira}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+              for k, v in DOCLING_OPCOES.items()]
+    partes.append(f'--{fronteira}\r\nContent-Disposition: form-data; name="files"; filename="documento.pdf"\r\n'
+                  "Content-Type: application/pdf\r\n\r\n".encode() + conteudo + b"\r\n")
+    partes.append(f"--{fronteira}--\r\n".encode())
+    req = urllib.request.Request(f"{DOCLING_URL}/v1/convert/file", data=b"".join(partes),
+                                 headers={"Content-Type": f"multipart/form-data; boundary={fronteira}"})
+    resposta = json.loads(urllib.request.urlopen(req, timeout=600).read())
+    if resposta.get("status") != "success":
+        raise ValueError(f"docling: {resposta.get('status')} {resposta.get('errors')}")
+
+    abas = {}
+    for n, tabela in enumerate(resposta["document"]["json_content"].get("tables", []), start=1):
+        d = tabela["data"]
+        grade = [["" for _ in range(d["num_cols"])] for _ in range(d["num_rows"])]
+        for c in d["table_cells"]:
+            for linha in range(c["start_row_offset_idx"], c["end_row_offset_idx"]):
+                for coluna in range(c["start_col_offset_idx"], c["end_col_offset_idx"]):
+                    grade[linha][coluna] = c["text"]
+        abas[f"tabela_{n}"] = grade
+    return {"abas": abas}
 
 
 def vocabulario() -> str:
@@ -600,6 +673,7 @@ def conferir_pendentes() -> str:
     quantos["transcricoes a interpretar"] = len(transcricoes_sem_interpretacao())
     quantos["relatos a interpretar"] = len(relatos_sem_interpretacao())
     quantos["informes a interpretar"] = len(ocr_sem_interpretacao())
+    quantos["tabelas a ler"] = len(pdfs_sem_tabela())
     print("pendente:", quantos)
     return "planilha" if sum(quantos.values()) else "nada_a_fazer"
 
@@ -616,6 +690,26 @@ def extrair_ocr():
              ajuste=f"psm{OCR_SEGMENTACAO}-{OCR_RESOLUCAO}dpi",
              parametros={"idioma": OCR_IDIOMA, "resolucao_dpi": OCR_RESOLUCAO,
                          "segmentacao_psm": OCR_SEGMENTACAO})
+
+
+def extrair_tabelas():
+    """PDFs de tabela -> grade, pelo servico Docling.
+
+    A versao e pedida ao servico ANTES do primeiro arquivo, e isso tambem e teste de
+    vida: com o servico fora do ar a tarefa fica vermelha aqui, em vez de gravar uma
+    FALHA por PDF — que a conta de pendentes nunca mais tentaria reler.
+    """
+    import urllib.request
+
+    fila = pdfs_sem_tabela()
+    if not fila:
+        print("nada a extrair em PDF de tabela")
+        return
+    versoes = json.loads(urllib.request.urlopen(f"{DOCLING_URL}/version", timeout=30).read())
+    print(f"docling-serve {versoes['docling-serve']} | docling {versoes['docling']} | {len(fila)} PDFs")
+    executar("PDF", ler_tabela, f"docling-serve {versoes['docling-serve']}", inferencia="S",
+             modelo=f"docling {versoes['docling']} + rapidocr", ajuste=DOCLING_AJUSTE,
+             parametros=DOCLING_OPCOES, fila=fila)
 
 
 def aceleracao() -> tuple:
@@ -686,6 +780,7 @@ with DAG(
 
     planilha = tarefa("planilha", extrair_planilha, usa_ajuste=False)
     ocr = tarefa("ocr", extrair_ocr)
+    tabela = tarefa("tabela", extrair_tabelas)
     voz = tarefa("voz", extrair_voz)
     texto = PythonOperator(
         task_id="texto",
@@ -724,4 +819,4 @@ with DAG(
     )
 
     conferir >> [planilha, nada_a_fazer]
-    planilha >> ocr >> voz >> texto >> relato >> informe
+    planilha >> ocr >> tabela >> voz >> texto >> relato >> informe

@@ -28,6 +28,21 @@ minutos, e os 5% são localizáveis".
   | RELPER — número na **célula certa** | não dá a coluna | **95,3%** (263/276) |
   | FOGOS — coordenada certa na coluna "Área Bombardeada" | colunas embaralhadas | **11/11** |
   | tempo por PDF, CPU | 0,7 s | ~5 s (o 1º: 73 s, carregando modelos) |
+  | tempo por PDF, GPU (RTX 5060 Ti) | — | 2,7 s — **só 1,8×**, e as 29 saídas idênticas às da CPU |
+
+  Ao contrário do modelo de linguagem (22× na GPU), o Docling ganha pouco: os
+  modelos de página e tabela são pequenos, e o OCR (RapidOCR sobre onnxruntime)
+  continua na CPU. Para os 78 PDFs de tabela: 6,3 min em CPU, 3,5 min em GPU.
+- **Como serviço, o acerto se mantém.** O servidor oficial (`docling-serve-cpu`
+  1.32.0, com Docling 2.124) deu RELPER 264/276 (95,7%) e FOGOS 11/11 sobre os
+  mesmos PDFs. As saídas não são idênticas às da biblioteca 2.126 — mudam a
+  ordem das palavras nos cabeçalhos mesclados e algumas leituras de OCR, para
+  os dois lados —, mas 94,4% das células de dados coincidem. "Idêntico" era
+  exigente demais; a régua certa é o acerto. Para reproduzir o teste é preciso
+  pedir `ocr_preset=rapidocr` (o padrão `auto` pode escolher o EasyOCR, também
+  instalado) e `images_scale=1.0`.
+- No modo síncrono o serviço confere o término a cada 2 s: os tempos medidos
+  pelo cliente saem redondos (4,01 s, 6,01 s).
 
   12 dos 13 erros do RELPER são **uma linha inteira** que ele não achou. No
   FOGOS, a troca temida — a posição do observador no lugar da área
