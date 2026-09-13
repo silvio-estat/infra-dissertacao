@@ -11,6 +11,7 @@ ALVO,"Objetivo","Alvo localizado, conforme os anexos de Lista de Alvos e Lista d
 MISSAO DE TIRO,"Missao de fogos","Execucao e avaliacao de fogos, conforme o Relatorio de Bombardeio."
 TRANSCRICAO,"Texto transcrito","Resultado da conversao automatica de audio em texto, acompanhado das metricas de qualidade do reconhecimento."
 EXTRACAO,"Inferencia","Registro de uma inferencia automatica (reconhecimento optico de caracteres, reconhecimento de fala ou modelo de linguagem) que produziu dado estruturado a partir de conteudo nao estruturado."
+AJUSTE DE EXTRACAO,"Versao de prompt;Configuracao de extracao","Como uma ferramenta de extracao foi chamada: o texto montado entregue ao modelo (prompt ou vocabulario inicial) e os parametros da chamada. Identificado pelo codigo de versao gravado em cada extracao, sem o qual o resultado nao se reproduz."
 LINHAGEM,"Proveniencia;Rastreabilidade","Cadeia que liga um valor da camada analitica ao arquivo bruto que o originou, incluindo qual modelo de inteligencia artificial fez a extracao e com que versao de prompt."
 FUNCAO DE COMBATE,"","Conjunto de atividades correlatas que orienta a organizacao dos dados operacionais: comando e controle, movimento e manobra, inteligencia, fogos, protecao e logistica."
 UNIDADE REPORTANTE,"Unidade;Unidade de origem","Organizacao militar responsavel por reportar o evento, referenciada na hierarquia de unidades."

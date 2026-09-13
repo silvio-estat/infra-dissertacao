@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-09
+  atualizado_em: 2026-09-13
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -120,6 +120,23 @@ metadados:
     Bronze inteira fica filtravel por operacao. A grafia so pode variar onde uma
     pessoa digita — o cabecalho do PDF, a celula da planilha — e ali o valor do
     documento e conferencia contra o do sidecar, nao referencia.
+  nota_2026_09_13: >-
+    Entra AJUSTE_EXTRACAO: o conteudo de cada valor de EXTRACAO.PROMPT_VERSAO_COD
+    — o prompt montado e os parametros da chamada. Ate aqui o codigo da versao
+    nao apontava para nada consultavel e, como o prompt e montado deste YAML a
+    cada execucao, o texto podia mudar sem mudar o codigo. Decisao do usuario: a
+    tabela cobre TODO ajuste (prompt, vocabulario do transcritor, parametros do
+    OCR), nao so prompts; e declarada aqui como as demais tabelas, e EXTRACAO nao
+    muda — a ligacao e pela coluna que ja existia.
+
+    Tambem hoje, decisao do usuario: a extracao por modelo de linguagem precisa
+    ser SUFICIENTE e medida, nao otima — o objetivo e mostrar que os tipos de
+    dado cruzam sob schema-on-read, nao calibrar prompt. O relato do C2_B fica em
+    relato-v3 (uma chamada) e nao na v5 (duas chamadas, ~12 vezes mais lenta,
+    ganho dentro do erro de 22 fatos); as 300 linhas relato-v5 ja gravadas
+    ficam. A medicao contra gabarito, que a nota de 10/09 descartava, existe:
+    scripts/medir_acerto_relato.py. Os textos de todas as versoes estao em
+    canonico/prompts.md.
 
 
 # =============================================================================
@@ -598,11 +615,37 @@ entidades:
       INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
       FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
       MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, por (Tesseract), small-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}
-      PROMPT_VERSAO_COD: {tipo: string, nulo: true, descricao: "O AJUSTE com que a ferramenta foi chamada, sem o qual o resultado nao se reproduz: a versao do prompt do modelo de linguagem, o vocabulario inicial do transcritor, o modo de segmentacao e a resolucao do reconhecimento optico (ex.: psm4-200dpi). Nulo na leitura direta, que nao tem ajuste."}
+      PROMPT_VERSAO_COD: {tipo: string, nulo: true, referencia: AJUSTE_EXTRACAO, descricao: "O AJUSTE com que a ferramenta foi chamada, sem o qual o resultado nao se reproduz: a versao do prompt do modelo de linguagem, o vocabulario inicial do transcritor, o modo de segmentacao e a resolucao do reconhecimento optico (ex.: psm4-200dpi). O conteudo de cada codigo esta em AJUSTE_EXTRACAO. Nulo na leitura direta, que nao tem ajuste."}
       SAIDA_TXT:         {tipo: string, nulo: true, descricao: "O que saiu do binario: as celulas, o texto do PDF, a transcricao, os campos que o modelo devolveu. E daqui — nunca do binario — que o de/para le o conteudo."}
       EXTRACAO_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto.}
       STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA. FALHA cobre tambem a leitura direta: planilha corrompida, PDF que nao abre."}
       EXECUCAO_DATA:     {tipo: timestamp, nulo: false, descricao: Quando a extracao rodou.}
+
+  # ---------------------------------------------------------------------------
+  AJUSTE_EXTRACAO:
+    descricao: >-
+      O conteudo de cada ajuste citado em EXTRACAO.PROMPT_VERSAO_COD: o texto
+      MONTADO que a ferramenta recebeu (prompt do modelo de linguagem, vocabulario
+      inicial do transcritor) e os parametros da chamada (opcoes do modelo,
+      idioma, resolucao e segmentacao do reconhecimento optico). Uma linha por
+      versao, gravada pela tarefa de extracao na primeira vez que a usa.
+
+      Existe porque o codigo da versao e escrito a mao na DAG, mas o prompt e
+      montado deste modelo e do gazetteer a cada execucao: mudar um `quando:`
+      muda o texto sem mudar o codigo. A tarefa recalcula o hash e o compara com
+      o daqui — mesmo codigo com hash diferente PARA a extracao, em vez de gravar
+      linhas que dizem uma versao que nao e a delas. Fecha a tese de linhagem:
+      do numero na Gold ate o texto exato que o modelo leu.
+    abreviatura: AJEX
+    camada: bronze
+    chave: [PROMPT_VERSAO_COD]
+    campos:
+      PROMPT_VERSAO_COD:   {tipo: string, nulo: false, descricao: "Codigo do ajuste, o mesmo de EXTRACAO.PROMPT_VERSAO_COD (ex.: relato-v3, vocab-v1, psm4-200dpi). O nome vem de quando so havia prompt; cobre todo ajuste."}
+      FERRAMENTA_NOME:     {tipo: string, nulo: false, descricao: "Ferramenta a que o ajuste se aplica, sem versao: ollama, faster-whisper, tesseract. A versao fica em EXTRACAO, porque a biblioteca pode mudar sem mudar o ajuste."}
+      PARAMETROS_JSON_TXT: {tipo: string, nulo: false, descricao: "Parametros da chamada, em JSON com chaves ordenadas: as opcoes do modelo de linguagem (formato, raciocinio, temperatura), o idioma do transcritor, a resolucao e a segmentacao do OCR."}
+      PROMPT_TXT:          {tipo: string, nulo: true, descricao: "O texto montado que a ferramenta recebeu. A DAG acrescenta a entrada de cada item depois dele (RELATO: ou TRANSCRICAO:). Nulo quando o ajuste e so parametro, como no OCR."}
+      CONTEUDO_HASH_COD:   {tipo: string, nulo: false, descricao: "sha256 de PARAMETROS_JSON_TXT e PROMPT_TXT, no formato 'sha256:<hex>' das demais tabelas. E o que a tarefa compara antes de extrair."}
+      REGISTRO_DATA:       {tipo: timestamp, nulo: false, descricao: "Quando o ajuste foi registrado: a primeira rodada que o usou. As versoes de 12/09, anteriores a tabela, levam a data da primeira extracao de cada uma."}
 
   # ---------------------------------------------------------------------------
   REF_OPERACAO:

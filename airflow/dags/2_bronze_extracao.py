@@ -25,6 +25,10 @@ perderia que uma leu a outra.
 
 Tudo o mais — achar o que falta, baixar do MinIO, gravar — e o mesmo, e por isso
 esta escrito uma vez so.
+
+Toda tarefa com ajuste (todas menos a planilha) confere antes, em AJUSTE_EXTRACAO,
+o prompt montado e os parametros com que vai chamar a ferramenta: versao nova e
+registrada, a mesma segue, e o mesmo codigo com texto diferente PARA a tarefa.
 """
 from __future__ import annotations
 
@@ -64,7 +68,9 @@ VOZ_VOCABULARIO = "vocab-v1"
 LLM_ENDERECO = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 LLM_MODELO = "qwen3.5:4b"
 LLM_PROMPT_VERSAO = "voz-v1"
-LLM_PROMPT_VERSAO_RELATO = "relato-v5"
+LLM_PROMPT_VERSAO_RELATO = "relato-v3"
+# as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
+LLM_OPCOES = {"format": "json", "think": False, "options": {"temperature": 0}}
 
 
 # =============================================================================
@@ -138,16 +144,23 @@ def baixar(uri: str) -> bytes:
     return s3.get_object(Bucket=bucket, Key=chave)["Body"].read()
 
 
-def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None):
+def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
+             parametros=None, prompt=None):
     """Le todos os binarios pendentes de uma modalidade e grava o que saiu.
 
     `ler` e a unica coisa que muda entre as tres tarefas: recebe os bytes e
     devolve um dicionario com o conteudo. O resto — achar o que falta, baixar,
     cronometrar, registrar a falha sem parar a fila, gravar numa insercao so —
     e identico, e por isso mora aqui.
+
+    `ajuste`, `parametros` e `prompt` dizem COMO a ferramenta e chamada; sao
+    conferidos em AJUSTE_EXTRACAO antes do primeiro arquivo.
     """
+    fila = pendentes(modalidade)
+    if fila and ajuste:
+        registrar_ajuste(ajuste, ferramenta.split()[0], parametros, prompt)
     linhas = []
-    for arquivo_idt, uri in pendentes(modalidade):
+    for arquivo_idt, uri in fila:
         inicio = time.perf_counter()
         agora = datetime.now(timezone.utc)
         try:
@@ -184,6 +197,46 @@ def gravar(linhas, rotulo, ferramenta):
     print(f"EXTRACAO: {len(linhas)} linhas de {rotulo} com {ferramenta}, "
           f"{segundos:.0f}s no total, {segundos/len(linhas):.1f}s cada "
           f"({sum(1 for l in linhas if l[10] == 'FALHA')} falhas)")
+
+
+# =============================================================================
+# O ajuste de cada chamada fica registrado em AJUSTE_EXTRACAO
+# =============================================================================
+
+def impressao(parametros: dict, prompt: str | None) -> tuple:
+    """(parametros em JSON, hash) — a mesma conta para a DAG e para a carga manual."""
+    parametros_txt = json.dumps(parametros, ensure_ascii=False, sort_keys=True)
+    hash_cod = "sha256:" + hashlib.sha256(f"{parametros_txt}\n{prompt or ''}".encode()).hexdigest()
+    return parametros_txt, hash_cod
+
+
+def registrar_ajuste(codigo: str, ferramenta: str, parametros: dict, prompt: str | None = None):
+    """Grava o ajuste desta rodada, ou PARA a tarefa se o codigo ja existe com outro conteudo.
+
+    O prompt e montado do modelo canonico e do gazetteer a cada execucao: mudar
+    um `quando:` no YAML muda o texto sem mudar o codigo da versao, e as linhas
+    novas de EXTRACAO diriam uma versao que nao e a delas. Por isso a conferencia
+    e pelo hash de parametros + texto:
+
+        codigo novo                    -> grava
+        mesmo codigo, mesmo hash       -> segue
+        mesmo codigo, hash diferente   -> erro: troque a versao na DAG
+    """
+    parametros_txt, hash_cod = impressao(parametros, prompt)
+    registrado = consultar("SELECT conteudo_hash_cod FROM iceberg.bronze.ajuste_extracao "
+                           f"WHERE prompt_versao_cod = '{codigo}'")
+    if registrado and registrado[0][0] == hash_cod:
+        return
+    if registrado:
+        raise ValueError(f"o ajuste '{codigo}' mudou sem mudar de versao: o YAML, o gazetteer "
+                         f"ou o codigo alteraram o texto ou os parametros. Troque a versao na DAG.")
+    cur = conexao_trino().cursor()
+    cur.execute("INSERT INTO iceberg.bronze.ajuste_extracao (prompt_versao_cod, ferramenta_nome, "
+                "parametros_json_txt, prompt_txt, conteudo_hash_cod, registro_data) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [codigo, ferramenta, parametros_txt, prompt, hash_cod, datetime.now(timezone.utc)])
+    cur.fetchall()
+    print(f"AJUSTE_EXTRACAO: {codigo} registrado")
 
 
 # =============================================================================
@@ -292,11 +345,11 @@ def instrucao() -> str:
 
 def extrair_texto():
     """Cada transcricao vira uma linha NOVA em EXTRACAO, que aponta para ela."""
-    import urllib.request
-
     prompt_base = instrucao()
     pendentes_ = transcricoes_sem_interpretacao()
     print(f"transcricoes sem interpretacao: {len(pendentes_)}")
+    if pendentes_:
+        registrar_ajuste(LLM_PROMPT_VERSAO, "ollama", LLM_OPCOES, prompt_base)
 
     linhas = []
     for extracao_origem, arquivo_idt, saida_voz in pendentes_:
@@ -304,12 +357,7 @@ def extrair_texto():
         inicio = time.perf_counter()
         agora = datetime.now(timezone.utc)
         try:
-            corpo = json.dumps({"model": LLM_MODELO, "prompt": prompt_base + f"\nTRANSCRICAO: {texto}\n",
-                                "stream": False, "format": "json", "think": False,
-                                "options": {"temperature": 0}}).encode()
-            req = urllib.request.Request(f"{LLM_ENDERECO}/api/generate", data=corpo,
-                                         headers={"Content-Type": "application/json"})
-            resposta = json.loads(urllib.request.urlopen(req, timeout=600).read())["response"]
+            resposta = perguntar(prompt_base + f"\nTRANSCRICAO: {texto}\n")
             json.loads(resposta)        # so aceita o que e JSON de verdade
             saida, status = resposta, "OK"
         except Exception as erro:
@@ -393,52 +441,22 @@ def instrucao_relato() -> str:
     )
 
 
-def perguntar(prompt: str, raciocinar: bool = False) -> str:
-    """Uma chamada ao modelo. `raciocinar` liga o modo de raciocinio do Ollama.
+def perguntar(prompt: str) -> str:
+    """Uma chamada ao modelo, sem raciocinio, com a resposta forcada a JSON.
 
-    O parametro vale para a chamada INTEIRA — nao da para raciocinar sobre um
-    campo e nao sobre outro no mesmo pedido. Por isso a interpretacao do relato
-    e feita em duas: reconhecer o tipo nao precisa de raciocinio (ja acerta 100%)
-    e julgar a prioridade precisa.
-
-    O raciocinio volta num campo proprio (`thinking`) e e DESCARTADO: o que
-    interessa guardar e a resposta, nao o caminho.
+    Houve uma relato-v5 que fazia uma SEGUNDA chamada so para a prioridade, com o
+    raciocinio ligado. Medido nos 22 fatos com gabarito (scripts/medir_acerto_relato.py):
+    prioridade 64% -> 77%, dentro do erro de uma amostra desse tamanho, por ~12
+    vezes o tempo (0,9 s -> 11 s por relato). Ficou a v3: o estudo precisa mostrar
+    que o texto livre cruza com as outras fontes, nao calibrar o prompt.
     """
     import urllib.request
 
-    # ARMADILHA: `think` ligado JUNTO com `format: json` devolve resposta VAZIA —
-    # o modelo gasta o orcamento no campo de raciocinio e nao sobra saida. Com
-    # raciocinio, o formato nao e forcado e o JSON e recortado da resposta.
-    pedido = {"model": LLM_MODELO, "prompt": prompt, "stream": False,
-              "think": raciocinar, "options": {"temperature": 0}}
-    if not raciocinar:
-        pedido["format"] = "json"
-    corpo = json.dumps(pedido).encode()
+    corpo = json.dumps({"model": LLM_MODELO, "prompt": prompt, "stream": False,
+                        **LLM_OPCOES}).encode()
     req = urllib.request.Request(f"{LLM_ENDERECO}/api/generate", data=corpo,
                                  headers={"Content-Type": "application/json"})
-    resposta = json.loads(urllib.request.urlopen(req, timeout=600).read())["response"]
-    if raciocinar:      # sem formato forcado, a resposta pode vir com texto em volta
-        inicio, fim = resposta.find("{"), resposta.rfind("}")
-        resposta = resposta[inicio:fim + 1] if inicio >= 0 < fim else "{}"
-    return resposta
-
-
-def instrucao_prioridade() -> str:
-    """Pedido separado, so para o juizo de prioridade."""
-    modelo = yaml.safe_load(open(f"{CANONICO}/modelo_canonico.yaml", encoding="utf-8"))
-    receita = modelo["fontes"]["C2_B"]["entidades"]["relato"]
-    valores = modelo["dominios"]["prioridade"]["valores"]
-    lista = "\n".join(f"  {k:14s} {v.get('quando', '')}" for k, v in valores.items())
-    return (
-        f"Voce le um RELATO DE OBSERVADOR. {receita['documento']}\n\n"
-        "Decida o que este relato exige de quem o recebe — pela ACAO necessaria,\n"
-        "nao pelo assunto:\n"
-        f"{lista}\n\n"
-        "  'Fracao instalada em BR-154 km 15, PC operando normalmente.'  -> ROTINA\n"
-        "  'Viatura da fracao atolada na via, solicito apoio.'           -> PRIORITARIO\n"
-        "  'Tropa inimiga a 500 m da posicao, em aproximacao.'           -> URGENTE\n\n"
-        'Responda so um JSON: {"PRIORIDADE_COD": <um dos tres>}\n'
-    )
+    return json.loads(urllib.request.urlopen(req, timeout=600).read())["response"]
 
 
 LOTE_RELATOS = 50
@@ -447,28 +465,26 @@ LOTE_RELATOS = 50
 def extrair_relatos():
     """Cada relato vira uma linha em EXTRACAO ligada ao registro, nao a um arquivo.
 
-    Grava a cada LOTE_RELATOS, e nao uma vez so no fim: com raciocinio sao ~12 s
-    por relato, ~1 h para os 300. Em 12/09 um reinicio no relato 250 perdeu os 250.
-    Agora uma interrupcao perde no maximo um lote, e a rodada seguinte recomeca de
-    onde parou — `relatos_sem_interpretacao` ja pula o que foi gravado.
+    Grava a cada LOTE_RELATOS, e nao uma vez so no fim: em 12/09 um reinicio no
+    relato 250 perdeu os 250. Agora uma interrupcao perde no maximo um lote, e a
+    rodada seguinte recomeca de onde parou — `relatos_sem_interpretacao` ja pula o
+    que foi gravado.
     """
 
     prompt_base = instrucao_relato()
-    prompt_prioridade = instrucao_prioridade()
     pendentes_ = relatos_sem_interpretacao()
     print(f"relatos sem interpretacao: {len(pendentes_)}")
+    if pendentes_:
+        registrar_ajuste(LLM_PROMPT_VERSAO_RELATO, "ollama", LLM_OPCOES, prompt_base)
 
     linhas = []
     for recepcao_idt, texto in pendentes_:
         inicio = time.perf_counter()
         agora = datetime.now(timezone.utc)
         try:
-            campos = json.loads(perguntar(prompt_base + f"\nRELATO: {texto}\n"))
-            # segunda chamada, so para a prioridade, com raciocinio ligado
-            juizo = json.loads(perguntar(prompt_prioridade + f"\nRELATO: {texto}\n", raciocinar=True))
-            if juizo.get("PRIORIDADE_COD"):
-                campos["PRIORIDADE_COD"] = juizo["PRIORIDADE_COD"]
-            saida, status = json.dumps(campos, ensure_ascii=False), "OK"
+            resposta = perguntar(prompt_base + f"\nRELATO: {texto}\n")
+            json.loads(resposta)        # so aceita o que e JSON de verdade
+            saida, status = resposta, "OK"
         except Exception as erro:
             saida, status = None, "FALHA"
             print(f"FALHA {recepcao_idt}: {erro}")
@@ -502,7 +518,9 @@ def extrair_ocr():
     import pytesseract
     executar("PDF", ler_ocr, f"tesseract {pytesseract.get_tesseract_version()}",
              inferencia="S", modelo=OCR_IDIOMA,
-             ajuste=f"psm{OCR_SEGMENTACAO}-{OCR_RESOLUCAO}dpi")
+             ajuste=f"psm{OCR_SEGMENTACAO}-{OCR_RESOLUCAO}dpi",
+             parametros={"idioma": OCR_IDIOMA, "resolucao_dpi": OCR_RESOLUCAO,
+                         "segmentacao_psm": OCR_SEGMENTACAO})
 
 
 def aceleracao() -> tuple:
@@ -537,22 +555,23 @@ def extrair_voz():
         return {"texto": " ".join(t.text.strip() for t in trechos).strip()}
 
     executar("AUDIO", ler, f"faster-whisper {faster_whisper.__version__}", inferencia="S",
-             modelo=f"{VOZ_MODELO}-{precisao}", ajuste=VOZ_VOCABULARIO)
+             modelo=f"{VOZ_MODELO}-{precisao}", ajuste=VOZ_VOCABULARIO,
+             parametros={"idioma": VOZ_IDIOMA}, prompt=vocab)
 
 
-def tarefa(nome, funcao) -> PythonOperator:
-    """Toda tarefa le ARQUIVO e escreve EXTRACAO — a linhagem e a mesma."""
+def tarefa(nome, funcao, usa_ajuste=True) -> PythonOperator:
+    """Toda tarefa le ARQUIVO e escreve EXTRACAO. As que tem ajuste — todas menos
+    a planilha, que e leitura direta — tambem leem AJUSTE_EXTRACAO."""
+    le = ["bronze.arquivo"]
+    colunas = {"arquivo_idt": [("bronze.arquivo", "arquivo_idt")],
+               "saida_txt":   [("bronze.arquivo", "arquivo_uri_txt")]}
+    if usa_ajuste:
+        le.append("bronze.ajuste_extracao")
+        colunas["prompt_versao_cod"] = [("bronze.ajuste_extracao", "prompt_versao_cod")]
     return PythonOperator(
         task_id=nome,
         python_callable=funcao,
-        on_success_callback=linhagem(
-            le=["bronze.arquivo"],
-            escreve=["bronze.extracao"],
-            colunas={
-                "arquivo_idt": [("bronze.arquivo", "arquivo_idt")],
-                "saida_txt":   [("bronze.arquivo", "arquivo_uri_txt")],
-            },
-        ),
+        on_success_callback=linhagem(le=le, escreve=["bronze.extracao"], colunas=colunas),
     )
 
 
@@ -570,7 +589,7 @@ with DAG(
     conferir = BranchPythonOperator(task_id="conferir_pendentes", python_callable=conferir_pendentes)
     nada_a_fazer = EmptyOperator(task_id="nada_a_fazer")
 
-    planilha = tarefa("planilha", extrair_planilha)
+    planilha = tarefa("planilha", extrair_planilha, usa_ajuste=False)
     ocr = tarefa("ocr", extrair_ocr)
     voz = tarefa("voz", extrair_voz)
     texto = PythonOperator(
@@ -578,9 +597,10 @@ with DAG(
         python_callable=extrair_texto,
         # a entrada e outra EXTRACAO, nao o arquivo: a linhagem e da tabela para ela mesma
         on_success_callback=linhagem(
-            le=["bronze.extracao"], escreve=["bronze.extracao"],
+            le=["bronze.extracao", "bronze.ajuste_extracao"], escreve=["bronze.extracao"],
             colunas={"saida_txt": [("bronze.extracao", "saida_txt")],
-                     "extracao_origem_idt": [("bronze.extracao", "extracao_idt")]},
+                     "extracao_origem_idt": [("bronze.extracao", "extracao_idt")],
+                     "prompt_versao_cod": [("bronze.ajuste_extracao", "prompt_versao_cod")]},
         ),
     )
 
@@ -589,9 +609,10 @@ with DAG(
         python_callable=extrair_relatos,
         # a entrada e o registro bruto, nao um arquivo: o relato nunca teve binario
         on_success_callback=linhagem(
-            le=["bronze.recepcao_bruta"], escreve=["bronze.extracao"],
+            le=["bronze.recepcao_bruta", "bronze.ajuste_extracao"], escreve=["bronze.extracao"],
             colunas={"saida_txt": [("bronze.recepcao_bruta", "conteudo_json_txt")],
-                     "recepcao_idt": [("bronze.recepcao_bruta", "recepcao_idt")]},
+                     "recepcao_idt": [("bronze.recepcao_bruta", "recepcao_idt")],
+                     "prompt_versao_cod": [("bronze.ajuste_extracao", "prompt_versao_cod")]},
         ),
     )
 
