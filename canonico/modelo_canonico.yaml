@@ -138,6 +138,16 @@ metadados:
     scripts/medir_acerto_relato.py. Os textos de todas as versoes estao em
     canonico/prompts.md.
 
+    Ainda em 13/09, os PDFs. O OCR embaralha tabela: o modelo de linguagem
+    estruturou bem o informe do INTEL (prosa) e mal o RELPER escaneado (colunas
+    deslocadas). O INTEL deixa de ser "grade" e passa a ser cadeia de dois
+    modelos, como a voz (tesseract -> qwen -> EVENTO), medida numa amostra dos 30
+    informes antes de virar tarefa. Decisoes do usuario: a hora do corpo do
+    informe e lida como UTC (deslize do gerador, ver a receita); o lugar e pedido
+    como esta escrito, sem a lista do gazetteer; o RELPER escaneado NAO vai para
+    a Silver — os numeros sairiam errados, e o limite fica registrado como achado.
+    A voz ganha REGISTRO_ORIGEM_COD, sem o qual seus eventos nao tinham chave.
+
 
 # =============================================================================
 # DOMINIOS — listas de valores permitidos
@@ -1116,29 +1126,50 @@ fontes:
     destino: EVENTO
     entidades:
       informe:
-        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
+        # Cadeia de dois modelos, como a voz: o tesseract le a pagina escaneada e
+        # devolve texto; o modelo de linguagem le esse texto e devolve os campos
+        # NOMEADOS (tarefa `informe`, prompt intel-v1). Nao ha grade a abrir: o
+        # informe e prosa, e o que o de/para le e a resposta do modelo.
+        conteudo: extracao_campos
+        modalidade: PDF
+        # O que o documento E — entra no pedido ao modelo.
+        documento: >-
+          O informe tem cabecalho (Nr, Data-hora em grupo data-hora, De, Para, Assunto, avaliacao da fonte
+          e da informacao como letra e algarismo, ex. B2) e corpo em paragrafos numerados. O paragrafo 1 diz
+          QUANDO e ONDE o fato aconteceu.
+        tipos_possiveis: [AVISTAMENTO, AVISTAMENTO_INIMIGO, BOMBARDEIO_INIMIGO, INCIDENTE]
         sidecar:
           operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
           origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
                       observacao: "secao de inteligencia que expediu o informe: E-2 da brigada ou S-2 da OM"}
         campos:
-          nr:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: "numero do informe, do cabecalho"}
+          nr:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: "numero do informe, lido do cabecalho pelo modelo"}
           avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
                         transformacao: split_escala,
-                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2. Lido do cabecalho por OCR."}
-          texto:       {campo: RELATO_TXT, transformacao: direto, observacao: "corpo do informe, saida do OCR"}
+                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2. O OCR le 'A2' como 'AZ' e o modelo copia: a posicao fora da escala vira vazio."}
+          texto_lido:  {campo: RELATO_TXT, transformacao: direto,
+                        observacao: "corpo do informe como o OCR o leu. Vem da extracao que o modelo LEU (EXTRACAO_ORIGEM_IDT), nao da resposta do modelo, que nao repete o texto."}
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
                              referencia: REF_GAZETTEER,
-                             observacao: "o lugar citado no texto ('Ponte sobre o Corrego Aroeira') -> ponto. O modelo extrai a referencia; a tabela resolve. Sem lugar citado, vazio."}
+                             observacao: "o lugar citado no paragrafo 1, copiado como esta escrito ('Ponte sobre o Corrego Aroeira') -> ponto. O modelo extrai o nome; a tabela resolve. Sem lugar citado, vazio."}
+          ocorrencia:  {campo: OCORRENCIA_DATA, transformacao: ts_iso, fuso: UTC,
+                        observacao: "dia e hora do paragrafo 1. LIDA COMO UTC por um deslize do gerador: gerar_intel.py escreve a hora do corpo em UTC (e o mes em ingles, 'DEC'), enquanto o cabecalho usa -03. Se o gerador for corrigido e os dados regerados, tirar `fuso: UTC`."}
+          TIPO_COD:       {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, por: llm}
+          PRIORIDADE_COD: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm}
           arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a interpretacao do modelo de linguagem, que aponta para o OCR em EXTRACAO_ORIGEM_IDT. Dois elos, dois modelos."}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: INTEL}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
           _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: INTELIGENCIA}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
                         observacao: "resolve para N: documento avulso, nao produzido dentro de sistema de C2"}
-        extraidos_por_llm: [OCORRENCIA_DATA, TIPO_COD, PRIORIDADE_COD]
+        extraidos_por_llm: [REGISTRO_ORIGEM_COD, FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD,
+                            GEOMETRIA_WKT, OCORRENCIA_DATA, TIPO_COD, PRIORIDADE_COD]
 
   # --- VOZ: audio de radio. A cadeia mais longa: wav -> texto -> dado. --------
   # O .wav nao se descreve. Vem com um SIDECAR .json do gravador de radio (voice
@@ -1172,6 +1203,8 @@ fontes:
                              referencia: REF_GAZETTEER,
                              observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}
           audio:       {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                        observacao: "radio nao numera mensagem: o que identifica uma transmissao e o sidecar inteiro (operacao, hora, estacao). Sem isto o EVENTO_IDT ficava nulo, o MERGE nunca casava e cada rodada duplicaria a voz (corrigido em 13/09)."}
           _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
                         observacao: "a interpretacao do modelo de linguagem, que por sua vez aponta para a transcricao em EXTRACAO_ORIGEM_IDT. Dois elos, dois modelos."}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}

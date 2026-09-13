@@ -206,6 +206,13 @@ def _t_json(origem, regra, ctx, alvo=None):
 
 
 def _t_ts_iso(origem, regra, ctx, alvo=None):
+    """Texto ISO 8601 -> instante.
+
+    `fuso: UTC` le a hora como UTC quando o texto nao traz fuso — sem isso o
+    Spark usaria o fuso da sessao, que e configuracao da maquina e nao do dado.
+    """
+    if regra.get("fuso") == "UTC":
+        return f"to_timestamp(concat(substring({origem}, 1, 16), '+00:00'), \"yyyy-MM-dd'T'HH:mmXXX\")"
     return f"CAST({origem} AS TIMESTAMP)"
 
 
@@ -248,7 +255,12 @@ def _t_split_escala(origem, regra, ctx, alvo=None):
     das duas esta produzindo.
     """
     posicao = 1 if str(alvo).endswith("CONFIABILIDADE_COD") else 2
-    return f"substring(trim({origem}), {posicao}, 1)"
+    valor = f"upper(substring(trim({origem}), {posicao}, 1))"
+    # O OCR le 'A2' como 'AZ'. Letra ou algarismo fora da escala vira vazio, e
+    # nao sujeira: vale o dominio declarado para a coluna em EVENTO.
+    dominio = ctx["modelo"]["entidades"]["EVENTO"]["campos"][alvo]["dominio"]
+    validos = ", ".join(f"'{v}'" for v in ctx["modelo"]["dominios"][dominio]["valores"])
+    return f"CASE WHEN length(trim({origem})) = 2 AND {valor} IN ({validos}) THEN {valor} END"
 
 
 # Nome da coluna que a view `origem_bruta` ja traz, por tabela da Bronze referida.
@@ -672,15 +684,22 @@ def _origem_dos_campos_extraidos(spark, fonte):
     texto}. Uma linha por interpretacao; o elo com a transcricao que a originou
     fica em EXTRACAO_ORIGEM_IDT, e e por ele que se reconhece qual extracao e a
     do modelo de linguagem.
+
+    Aos campos que o modelo devolveu junta-se `texto_lido`: o que ele LEU, quando
+    a leitura anterior foi um OCR. No informe do INTEL as paginas do OCR sao o
+    corpo do documento, e o modelo nao as repete na resposta. Na voz fica vazio.
     """
     spark.sql(f"""
         SELECT a.ARQUIVO_IDT, r.RECEPCAO_IDT, i.EXTRACAO_IDT, r.RECEBIMENTO_DATA,
                a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
                from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>') AS SIDECAR,
-               from_json(i.SAIDA_TXT, 'map<string,string>') AS CAMPOS,
+               map_concat(from_json(i.SAIDA_TXT, 'map<string,string>'),
+                          map('texto_lido', array_join(
+                              from_json(o.SAIDA_TXT, 'struct<paginas:array<string>>').paginas, '\\n'))) AS CAMPOS,
                CAST(NULL AS STRING) AS SOBRA_JSON,
                CAST(NULL AS STRING) AS FORMULARIO_VERSAO
         FROM {CATALOGO}.bronze.EXTRACAO i
+        JOIN {CATALOGO}.bronze.EXTRACAO o ON o.EXTRACAO_IDT = i.EXTRACAO_ORIGEM_IDT
         JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = i.ARQUIVO_IDT
         JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
         WHERE i.EXTRACAO_ORIGEM_IDT IS NOT NULL AND i.STATUS_COD = 'OK'

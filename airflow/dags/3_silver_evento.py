@@ -1,11 +1,9 @@
 """
 DAG canonico_silver — aplica o de/para do modelo canonico e escreve a Silver.
 
-    conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato
-                       │                                      │
-                       │                    c2b_incidente ◄───┘
-                       │                          │
-                       │                          └──► relper_situacao
+    conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato ──► c2b_incidente
+                       │                                                    │
+                       │        intel_informe ◄── voz_transcricao ◄── relper_situacao
                        └─► nada_a_fazer
 
 Cada tarefa processa UMA receita do YAML (um bloco dentro de `fontes:`). Elas
@@ -45,7 +43,12 @@ PENDENTES_SQL = """
        LEFT JOIN iceberg.silver.evento e ON e.recepcao_idt = r.recepcao_idt
        WHERE e.recepcao_idt IS NULL
          AND (r.sistema_origem_cod IN ('C2_A', 'C2_B')
-              OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA')))
+              OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA')
+              -- voz e informe so viram evento DEPOIS que o modelo de linguagem leu
+              OR (r.sistema_origem_cod IN ('VOZ', 'INTEL') AND EXISTS (
+                    SELECT 1 FROM iceberg.bronze.extracao i
+                    WHERE i.arquivo_idt = r.arquivo_idt AND i.extracao_origem_idt IS NOT NULL
+                      AND i.status_cod = 'OK'))))
       +
       (SELECT count(*)
        FROM iceberg.silver.evento e
@@ -186,5 +189,37 @@ with DAG(
         }),
     ])
 
+    # VOZ e INTEL chegam por uma cadeia de DOIS modelos: um le o binario (whisper,
+    # tesseract) e devolve texto; o modelo de linguagem le esse texto e devolve os
+    # campos. As tres tabelas da Bronze entram na linhagem.
+    bronze_da_cadeia = ["bronze.extracao", "bronze.arquivo", "bronze.recepcao_bruta"]
+    voz = transformar("voz_transcricao", "VOZ", "transcricao", [
+        linhagem(le=bronze_da_cadeia, escreve=["silver.evento"], colunas={
+            "tipo_cod":               [("bronze.extracao", "saida_txt")],
+            "geometria_wkt":          [("bronze.extracao", "saida_txt")],
+            "relato_txt":             [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "registro_origem_cod":    [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+        }),
+    ])
+    intel = transformar("intel_informe", "INTEL", "informe", [
+        linhagem(le=bronze_da_cadeia, escreve=["silver.evento"], colunas={
+            "registro_origem_cod":      [("bronze.extracao", "saida_txt")],
+            "tipo_cod":                 [("bronze.extracao", "saida_txt")],
+            "prioridade_cod":           [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":          [("bronze.extracao", "saida_txt")],
+            "geometria_wkt":            [("bronze.extracao", "saida_txt")],
+            "fonte_confiabilidade_cod": [("bronze.extracao", "saida_txt")],
+            "info_credibilidade_cod":   [("bronze.extracao", "saida_txt")],
+            "relato_txt":               [("bronze.extracao", "saida_txt")],
+            "unidade_reportante_cod":   [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "extracao_idt":             [("bronze.extracao", "extracao_idt")],
+            "arquivo_idt":              [("bronze.arquivo", "arquivo_idt")],
+        }),
+    ])
+
     conferir >> [posicao, nada_a_fazer]
-    posicao >> mcc >> relato >> incidente >> relper
+    posicao >> mcc >> relato >> incidente >> relper >> voz >> intel

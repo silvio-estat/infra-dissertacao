@@ -1,7 +1,7 @@
 """
 DAG extracao — tira o conteudo de dentro dos binarios e grava em EXTRACAO.
 
-    conferir_pendentes ──► planilha ──► ocr ──► voz ──► texto ──► relato
+    conferir_pendentes ──► planilha ──► ocr ──► voz ──► texto ──► relato ──► informe
                        └─► nada_a_fazer
 
 Uma etapa do fluxo, uma DAG: ingestao ──► EXTRACAO ──► canonico_silver ──► gold.
@@ -17,8 +17,9 @@ O que separa as tres e so COMO o conteudo e lido:
     ocr       tesseract adivinha as letras dos pixels       inferencia
     voz       faster-whisper adivinha as palavras do som    inferencia
     texto     um modelo de linguagem le o que a VOZ escreveu e devolve campos
+    informe   um modelo de linguagem le o que o OCR leu do INTEL e devolve campos
 
-A ultima e a unica cuja entrada NAO e um binario: ela le a SAIDA de outra
+A `texto` e a `informe` nao leem um binario: leem a SAIDA de outra
 extracao. Por isso grava EXTRACAO_ORIGEM_IDT — sem essa coluna as duas
 inferencias ficariam penduradas no mesmo .wav como se fossem independentes, e se
 perderia que uma leu a outra.
@@ -69,6 +70,7 @@ LLM_ENDERECO = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 LLM_MODELO = "qwen3.5:4b"
 LLM_PROMPT_VERSAO = "voz-v1"
 LLM_PROMPT_VERSAO_RELATO = "relato-v3"
+LLM_PROMPT_VERSAO_INTEL = "intel-v1"
 # as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
 LLM_OPCOES = {"format": "json", "think": False, "options": {"temperature": 0}}
 
@@ -502,10 +504,102 @@ def extrair_relatos():
         gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
 
 
+def ocr_sem_interpretacao() -> list:
+    """[(extracao_idt, arquivo_idt, saida)] das leituras de OCR do INTEL ainda nao interpretadas.
+
+    Mesma conta da voz: uma leitura esta pendente enquanto nenhuma outra extracao
+    a tiver lido. Sem EXTRACAO nao ha leitura de OCR nenhuma.
+    """
+    sql = """
+        SELECT t.extracao_idt, t.arquivo_idt, t.saida_txt
+        FROM iceberg.bronze.extracao t
+        JOIN iceberg.bronze.recepcao_bruta r ON r.arquivo_idt = t.arquivo_idt
+        LEFT JOIN iceberg.bronze.extracao filha ON filha.extracao_origem_idt = t.extracao_idt
+        WHERE r.sistema_origem_cod = 'INTEL' AND t.status_cod = 'OK'
+          AND t.extracao_origem_idt IS NULL      -- so o OCR, que leu o PDF direto
+          AND filha.extracao_idt IS NULL
+        ORDER BY t.extracao_idt
+    """
+    return consultar(sql)
+
+
+def instrucao_informe() -> str:
+    """O pedido para o informe, montado a partir da receita do INTEL no modelo canonico.
+
+    Medido numa amostra dos 30 informes antes de virar tarefa (13/09): numero e
+    data-hora 30/30, lugar 29/30, tipo 14/14 e prioridade 8/14 contra o gabarito.
+    O lugar e pedido COMO ESTA ESCRITO, sem a lista do gazetteer: com a lista de 70
+    nomes o modelo devolvia vazio em 5 informes de nome legivel. Quem transforma o
+    nome em coordenada e a consulta a REF_GAZETTEER, na Silver.
+    """
+    modelo = yaml.safe_load(open(f"{CANONICO}/modelo_canonico.yaml", encoding="utf-8"))
+    receita = modelo["fontes"]["INTEL"]["entidades"]["informe"]
+    dominios = modelo["dominios"]
+
+    def listar(dominio, apenas=None):
+        return "\n".join(f"     {k:22s} {v.get('quando', v.get('rotulo', ''))}"
+                         for k, v in dominios[dominio]["valores"].items() if apenas is None or k in apenas)
+
+    return (
+        "Voce le o texto de um INFORME DE INTELIGENCIA militar escaneado, reconhecido por OCR. "
+        "O OCR pode errar letras. Nao invente: o que nao estiver no texto vira null.\n\n"
+        f"{receita['documento']}\n\n"
+        "Responda so um JSON com estas chaves:\n"
+        '  "nr": o numero do informe, como no cabecalho (ex. 001/24)\n'
+        '  "data_hora": o grupo data-hora do cabecalho, como escrito (ex. 250812 NOV 24)\n'
+        '  "avaliacao": letra de A a F seguida de algarismo de 1 a 6 (ex. B2)\n'
+        '  "referencia_local": o lugar citado no paragrafo 1, copiado EXATAMENTE como esta escrito '
+        '(o nome que vem depois de "nas proximidades de"), ou null se nao houver\n'
+        '  "ocorrencia": dia e hora do fato, do paragrafo 1, no formato AAAA-MM-DDTHH:MM (o ano e o do cabecalho)\n'
+        '  "TIPO_COD": o que o informe relata. Use SO um destes:\n'
+        + listar("tipo_evento", receita["tipos_possiveis"]) + "\n"
+        '  "PRIORIDADE_COD": o que o informe exige de quem o recebe. Use SO um destes:\n'
+        + listar("prioridade") + "\n\n"
+    )
+
+
+def extrair_informes():
+    """Cada leitura de OCR de um informe vira uma linha NOVA em EXTRACAO, que aponta para ela.
+
+    A cadeia e a da voz com outro par de modelos: o tesseract leu a pagina
+    escaneada; o modelo de linguagem le ESSE TEXTO e devolve os campos.
+    """
+    prompt_base = instrucao_informe()
+    pendentes_ = ocr_sem_interpretacao()
+    print(f"informes sem interpretacao: {len(pendentes_)}")
+    if pendentes_:
+        registrar_ajuste(LLM_PROMPT_VERSAO_INTEL, "ollama", LLM_OPCOES, prompt_base)
+
+    linhas = []
+    for extracao_origem, arquivo_idt, saida_ocr in pendentes_:
+        texto = "\n".join(json.loads(saida_ocr)["paginas"])
+        inicio = time.perf_counter()
+        agora = datetime.now(timezone.utc)
+        try:
+            resposta = perguntar(prompt_base + f"\nTEXTO DO OCR:\n{texto}\n")
+            json.loads(resposta)        # so aceita o que e JSON de verdade
+            saida, status = resposta, "OK"
+        except Exception as erro:
+            saida, status = None, "FALHA"
+            print(f"FALHA {extracao_origem}: {erro}")
+        idt = "ext_" + hashlib.sha256(
+            f"{extracao_origem}|{LLM_MODELO}|{agora.isoformat()}".encode()).hexdigest()[:16]
+        linhas.append((idt, arquivo_idt, None, extracao_origem, "S", "ollama", LLM_MODELO,
+                       LLM_PROMPT_VERSAO_INTEL, saida, round(time.perf_counter() - inicio, 3),
+                       status, agora))
+        if len(linhas) == LOTE:
+            gravar(linhas, "INFORME", f"ollama/{LLM_MODELO}")
+            linhas = []
+
+    if linhas or not pendentes_:
+        gravar(linhas, "INFORME", f"ollama/{LLM_MODELO}")
+
+
 def conferir_pendentes() -> str:
     quantos = {m: len(pendentes(m)) for m in ("PLANILHA", "PDF", "AUDIO")}
     quantos["transcricoes a interpretar"] = len(transcricoes_sem_interpretacao())
     quantos["relatos a interpretar"] = len(relatos_sem_interpretacao())
+    quantos["informes a interpretar"] = len(ocr_sem_interpretacao())
     print("pendente:", quantos)
     return "planilha" if sum(quantos.values()) else "nada_a_fazer"
 
@@ -617,5 +711,17 @@ with DAG(
         ),
     )
 
+    informe = PythonOperator(
+        task_id="informe",
+        python_callable=extrair_informes,
+        # como a `texto`: a entrada e outra EXTRACAO (o OCR do PDF), nao o arquivo
+        on_success_callback=linhagem(
+            le=["bronze.extracao", "bronze.ajuste_extracao"], escreve=["bronze.extracao"],
+            colunas={"saida_txt": [("bronze.extracao", "saida_txt")],
+                     "extracao_origem_idt": [("bronze.extracao", "extracao_idt")],
+                     "prompt_versao_cod": [("bronze.ajuste_extracao", "prompt_versao_cod")]},
+        ),
+    )
+
     conferir >> [planilha, nada_a_fazer]
-    planilha >> ocr >> voz >> texto >> relato
+    planilha >> ocr >> voz >> texto >> relato >> informe
