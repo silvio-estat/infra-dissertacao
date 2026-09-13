@@ -1,6 +1,7 @@
 # Python
 venv/
 venv-geradores/
+venv-docling/
 __pycache__/
 *.pyc
 *.pyo
