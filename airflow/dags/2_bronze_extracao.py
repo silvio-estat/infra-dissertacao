@@ -76,12 +76,35 @@ def conexao_trino():
     return trino.dbapi.connect(host="trino", port=8090, user="airflow", http_scheme="http")
 
 
+def consultar(*consultas: str) -> list:
+    """Roda a primeira consulta que der certo e devolve as linhas.
+
+    O UNICO erro tolerado e tabela inexistente — primeira rodada, ou a tabela foi
+    recriada: passa para a consulta seguinte (a mesma pergunta sem EXTRACAO) e, se
+    nao sobrar nenhuma, a resposta e vazia.
+
+    Qualquer outro erro sobe e a tarefa fica VERMELHA. Em 13/09, com o Trino ainda
+    subindo depois de um reinicio, "nao consegui perguntar" foi lido como "nao ha
+    nada pendente" e a tarefa marcou sucesso sem ter feito nada.
+    """
+    from trino.exceptions import TrinoQueryError
+
+    for sql in consultas:
+        try:
+            cur = conexao_trino().cursor()
+            cur.execute(sql)
+            return cur.fetchall()
+        except TrinoQueryError as erro:
+            if erro.error_name != "TABLE_NOT_FOUND":
+                raise
+            print(f"tabela ausente: {erro.message}")
+    return []
+
+
 def pendentes(modalidade: str) -> list:
     """[(arquivo_idt, uri)] dos binarios desta modalidade que ainda nao foram lidos.
 
-    Se EXTRACAO nao existe — primeira rodada, ou a tabela foi recriada — nada foi
-    lido e tudo esta pendente. Sem isso a DAG quebra com TABLE_NOT_FOUND numa
-    tarefa de decisao, que e o pior lugar para uma surpresa.
+    Se EXTRACAO nao existe, nada foi lido e tudo esta pendente.
     """
     com_extracao = f"""
         SELECT a.arquivo_idt, a.arquivo_uri_txt
@@ -96,14 +119,7 @@ def pendentes(modalidade: str) -> list:
         WHERE a.modalidade_cod = '{modalidade}'
         ORDER BY a.arquivo_uri_txt
     """
-    for sql in (com_extracao, sem_extracao):
-        try:
-            cur = conexao_trino().cursor()
-            cur.execute(sql)
-            return cur.fetchall()
-        except Exception as erro:
-            print(f"EXTRACAO nao consultada ({type(erro).__name__}); tratando como vazia")
-    return []
+    return consultar(com_extracao, sem_extracao)
 
 
 def baixar(uri: str) -> bytes:
@@ -236,16 +252,11 @@ def transcricoes_sem_interpretacao() -> list:
         JOIN iceberg.bronze.arquivo a ON a.arquivo_idt = t.arquivo_idt
         LEFT JOIN iceberg.bronze.extracao filha ON filha.extracao_origem_idt = t.extracao_idt
         WHERE a.modalidade_cod = 'AUDIO' AND t.status_cod = 'OK'
-          AND filha.extracao_idt IS NULL
+          AND t.extracao_origem_idt IS NULL      -- so a transcricao, que leu o .wav direto;
+          AND filha.extracao_idt IS NULL         -- sem isso a propria interpretacao contava como pendente
         ORDER BY t.extracao_idt
     """
-    try:
-        cur = conexao_trino().cursor()
-        cur.execute(sql)
-        return cur.fetchall()
-    except Exception as erro:
-        print(f"EXTRACAO nao consultada ({type(erro).__name__}); tratando como vazia")
-        return []
+    return consultar(sql)       # sem EXTRACAO nao ha transcricao nenhuma
 
 
 def instrucao() -> str:
@@ -321,7 +332,7 @@ def relatos_sem_interpretacao() -> list:
     Diferente da voz: aqui NAO ha binario nem transcricao. O texto chega dentro
     do proprio registro JSON, e o elo da inferencia e o RECEPCAO_IDT.
     """
-    sql = """
+    com_extracao = """
         SELECT r.recepcao_idt, json_extract_scalar(r.conteudo_json_txt, '$.situacao')
         FROM iceberg.bronze.recepcao_bruta r
         LEFT JOIN iceberg.bronze.extracao i ON i.recepcao_idt = r.recepcao_idt
@@ -329,13 +340,13 @@ def relatos_sem_interpretacao() -> list:
           AND i.extracao_idt IS NULL
         ORDER BY r.recepcao_idt
     """
-    try:
-        cur = conexao_trino().cursor()
-        cur.execute(sql)
-        return cur.fetchall()
-    except Exception as erro:
-        print(f"EXTRACAO nao consultada ({type(erro).__name__}); tratando como vazia")
-        return []
+    sem_extracao = """
+        SELECT r.recepcao_idt, json_extract_scalar(r.conteudo_json_txt, '$.situacao')
+        FROM iceberg.bronze.recepcao_bruta r
+        WHERE r.sistema_origem_cod = 'C2_B' AND r.origem_uri_txt LIKE '%/relato/%'
+        ORDER BY r.recepcao_idt
+    """
+    return consultar(com_extracao, sem_extracao)
 
 
 def instrucao_relato() -> str:
@@ -430,8 +441,17 @@ def instrucao_prioridade() -> str:
     )
 
 
+LOTE_RELATOS = 50
+
+
 def extrair_relatos():
-    """Cada relato vira uma linha em EXTRACAO ligada ao registro, nao a um arquivo."""
+    """Cada relato vira uma linha em EXTRACAO ligada ao registro, nao a um arquivo.
+
+    Grava a cada LOTE_RELATOS, e nao uma vez so no fim: com raciocinio sao ~12 s
+    por relato, ~1 h para os 300. Em 12/09 um reinicio no relato 250 perdeu os 250.
+    Agora uma interrupcao perde no maximo um lote, e a rodada seguinte recomeca de
+    onde parou — `relatos_sem_interpretacao` ja pula o que foi gravado.
+    """
 
     prompt_base = instrucao_relato()
     prompt_prioridade = instrucao_prioridade()
@@ -457,10 +477,12 @@ def extrair_relatos():
         linhas.append((idt, None, recepcao_idt, None, "S", "ollama", LLM_MODELO,
                        LLM_PROMPT_VERSAO_RELATO, saida,
                        round(time.perf_counter() - inicio, 3), status, agora))
-        if len(linhas) % 50 == 0:
-            print(f"  {len(linhas)} interpretados")
+        if len(linhas) == LOTE_RELATOS:
+            gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
+            linhas = []
 
-    gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
+    if linhas:      # o que sobrou, menos de um lote
+        gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
 
 
 def conferir_pendentes() -> str:
