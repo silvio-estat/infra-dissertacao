@@ -154,10 +154,12 @@ with DAG(
         }),
     ])
     mcc = transformar("c2a_mcc", "C2_A", "mcc", [
-        linhagem(le=["bronze.recepcao_bruta"], escreve=["silver.evento"], colunas={
+        linhagem(le=["bronze.recepcao_bruta"], escreve=["silver.evento", "silver.medida_coordenacao"], colunas={
             "geometria_wkt":      [("bronze.recepcao_bruta", "conteudo_json_txt")],
             "tipo_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
             "funcao_combate_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "medida_especie_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "medida_nome":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
         }),
     ])
 

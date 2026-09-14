@@ -157,6 +157,16 @@ def _blocos_de_mapeamento(spec: dict):
         yield nome, _mapa_do_bloco(ent)
 
 
+def _tabela_extensao(spec: dict, tipo=None):
+    """A extensao vale para a fonte inteira (`extensao:` no bloco da fonte, como no
+    RELPER) ou so para uma receita (`tabela_extensao:`, como a `mcc` do C2_A, cuja
+    irma `posicao` nao tem atributo proprio)."""
+    blocos = spec.get("entidades") or {}
+    if tipo is None and len(blocos) == 1:
+        tipo = next(iter(blocos))
+    return (blocos.get(tipo) or {}).get("tabela_extensao") or spec.get("extensao")
+
+
 # =============================================================================
 # 2. TRANSFORMACOES — o unico lugar do projeto com codigo por conversao
 # =============================================================================
@@ -177,6 +187,9 @@ def _expressao_origem(origem, regra, ctx):
       no bloco sidecar -> SIDECAR['operacao'], o .json que acompanha o arquivo
       qualquer outro   -> CAMPOS['Ef Pres'], o cabecalho como esta na planilha
     """
+    # `de`: o mesmo campo da origem alimenta duas regras com conversoes diferentes
+    # — `especie`, no mapa do C2_A, vira TIPO_COD e tambem MEDIDA_ESPECIE_COD.
+    origem = regra.get("de") or origem
     if regra.get("caminho"):
         return f"get_json_object({ctx['coluna_payload']}, '{regra['caminho']}')"
     if origem in ctx.get("sidecar", ()):
@@ -1143,8 +1156,9 @@ def montar_select(modelo, fonte, tipo=None):
         )
 
     destinos = [modelo["entidades"]["EVENTO"]["campos"]]
-    if spec.get("extensao"):
-        destinos.append(modelo["entidades"][spec["extensao"]]["campos"])
+    extensao = _tabela_extensao(spec, tipo)
+    if extensao:
+        destinos.append(modelo["entidades"][extensao]["campos"])
 
     select, ja = [], set()
     for campos in destinos:
@@ -1190,7 +1204,8 @@ def processar(spark, modelo, fonte, tipo, mostrar=False):
     spark.sql(consulta).createOrReplaceTempView("origem_canonica")
 
     # EVENTO primeiro; a extensao depois, porque depende do EVENTO_IDT.
-    for tabela in ["EVENTO"] + ([spec["extensao"]] if spec.get("extensao") else []):
+    extensao = _tabela_extensao(spec, tipo)
+    for tabela in ["EVENTO"] + ([extensao] if extensao else []):
         colunas = list(modelo["entidades"][tabela]["campos"])
         chave = modelo["entidades"][tabela]["chave"][0]
         # A Silver e uma FUNCAO da Bronze: reprocessar a mesma origem tem de dar a

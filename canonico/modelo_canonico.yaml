@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-13
+  atualizado_em: 2026-09-14
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -162,6 +162,23 @@ metadados:
     declaradas em `colunas:`), hora pelo grupo data-hora e lugar pela coordenada
     decametrica, que perde o digito dos milhares de km do Norte e e desempatada
     pela area da operacao — nos 11 bombardeios do gabarito, a 1,3-6,1 m do fato.
+  nota_2026_09_14: >-
+    Entra MEDIDA_COORDENACAO, a segunda extensao de EVENTO: especie, nome e
+    observacao das feicoes desenhadas no mapa do C2_A. Ate aqui a Silver guardava
+    so o tipo (MCC ou OBSTACULO), a geometria e a hora — o nome 'O7' e a especie
+    'objetivo' ficavam na Bronze, e a Gold nao le a Bronze. Decisao do usuario,
+    pela regra ja escrita neste modelo: atributo que so uma fonte tem, com esquema
+    fixado por norma (as especies sao doutrinarias), vira extensao. Duas chaves
+    novas no de/para: `tabela_extensao`, na receita, quando so UMA receita da
+    fonte tem extensao (o C2_A tem `posicao` e `mcc`); e `de`, quando o mesmo
+    campo da origem alimenta duas regras com conversoes diferentes (`especie`
+    vira TIPO_COD e MEDIDA_ESPECIE_COD).
+
+    Tambem em 14/09: a voz passa a trazer a prioridade (pedido voz-v2), com o erro
+    que a inferencia tiver — decisao do usuario; o acerto medido esta no
+    ACHADOS.md. Condicoes meteorologicas: nao ha fonte no estudo, e a limitacao
+    fica declarada; a arquitetura recebe a fonte quando ela existir, por um bloco
+    em `fontes`, sem mudar tabela.
 
 
 # =============================================================================
@@ -229,6 +246,24 @@ dominios:
     # BOMBARDEIO_INIMIGO e MISSAO_TIRO sao coisas distintas: o Relatorio de
     # Bombardeio (Anexo I) registra fogos que o INIMIGO fez sobre nos, vistos
     # por observador ou deduzidos de cratera; missao de tiro e o nosso fogo.
+
+  especie_medida:
+    descricao: >-
+      Especie da feicao desenhada no mapa do C2_A (MEDIDA_COORDENACAO). As mesmas
+      palavras sao sinonimos de MCC e OBSTACULO em tipo_evento: la decidem o TIPO;
+      aqui ficam como a especie, para a Gold saber se a medida e objetivo ou linha.
+    valores:
+      LINHA_FASE:         {rotulo: Linha de fase, sinonimos: [linha de fase]}
+      LINHA_PARTIDA:      {rotulo: Linha de partida, sinonimos: [linha de partida]}
+      LIMITE:             {rotulo: Limite, sinonimos: [limite]}
+      EIXO_PROGRESSAO:    {rotulo: Eixo de progressao, sinonimos: [eixo de progressao]}
+      ZONA_REUNIAO:       {rotulo: Zona de reuniao, sinonimos: [zona de reuniao]}
+      PONTO_CONTROLE:     {rotulo: Ponto de controle, sinonimos: [ponto de controle]}
+      OBJETIVO:           {rotulo: Objetivo, sinonimos: [objetivo]}
+      BARREIRA:           {rotulo: Barreira, sinonimos: [barreira]}
+      FOSSO_ANTICARRO:    {rotulo: Fosso anticarro, sinonimos: [fosso anticarro]}
+      CAMPO_MINAS:        {rotulo: Campo de minas, sinonimos: [campo de minas]}
+      CRATERA:            {rotulo: Cratera, sinonimos: [cratera]}
 
   funcao_combate:
     descricao: >-
@@ -370,7 +405,8 @@ dominios:
 # chegou, de que registro bruto veio). Vira tabela de extensao o que SO UMA
 # fonte tem. Foto, audio e relato livre nao tem atributo proprio — produzem uma
 # linha de RECEPCAO_BRUTA (e, se ha binario, uma de ARQUIVO), mais um EVENTO, e
-# nada alem. A planilha tem, e e a unica: por isso ha uma extensao, e uma so.
+# nada alem. A planilha tem (SITUACAO_UNIDADE) e o mapa do C2_A tambem
+# (MEDIDA_COORDENACAO, desde 14/09): por isso ha duas extensoes, e so duas.
 # =============================================================================
 
 entidades:
@@ -467,7 +503,7 @@ entidades:
   SITUACAO_UNIDADE:
     descricao: >-
       Os numeros do relatorio periodico: efetivo, baixas, viaturas e suprimento
-      de uma unidade num turno. Extensao de EVENTO, e a unica que existe.
+      de uma unidade num turno. Extensao de EVENTO; a outra e MEDIDA_COORDENACAO.
 
       Ela existe porque estes valores so fazem sentido para UMA fonte. Se
       morassem em EVENTO, toda linha vinda de foto, audio, PDF ou posicao os
@@ -477,8 +513,8 @@ entidades:
       verdade: 87 e inteiro, e nao o texto "87".
 
       Justifica-se como tabela fixa, e nao como conteudo semiestruturado, porque
-      esta e a unica fonte cujo esquema e decretado por norma: o EM da brigada
-      publica o formulario e todas as OM subordinadas preenchem o mesmo.
+      o esquema e decretado por norma: o EM da brigada publica o formulario e
+      todas as OM subordinadas preenchem o mesmo.
     abreviatura: SITU
     camada: silver
     chave: [EVENTO_IDT]
@@ -550,6 +586,37 @@ entidades:
           Consequencia doutrinaria: coluna a mais nao e defeito de qualidade, e
           o campo sinalizando que o formulario do EM esta incompleto. O
           Lakehouse captura o sinal; o pipeline relacional o destroi na carga.
+
+  # ---------------------------------------------------------------------------
+  MEDIDA_COORDENACAO:
+    descricao: >-
+      A feicao desenhada no mapa do C2_A: especie e nome de cada medida de
+      coordenacao e controle (linha de fase 'LF AMBAR', objetivo 'O7', ponto de
+      controle 'P Ct 12') e de cada obstaculo lancado na mesma tela (barreira,
+      fosso anticarro). Extensao de EVENTO, a segunda do modelo.
+
+      Existe pela mesma regra que criou SITUACAO_UNIDADE: so uma fonte tem estes
+      atributos, e o esquema e fixado por norma, porque as especies sao
+      doutrinarias. Em EVENTO ficam o tipo (MCC ou OBSTACULO), a geometria e a
+      hora; aqui fica o que permite a Gold dizer QUAL medida — e comparar a
+      posicao da tropa com o objetivo O7 e o que torna possivel a comparacao
+      entre o planejado e o atual.
+    abreviatura: MCC
+    camada: silver
+    chave: [EVENTO_IDT]
+    campos:
+      EVENTO_IDT:
+        {tipo: string, nulo: false, referencia: EVENTO,
+         descricao: "Evento correspondente. Um para um: cada feicao desenhada no mapa e um evento."}
+      MEDIDA_ESPECIE_COD:
+        {tipo: string, nulo: false, dominio: especie_medida,
+         descricao: "Especie da feicao: linha de fase, objetivo, ponto de controle, barreira..."}
+      MEDIDA_NOME:
+        {tipo: string, nulo: true,
+         descricao: "Nome dado no mapa ('LF AMBAR', 'O7', 'P Ct 12'). E por ele que o estado-maior se refere a medida."}
+      OBSERVACAO:
+        {tipo: string, nulo: true,
+         descricao: "Observacao livre de quem desenhou, quando houver (ex.: 'barreira de troncos na estrada'). Sem sufixo: OBSERVACAO tem representacao implicita TEXTO (Art. 139-143 do IR 14-06)."}
 
   # ---------------------------------------------------------------------------
   RECEPCAO_BRUTA:
@@ -878,6 +945,15 @@ fontes:
                         regra: "PROTECAO quando TIPO_COD = OBSTACULO; MOV_MANOBRA quando TIPO_COD = MCC"}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+        # O que so o mapa tem vai para a extensao — so nesta receita: a irma
+        # `posicao` nao tem atributo proprio, por isso a tabela e declarada aqui, e
+        # nao no bloco da fonte.
+        tabela_extensao: MEDIDA_COORDENACAO
+        extensao:
+          especie_medida: {campo: MEDIDA_ESPECIE_COD, transformacao: dominio, dominio: especie_medida, de: especie,
+                           observacao: "o mesmo campo `especie` que decide o TIPO_COD, agora guardado como a especie"}
+          nome:           {campo: MEDIDA_NOME, transformacao: direto}
+          observacao:     {campo: OBSERVACAO, transformacao: direto}
 
   # --- C2_B: texto livre e incidente com foto. --------------------------------
   # Absorve o `relt_intel` e o `seg_area` da fonte SIM. O seg_area era duplicata
