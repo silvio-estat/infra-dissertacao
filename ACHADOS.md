@@ -11,6 +11,67 @@ informações** e deixa a origem de cada valor rastreável para quem confere. Um
 acerto de 95% não é "a IA erra 5%"; é "o cruzamento que levaria horas sai em
 minutos, e os 5% são localizáveis".
 
+## Prioridade da voz: a palavra que o rádio perde (14/set/2026)
+
+Decisão: **a prioridade vem da IA, com o erro que ela tiver.** O pedido `voz-v2`
+passou a ser o da DAG, e a Silver mostra o que o modelo respondeu, com a marca de
+IA no evento. Não se trocou a IA por uma regra fixa só para acertar mais: o
+objetivo é mostrar a cadeia como ela é, e o erro fica registrado aqui como
+material para a discussão dos pontos positivos e negativos de usar IA.
+
+- **Como a prioridade é falada.** A mensagem termina com uma palavra-código:
+  *relâmpago* (urgente), *chuva* (prioritário) ou *orvalho* (rotina). O pedido
+  atual ao modelo de linguagem (`voz-v1`) não pergunta por ela.
+- **Teste 1: pedir a palavra ao modelo de linguagem** (pedido `voz-v2`, sobre as
+  mesmas 150 transcrições do Whisper):
+
+  | falado | áudios | acertou | **errou** | vazio |
+  |---|---|---|---|---|
+  | relâmpago → URGENTE | 17 | 17 | 0 | 0 |
+  | chuva → PRIORITÁRIO | 17 | 16 | 0 | 1 |
+  | orvalho → ROTINA | 116 | 3 | **20** | 93 |
+
+  Tipo e lugar quase não mudaram (tipo 86% → 90%, lugar 73% → 69%).
+- **O erro nasce um elo antes.** O Whisper nunca escreveu "orvalho": saiu
+  "ovado", "ovário", "provável". Não é uma palavra rara para o modelo de fala.
+  O problema é que ela vem no fim, entre dois "câmbio", dita sem ênfase. Sem a
+  palavra no texto, o modelo de linguagem **inventou** a prioridade em 20
+  mensagens de rotina. Esse é o risco típico da cadeia de IA: o segundo modelo não
+  sabe que o primeiro perdeu a informação e preenche o campo mesmo assim.
+- **Teste 2: uma regra fixa, sem modelo de linguagem.** Procurar "relâmp" ou
+  "chuv" no texto transcrito deu 34 de 34 certas, nenhuma errada e as 116 de
+  rotina vazias. Mostra que a regra simples, quando cabe, é mais segura que a
+  inferência.
+- **Pontos para a discussão da IA.**
+  - *Positivo:* nas mensagens de fato (urgente e prioritário), a palavra chega e
+    é reconhecida quase sempre.
+  - *Negativo:* a informação menos marcada (rotina) se perde no áudio. Um segundo
+    modelo em cadeia pode transformar esse vazio em um valor errado.
+  - *O que a arquitetura oferece:* o evento carrega a marca da cadeia
+    (`ollama qwen3.5:4b <- faster-whisper 1.1.0 medium-int8`) e aponta para o
+    áudio original. O militar vê que o dado veio de IA e pode ouvir a mensagem.
+- **Na Silver (14/09, DAG 2 com `voz-v2` + reprocessamento da voz).** Os 150
+  eventos vêm da `voz-v2` e trazem a marca
+  `ollama qwen3.5:4b <- faster-whisper 1.1.0 medium-int8`. A prioridade está certa
+  em 34 e errada em 18; outros 98 ficaram vazios:
+
+  | falado | áudios | certo | errado | vazio |
+  |---|---|---|---|---|
+  | relâmpago → URGENTE | 17 | 15 | 0 | 2 |
+  | chuva → PRIORITÁRIO | 17 | 16 | 0 | 1 |
+  | orvalho → ROTINA | 116 | 3 | 18 | 95 |
+
+  Os números diferem um pouco da amostra (17 urgentes certos, 20 errados), mesmo
+  com o mesmo pedido e `temperature: 0`. **Repetir a chamada não garante a mesma
+  resposta.** Isso é mais um motivo para a Silver guardar qual interpretação usou
+  (`EXTRACAO_IDT`), e não só o valor.
+- **Troca de pedido sem apagar nada.** A `voz-v2` é uma linha nova em `EXTRACAO`
+  sobre a mesma transcrição. A `voz-v1` continua na Bronze, e a Silver usa a
+  interpretação mais recente de cada áudio. É o *schema-on-read* na prática: mudar
+  a pergunta feita ao dado bruto não exige reingerir o dado.
+- A prioridade do FOGOS continua vazia: a leitura do FOGOS não passa por modelo
+  de linguagem (ver a seção abaixo).
+
 ## FOGOS na Silver: coordenada, hora e identidade do informe (13/set/2026)
 
 - **A coordenada decamétrica perde um dígito.** "50231-49457" é o par UTM em

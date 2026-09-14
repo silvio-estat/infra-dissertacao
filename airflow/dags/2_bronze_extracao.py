@@ -69,7 +69,12 @@ VOZ_VOCABULARIO = "vocab-v1"
 # GPU, so termina mais cedo com uma.
 LLM_ENDERECO = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
 LLM_MODELO = "qwen3.5:4b"
-LLM_PROMPT_VERSAO = "voz-v1"
+LLM_PROMPT_VERSAO = "voz-v2"
+# as palavras-codigo de prioridade faladas no fim da mensagem de radio. Estao entre
+# os sinonimos do dominio `prioridade` do modelo canonico, misturadas com as palavras
+# dos formularios ("Alta", "Normal"); aqui so as do radio, para o modelo nao ler
+# "deslocamento normal" como prioridade.
+PRIORIDADES_RADIO = ["chuva", "orvalho", "relampago"]
 LLM_PROMPT_VERSAO_RELATO = "relato-v3"
 LLM_PROMPT_VERSAO_INTEL = "intel-v1"
 # as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
@@ -380,13 +385,16 @@ def transcricoes_sem_interpretacao() -> list:
     """[(extracao_idt, arquivo_idt, texto)] das transcricoes ainda nao interpretadas.
 
     A conta e pela propria coluna de cadeia: uma transcricao esta pendente
-    enquanto nao existir outra extracao que a tenha lido.
+    enquanto nao existir outra extracao que a tenha lido COM O PEDIDO ATUAL.
+    Trocar a versao do pedido deixa todas pendentes de novo; a interpretacao
+    antiga continua na Bronze, e a Silver usa a mais recente.
     """
-    sql = """
+    sql = f"""
         SELECT t.extracao_idt, t.arquivo_idt, t.saida_txt
         FROM iceberg.bronze.extracao t
         JOIN iceberg.bronze.arquivo a ON a.arquivo_idt = t.arquivo_idt
         LEFT JOIN iceberg.bronze.extracao filha ON filha.extracao_origem_idt = t.extracao_idt
+                                               AND filha.prompt_versao_cod = '{LLM_PROMPT_VERSAO}'
         WHERE a.modalidade_cod = 'AUDIO' AND t.status_cod = 'OK'
           AND t.extracao_origem_idt IS NULL      -- so a transcricao, que leu o .wav direto;
           AND filha.extracao_idt IS NULL         -- sem isso a propria interpretacao contava como pendente
@@ -416,11 +424,13 @@ def instrucao() -> str:
         "termo das listas abaixo foi dito.\n\n"
         f"CODINOMES: {', '.join(codinomes)}\n\n"
         f"LUGARES: {', '.join(lugares)}\n\n"
-        "Devolva so um JSON com tres chaves:\n"
+        f"PRIORIDADES: {', '.join(PRIORIDADES_RADIO)}\n\n"
+        "Devolva so um JSON com quatro chaves:\n"
         '  "codinome": um termo COPIADO da lista CODINOMES, ou null se nenhum foi dito\n'
         '  "referencia_local": um nome COPIADO da lista LUGARES, ou null\n'
+        '  "prioridade": o termo COPIADO da lista PRIORIDADES que foi dito, ou null se nenhum foi dito\n'
         '  "texto": a mensagem sem o indicativo da estacao e sem as palavras de protocolo\n\n'
-        "Regra rigida: codinome e referencia_local so podem conter texto que exista "
+        "Regra rigida: codinome, referencia_local e prioridade so podem conter texto que exista "
         "LITERALMENTE nas listas. Se o que foi dito nao estiver na lista, devolva null. "
         "Nunca escreva coordenadas, quadriculas ou nomes proprios que nao estejam listados.\n"
     )

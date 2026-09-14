@@ -1257,7 +1257,9 @@ fontes:
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
                              referencia: REF_GAZETTEER,
                              observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}
-          audio:       {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          prioridade: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm,
+                       observacao: "a palavra-codigo do fim da mensagem ('chuva' -> PRIORITARIO), copiada pelo modelo (voz-v2, 14/09). Sai COM ERRO e fica assim de proposito: o transcritor nunca escreve 'orvalho' e o modelo, sem a palavra, as vezes inventa outra. O evento traz a marca de IA para o militar conferir. Ver ACHADOS.md."}
+          audio:      {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
           _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
                         observacao: "radio nao numera mensagem: o que identifica uma transmissao e o sidecar inteiro (operacao, hora, estacao). Sem isto o EVENTO_IDT ficava nulo, o MERGE nunca casava e cada rodada duplicaria a voz (corrigido em 13/09)."}
           _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,

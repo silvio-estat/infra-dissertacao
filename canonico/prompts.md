@@ -17,13 +17,14 @@ Todas as chamadas ao `qwen3.5:4b` usam Ollama no host, `temperature: 0`. Salvo i
 |---|---|---|---|---|---|
 | `vocab-v1` | faster-whisper `medium` int8 | `.wav` | 5,6 s | codinome 93% · topônimo 71% · WER 21,6% | tabela |
 | `voz-v1` | qwen3.5:4b | transcrição | 0,8 s | codinome 87% · topônimo 87% | tabela |
+| **`voz-v2`** | qwen3.5:4b | transcrição | 0,9 s | **prioridade 24%** · codinome 90% · topônimo 69% | tabela |
 | `relato-v1` | qwen3.5:4b | relato do C2_B | 0,9 s | tipo 45% · prioridade 45% | snapshot `5302099064065083570` |
 | `relato-v2` | qwen3.5:4b | relato do C2_B | 0,8 s | tipo 73% · prioridade 45% | snapshot `218242516275008809` |
 | **`relato-v3`** | qwen3.5:4b | relato do C2_B | 0,9 s | **tipo 91% · prioridade 64%** | snapshot `1291687178912460115` |
 | `relato-v4` | qwen3.5:4b, 2 chamadas | relato do C2_B | 1,0 s | 300 respostas vazias | snapshot `843852446770918492` |
 | `relato-v5` | qwen3.5:4b, 2 chamadas | relato do C2_B | 11,1 s | tipo 91% · prioridade 77% | tabela |
 
-**Em uso na DAG: `vocab-v1`, `voz-v1` e `relato-v3`.** A v3 foi escolhida em 13/09 pela rapidez: a v5
+**Em uso na DAG: `vocab-v1`, `voz-v2` e `relato-v3`.** A v3 foi escolhida em 13/09 pela rapidez: a v5
 ganha 3 fatos de 22 na prioridade (intervalos de confiança sobrepostos) por ~12 vezes o tempo, e o
 objetivo do estudo é mostrar que o texto livre cruza com as outras fontes, não calibrar o prompt.
 
@@ -80,6 +81,48 @@ Devolva so um JSON com tres chaves:
   "texto": a mensagem sem o indicativo da estacao e sem as palavras de protocolo
 
 Regra rigida: codinome e referencia_local so podem conter texto que exista LITERALMENTE nas listas. Se o que foi dito nao estiver na lista, devolva null. Nunca escreva coordenadas, quadriculas ou nomes proprios que nao estejam listados.
+```
+
+---
+
+## `voz-v2` — a mesma tarefa, e a palavra-código de prioridade (EM USO)
+
+É a `voz-v1` com uma lista a mais, `PRIORIDADES`: só as palavras-código do rádio (*relâmpago*,
+*chuva*, *orvalho*). As palavras dos formulários ("Alta", "Normal") ficam de fora, para o modelo
+não ler "deslocamento normal" como prioridade.
+
+**A prioridade sai com erro, e fica assim de propósito** (decisão de 14/09). Amostra sobre as 150
+transcrições, contra a palavra falada no gabarito, com a mesma régua para as duas versões:
+
+| falado | áudios | certo | errado | vazio |
+|---|---|---|---|---|
+| relâmpago → URGENTE | 17 | 17 | 0 | 0 |
+| chuva → PRIORITÁRIO | 17 | 16 | 0 | 1 |
+| orvalho → ROTINA | 116 | 3 | 20 | 93 |
+
+Nessa régua, o codinome foi de 86% para 90% e o topônimo de 73% para 69% (a régua de 12/09, na
+tabela acima, dá outros números para a `voz-v1`). O transcritor nunca escreve "orvalho", e o modelo
+às vezes inventa outra palavra no lugar. Ver `ACHADOS.md`.
+
+A `voz-v1` continua em `EXTRACAO`: a v2 é uma linha nova sobre a mesma transcrição, e a Silver usa a
+interpretação mais recente de cada uma.
+
+```
+Voce le a transcricao de uma mensagem de radio militar. A transcricao TEM ERROS: nomes proprios saem trocados por palavras parecidas. Reconheca, apesar do erro, qual termo das listas abaixo foi dito.
+
+CODINOMES: barreira, bigorna, brasa, campo de minas, cavalo, celeiro, cratera, eixo de progressao, fosso anticarro, limite, linha de fase, linha de partida, martelo, objetivo, ponto de controle, potro, tambor, tordilho, zona de reuniao
+
+LUGARES: BR-154 km 0, BR-154 km 10, BR-154 km 100, BR-154 km 105, BR-154 km 110, BR-154 km 115, BR-154 km 120, BR-154 km 15, BR-154 km 20, BR-154 km 25, BR-154 km 30, BR-154 km 35, BR-154 km 40, BR-154 km 45, BR-154 km 5, BR-154 km 50, BR-154 km 55, BR-154 km 60, BR-154 km 65, BR-154 km 70, BR-154 km 75, BR-154 km 80, BR-154 km 85, BR-154 km 90, BR-154 km 95, Curva do Baru, Entroncamento BR-154 / VC-231, Fazenda Pau-Terra, Fazenda Sucupira, Morro da Barriguda, Morro do Jatoba, Nucleo Gonçalo-Alves, Nucleo Jatoba, Nucleo Mangaba, Nucleo Pequi, Ponte sobre o Corrego Aroeira, Ponte sobre o Corrego Pequi, Posto Mangaba, Povoado Barriguda, Povoado Cagaita, Povoado Pau-Terra, Povoado Sucupira, Quadricula 4471, Quadricula 4472, Quadricula 4473, Quadricula 4474, Quadricula 4571, Quadricula 4572, Quadricula 4573, Quadricula 4574, Quadricula 4671, Quadricula 4672, Quadricula 4673, Quadricula 4674, Represa da Copaiba, Serra da Cagaita, VC-231 km 0, VC-231 km 10, VC-231 km 15, VC-231 km 20, VC-231 km 25, VC-231 km 30, VC-231 km 35, VC-231 km 40, VC-231 km 5, Vau do Corrego Macauba, Vila Aroeira, Vila Baru, Vila Copaiba, Vila Macauba
+
+PRIORIDADES: chuva, orvalho, relampago
+
+Devolva so um JSON com quatro chaves:
+  "codinome": um termo COPIADO da lista CODINOMES, ou null se nenhum foi dito
+  "referencia_local": um nome COPIADO da lista LUGARES, ou null
+  "prioridade": o termo COPIADO da lista PRIORIDADES que foi dito, ou null se nenhum foi dito
+  "texto": a mensagem sem o indicativo da estacao e sem as palavras de protocolo
+
+Regra rigida: codinome, referencia_local e prioridade so podem conter texto que exista LITERALMENTE nas listas. Se o que foi dito nao estiver na lista, devolva null. Nunca escreva coordenadas, quadriculas ou nomes proprios que nao estejam listados.
 ```
 
 ---

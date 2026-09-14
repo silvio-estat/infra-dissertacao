@@ -938,6 +938,9 @@ def _origem_dos_campos_extraidos(spark, fonte):
     Aos campos que o modelo devolveu junta-se `texto_lido`: o que ele LEU, quando
     a leitura anterior foi um OCR. No informe do INTEL as paginas do OCR sao o
     corpo do documento, e o modelo nao as repete na resposta. Na voz fica vazio.
+
+    Trocar o pedido ao modelo gera uma interpretacao NOVA sobre a mesma leitura,
+    e a antiga continua na Bronze. Vale a mais recente de cada leitura (ORDEM = 1).
     """
     spark.sql(f"""
         SELECT a.ARQUIVO_IDT, r.RECEPCAO_IDT, i.EXTRACAO_IDT, r.RECEBIMENTO_DATA,
@@ -953,11 +956,14 @@ def _origem_dos_campos_extraidos(spark, fonte):
                nullif(concat_ws(' <- ',
                    CASE WHEN i.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', i.FERRAMENTA_NOME, i.MODELO_NOME) END,
                    CASE WHEN o.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', o.FERRAMENTA_NOME, o.MODELO_NOME) END), '') AS EXTRACAO_MODELO
-        FROM {CATALOGO}.bronze.EXTRACAO i
+        FROM (SELECT *, row_number() OVER (PARTITION BY EXTRACAO_ORIGEM_IDT
+                                           ORDER BY EXECUCAO_DATA DESC) AS ORDEM
+              FROM {CATALOGO}.bronze.EXTRACAO
+              WHERE EXTRACAO_ORIGEM_IDT IS NOT NULL AND STATUS_COD = 'OK') i
         JOIN {CATALOGO}.bronze.EXTRACAO o ON o.EXTRACAO_IDT = i.EXTRACAO_ORIGEM_IDT
         JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = i.ARQUIVO_IDT
         JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
-        WHERE i.EXTRACAO_ORIGEM_IDT IS NOT NULL AND i.STATUS_COD = 'OK'
+        WHERE i.ORDEM = 1
           AND r.SISTEMA_ORIGEM_COD = '{fonte}'
     """).createOrReplaceTempView("origem_bruta")
     total = spark.table("origem_bruta").count()
