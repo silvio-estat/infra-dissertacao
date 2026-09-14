@@ -461,7 +461,7 @@ entidades:
          descricao: "Extracao que produziu o dado: a leitura do binario, direta ou por IA. Segundo elo: leva ate a ferramenta, o modelo e a versao de prompt. Anda junto com ARQUIVO_IDT — todo evento que veio de arquivo passou por EXTRACAO (ARQUIVO -> EXTRACAO -> EVENTO); nulo so para as fontes JSON puras, que nao tem binario."}
       EXTRACAO_MODELO_NOME:
         {tipo: string, nulo: true,
-         descricao: "Modelo que extraiu o dado, repetido aqui de proposito para que a consulta mostre a origem sem precisar de juncao. Nulo quando nao houve modelo (leitura direta ou fonte JSON)."}
+         descricao: "A cadeia de ferramentas de IA por tras do evento, da ultima leitura para a primeira (ex.: 'ollama qwen3.5:4b <- faster-whisper 1.1.0 medium-int8'). E o AVISO para quem le: este dado passou por inferencia e deve ser conferido — a responsabilidade pela interpretacao continua sendo do militar. Preenchida pelo job, e nao pela receita, sempre que houve inferencia no caminho; nula na leitura direta (planilha) e nas fontes JSON. Repetida aqui de proposito, para aparecer sem juncao."}
 
   # ---------------------------------------------------------------------------
   SITUACAO_UNIDADE:

@@ -797,6 +797,7 @@ def _esquema_origem():
         StructField("CAPTURA_GEOMETRIA_WKT", texto), StructField("CAPTURA_DATA", TimestampType()),
         StructField("SIDECAR", mapa), StructField("CAMPOS", mapa),
         StructField("SOBRA_JSON", texto), StructField("FORMULARIO_VERSAO", texto),
+        StructField("EXTRACAO_MODELO", texto),
     ])
 
 
@@ -888,6 +889,7 @@ def _abrir_grade(registro, cabecalhos, principais, grafias=None, por_posicao=Fal
                 {k: str(v) for k, v in valores.items() if k in declarados},
                 _sobra_como_json(valores, declarados),
                 versao,
+                registro["EXTRACAO_MODELO"],
             ))
     return saida
 
@@ -945,7 +947,12 @@ def _origem_dos_campos_extraidos(spark, fonte):
                           map('texto_lido', array_join(
                               from_json(o.SAIDA_TXT, 'struct<paginas:array<string>>').paginas, '\\n'))) AS CAMPOS,
                CAST(NULL AS STRING) AS SOBRA_JSON,
-               CAST(NULL AS STRING) AS FORMULARIO_VERSAO
+               CAST(NULL AS STRING) AS FORMULARIO_VERSAO,
+               -- a cadeia de IA, da ultima leitura para a primeira: o modelo de
+               -- linguagem <- o transcritor ou o OCR que ele leu
+               nullif(concat_ws(' <- ',
+                   CASE WHEN i.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', i.FERRAMENTA_NOME, i.MODELO_NOME) END,
+                   CASE WHEN o.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', o.FERRAMENTA_NOME, o.MODELO_NOME) END), '') AS EXTRACAO_MODELO
         FROM {CATALOGO}.bronze.EXTRACAO i
         JOIN {CATALOGO}.bronze.EXTRACAO o ON o.EXTRACAO_IDT = i.EXTRACAO_ORIGEM_IDT
         JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = i.ARQUIVO_IDT
@@ -984,7 +991,8 @@ def _origem_do_payload(spark, fonte, tipo):
                CAST(NULL AS STRING) AS SOBRA_JSON,
                CAST(NULL AS STRING) AS FORMULARIO_VERSAO,
                a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
-               i.EXTRACAO_IDT
+               i.EXTRACAO_IDT,
+               CASE WHEN i.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', i.FERRAMENTA_NOME, i.MODELO_NOME) END AS EXTRACAO_MODELO
         FROM {CATALOGO}.bronze.RECEPCAO_BRUTA r
         LEFT JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = r.ARQUIVO_IDT
         -- a interpretacao do modelo de linguagem sobre ESTE registro, se houve.
@@ -1041,7 +1049,8 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
     grade = spark.sql(f"""
         SELECT e.EXTRACAO_IDT, e.SAIDA_TXT, a.ARQUIVO_IDT,
                r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA,
-               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA
+               a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
+               CASE WHEN e.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', e.FERRAMENTA_NOME, e.MODELO_NOME) END AS EXTRACAO_MODELO
         FROM {CATALOGO}.bronze.EXTRACAO e
         JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = e.ARQUIVO_IDT
         JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
@@ -1110,6 +1119,11 @@ def montar_select(modelo, fonte, tipo=None):
     for entrada, regra, coluna in derivados:
         projecoes[coluna] = _t_derivado(entrada, regra, ctx, coluna)
 
+    # A cadeia de IA por tras do evento vem do job, e nao da receita: nenhuma fonte com
+    # inferencia no caminho pode deixar de avisar quem le o dado que ele deve conferir.
+    if da_bronze_v3:
+        projecoes.setdefault("EXTRACAO_MODELO_NOME", "EXTRACAO_MODELO")
+
     # --- campos derivados: calculados a partir dos ja mapeados, nao vem da origem
     if {"SISTEMA_ORIGEM_COD", "REGISTRO_ORIGEM_COD", "OCORRENCIA_DATA"} <= set(projecoes):
         projecoes["EVENTO_IDT"] = (
@@ -1139,7 +1153,7 @@ def montar_select(modelo, fonte, tipo=None):
     if da_bronze_v3:
         # camada de baixo: cada campo lido de um mapa vira coluna simples
         fixas = ["ARQUIVO_IDT", "RECEPCAO_IDT", "EXTRACAO_IDT", "RECEBIMENTO_DATA",
-                 "SOBRA_JSON", "FORMULARIO_VERSAO", "CAPTURA_GEOMETRIA_WKT", "CAPTURA_DATA"]
+                 "SOBRA_JSON", "FORMULARIO_VERSAO", "CAPTURA_GEOMETRIA_WKT", "CAPTURA_DATA", "EXTRACAO_MODELO"]
         lidas = [f"{expressao} AS {apelido}" for apelido, expressao in sorted(ctx["origens"].items())]
         de = ("(SELECT " + ", ".join(fixas + lidas) + " FROM origem_bruta)")
         onde = ""
