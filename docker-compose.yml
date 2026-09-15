@@ -1,15 +1,20 @@
 ---
 # ============================================================
-# infra-dissertacao — Lakehouse Medallion PoC
+# infra-dissertacao — Lakehouse Medallion (estudo de caso)
 # Dissertação ARQ_TEMAC — Sistema C2 Exército Brasileiro
 # ============================================================
 #
-# Fase 1: Infraestrutura Lakehouse
-#   docker compose up -d
+# Passo a passo completo da primeira subida: README.md.
 #
-# Com governança (OpenMetadata):
-#   docker compose --profile governance up -d
+#   cp .env.example .env
+#   cp infra/openlineage/openlineage.yml.example infra/openlineage/openlineage.yml
+#   docker compose up -d          # sobe TUDO, inclusive o OpenMetadata
 #
+# Fora deste arquivo, na maquina (host):
+#   - Ollama com o modelo qwen3.5:4b — o modelo de linguagem das DAGs de
+#     extracao. Fica fora do Docker para poder usar a placa de video.
+#
+# Nunca `docker compose restart`: nao reaplica variaveis de ambiente.
 # ============================================================
 
 x-minio-env: &minio-env
@@ -43,6 +48,12 @@ x-airflow-common: &airflow-common
     OM_INGESTION_BOT_JWT: ${OM_INGESTION_BOT_JWT}
     OM_ADMIN_EMAIL: ${OM_ADMIN_EMAIL:-admin@open-metadata.org}
     DOCLING_URL: ${DOCLING_URL:-http://docling:5001}
+    # Ollama roda na maquina, fora do Docker. `host.docker.internal` e o nome
+    # com que o conteiner enxerga a maquina; a linha extra_hosts abaixo cria esse
+    # nome tambem no Docker Engine do Linux (no Docker Desktop ele ja existe).
+    OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - airflow_logs:/opt/airflow/logs
@@ -317,8 +328,10 @@ services:
     restart: unless-stopped
 
   # ===========================================================
-  # GOVERNANCE — OpenMetadata (perfil opcional)
-  # docker compose --profile governance up -d
+  # GOVERNANCE — OpenMetadata (+ Elasticsearch)
+  # Sobe junto com o resto: a linhagem e tese do trabalho, nao acessorio.
+  # Depois de um `docker compose down -v`, o token do ingestion-bot muda:
+  # regenerar OM_INGESTION_BOT_JWT (ver infra/openlineage/openlineage.yml.example).
   # ===========================================================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
