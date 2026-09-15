@@ -253,7 +253,16 @@ def _t_ts_iso(origem, regra, ctx, alvo=None):
 
 
 def _t_ts_br(origem, regra, ctx, alvo=None):
+    """Texto no formato brasileiro ('25/11/2024 14:09:32') -> instante.
+
+    `fuso` diz em que horario o texto foi escrito, quando ele nao traz fuso
+    ("-03:00" = Brasilia). Sem isso o Spark usa o fuso da sessao e le a hora local
+    como UTC: os eventos do C2_B ficaram 3 h adiantados ate 15/09/2026.
+    """
     formato = regra.get("formato", "dd/MM/yyyy HH:mm:ss")
+    if regra.get("fuso"):
+        fuso = regra["fuso"]
+        return f"to_timestamp(concat({origem}, ' {fuso}'), '{formato} XXX')"
     return f"to_timestamp({origem}, '{formato}')"
 
 

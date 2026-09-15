@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-14
+  atualizado_em: 2026-09-15
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -190,6 +190,13 @@ metadados:
     Gold usam as siglas do MD33-M-02 (revisto no mesmo dia: a primeira versao
     abreviava tambem os nomes); metas de indicador nao sao inventadas. Primeira
     visao construida: PITCIC.
+  nota_2026_09_15: >-
+    A hora do C2_B estava 3 h adiantada na Silver. O C2_B escreve data e hora em
+    horario de Brasilia sem fuso ('25/11/2024 14:09:32') e `ts_br` lia como UTC.
+    Achado ao validar a corroboracao da Gold-PITCIC contra o gabarito: relato e
+    radio do mesmo fato caiam 2h20 a 2h45 um do outro. `ts_br` passa a aceitar
+    `fuso`, e as duas receitas do C2_B declaram "-03:00". Os eventos antigos foram
+    apagados antes do reprocessamento, porque a hora entra no EVENTO_IDT.
 
 
 # =============================================================================
@@ -1047,7 +1054,7 @@ fontes:
         modalidade: TEXTO
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
-          data:        {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss"}
+          data:        {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss", fuso: "-03:00"}
           relator:     {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
                         busca: contido,
                         observacao: "'<posto> <funcao> <fracao> - <IDENTIDADE_MIL>': a sigla vem no MEIO do texto, entre o posto e a identidade. Tres siglas casam por conteudo (pelotao, companhia e batalhao, porque a sigla do pelotao termina com a das duas) — vale a MAIS LONGA, que e a mais especifica."}
@@ -1094,7 +1101,7 @@ fontes:
         sidecar: "o proprio registro JSON do incidente acompanha a foto (mesmo nome, .json)"
         campos:
           id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
-          data_hora:   {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss"}
+          data_hora:   {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss", fuso: "-03:00"}
           descricao:   {campo: RELATO_TXT, transformacao: direto, observacao: "texto curto do incidente, como o operador digitou"}
           prioridade:  {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade}
           c_op:        {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}

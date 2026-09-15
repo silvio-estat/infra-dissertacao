@@ -11,6 +11,30 @@ informações** e deixa a origem de cada valor rastreável para quem confere. Um
 acerto de 95% não é "a IA erra 5%"; é "o cruzamento que levaria horas sai em
 minutos, e os 5% são localizáveis".
 
+## Silver: a hora do C2_B ficou 3 horas adiantada (15/set/2026)
+
+- **Achado ao validar a corroboração da Gold-PITCIC contra o gabarito.** Dos 9
+  fatos relatados por várias fontes que a Gold não confirmou, 5 tinham o relato
+  do C2_B de 2h20 a 2h45 **antes** do fato, sempre na mesma direção.
+- **Causa:** o gerador escreve a hora do C2_B em horário de Brasília, sem fuso
+  (`"data": "25/11/2024 14:09:32"`, e o texto diz "As 1354"). A transformação
+  `ts_br` faz `to_timestamp` sem fuso, e o Spark lê como UTC. Os **403 eventos do
+  C2_B** (300 relatos, `data`; 103 incidentes, `data_hora`) estão 3 h adiantados
+  na Silver. As demais fontes escrevem ISO com fuso (`Z`) e estão certas.
+- **Corrigido no mesmo dia:** `fuso: "-03:00"` nas duas receitas (a transformação
+  `ts_br` passou a aceitá-lo). Os 403 eventos antigos foram apagados antes do
+  reprocessamento, porque a hora entra no `EVENTO_IDT` e o `MERGE` inseriria
+  linhas novas ao lado das velhas. Nenhuma IA rodou de novo: as interpretações
+  estão na Bronze. O relato do exemplo passou de 14:09 para 17:09 UTC.
+- **Lição:** data em texto sem fuso é ambígua. É o terceiro caso do mesmo
+  problema: o INTEL (hora do corpo em UTC) e o FOGOS (grupo data-hora local)
+  foram os outros.
+- **Validação da corroboração (Gold-PITCIC, 2 km / 60 min), antes → depois da
+  correção:** linhas corroboradas que correspondem a um fato real, 30/30 → 38/38;
+  fatos de várias fontes reconhecidos, 14/23 → **17/23**; fatos de fonte única
+  marcados como corroborados, 0/4 → 0/4. As 6 perdas que sobraram são erros de
+  leitura da IA, por fonte: tipo errado (4) e lugar errado na transcrição (3).
+
 ## Abreviaturas fora do MD33-M-02 (14/set/2026)
 
 - **O Relatório de Bombardeio sintético escreve o armamento inimigo como
