@@ -180,6 +180,17 @@ metadados:
     fica declarada; a arquitetura recebe a fonte quando ela existir, por um bloco
     em `fontes`, sem mudar tabela.
 
+    Ainda em 14/09, a Gold. Quatro visoes (COC, PITCIC, PPCOT, Avaliacao), cada uma
+    UMA tabela na camada gold, com os elementos do processo empilhados pelas
+    fases doutrinarias; todas saem da mesma Silver e a sobreposicao entre elas e
+    desejada (os produtos do PITCIC alimentam o exame de situacao do PPCOT).
+    Decisoes do usuario: Spark escreve a Gold (Trino so consulta), com as contas
+    geograficas em funcoes Python no proprio job, sem biblioteca nova; nomes de
+    coluna seguem o IR 14-06 em todas as camadas, e so os VALORES das celulas da
+    Gold usam as siglas do MD33-M-02 (revisto no mesmo dia: a primeira versao
+    abreviava tambem os nomes); metas de indicador nao sao inventadas. Primeira
+    visao construida: PITCIC.
+
 
 # =============================================================================
 # DOMINIOS — listas de valores permitidos
@@ -601,7 +612,7 @@ entidades:
       hora; aqui fica o que permite a Gold dizer QUAL medida — e comparar a
       posicao da tropa com o objetivo O7 e o que torna possivel a comparacao
       entre o planejado e o atual.
-    abreviatura: MCC
+    abreviatura: MDD      # Medida = Mdd no MD33-M-02. MCC nao: la e Centro de Controle da Missao
     camada: silver
     chave: [EVENTO_IDT]
     campos:
@@ -839,6 +850,54 @@ entidades:
       TERMO_NOME:       {tipo: string, nulo: false, descricao: "Termo por extenso. Ex.: 'Viatura', 'Efetivo', 'Fuzil'."}
       SINONIMO_TXT:     {tipo: string, nulo: true, descricao: Outras grafias aceitas para o mesmo termo.}
       ORIGEM_COD:       {tipo: string, nulo: true, descricao: "Procedencia da abreviatura: capitulo do MD33-M-02 ou proposta a catalogar."}
+
+  # ---------------------------------------------------------------------------
+  # GOLD — uma tabela por visao doutrinaria, reescrita inteira a partir da
+  # Silver pelo job gold_visoes.py (parametros em `visoes:`, no fim do arquivo).
+  # Nomes de coluna seguem o IR 14-06, como em todo o modelo; os VALORES das
+  # celulas usam as siglas do MD33-M-02 (visoes.siglas): e o que o militar le.
+  # ---------------------------------------------------------------------------
+  PITCIC:
+    descricao: >-
+      Produtos do Processo de Integracao Terreno, Condicoes Meteorologicas,
+      Inimigo e Consideracoes Civis (EB70-MC-10.336) que os dados permitem
+      montar, empilhados pelas fases: uma linha por ELEMENTO (lugar, limite,
+      localidade, via, obstaculo, evento da ameaca, atividade por lugar e
+      periodo), com FASE_NRO e ETAPA_COD dizendo a que fase e etapa pertence.
+      Os graos se misturam: filtrar por fase ou elemento antes de contar ou somar.
+      Colunas que nao se aplicam a etapa ficam vazias. Nao entram os produtos
+      que sao analise do estado-maior (modelos e linhas de acao da ameaca,
+      pontos de decisao, area de interesse), nem condicoes meteorologicas, que
+      nao tem fonte no estudo.
+    abreviatura: PITCIC
+    camada: gold
+    chave: [FASE_NRO, ETAPA_COD, ELEMENTO_TIPO_COD, ELEMENTO_NOME, INICIO_DATA]
+    campos:
+      FASE_NRO:      {tipo: int, nulo: false, descricao: "Fase do PITCIC: 1 ambiente operacional, 2 efeitos do ambiente, 3 avaliacao da ameaca, 4 linhas de acao da ameaca."}
+      ETAPA_COD:     {tipo: string, nulo: false, descricao: "Etapa dentro da fase, em sigla do MD33-M-02 quando existe: Crtr Sgf, Z Ac, Cnsd Civ, VA, Rest Mov, DiCoVAP, Atv."}
+      ELEMENTO_TIPO_COD: {tipo: string, nulo: false, descricao: "O que a linha e, em sigla: A Op, Loc, Lim, Rdv, E Prog, Obt, Incid, Amc, Atv, Avistamento."}
+      ELEMENTO_NOME: {tipo: string, nulo: true, descricao: "Nome do elemento: o lugar, a medida desenhada no mapa ou, na fase 4, lugar e periodo."}
+      ELEMENTO_DCRI: {tipo: string, nulo: true, descricao: "Descricao curta: tipo do lugar, observacao do obstaculo, trecho do relato. No informe do INTEL, o paragrafo 1."}
+      OPERACAO_COD:  {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao. Recorte de toda visao."}
+      GEOMETRIA_WKT: {tipo: string, nulo: true, descricao: "Onde, em Well-Known Text: ponto, linha (limite, eixo, rodovia) ou area."}
+      LOCAL_REFERENCIA_NOME: {tipo: string, nulo: true, descricao: "Lugar de referencia mais proximo (REF_GAZETTEER): e por ele que o oficial de inteligencia casa o evento com as RIPI do calco."}
+      LOCAL_REFERENCIA_TIPO_COD: {tipo: string, nulo: true, descricao: "Tipo do lugar de referencia, em sigla: Ponto notavel, Loc, Rdv km."}
+      LOCAL_DISTANCIA_METRO: {tipo: double, nulo: true, descricao: "Distancia do evento ao lugar de referencia."}
+      INICIO_DATA:   {tipo: timestamp, nulo: true, descricao: "Hora do evento, ou a primeira do grupo."}
+      FIM_DATA:      {tipo: timestamp, nulo: true, descricao: "Ultima hora do grupo, ou fim da operacao."}
+      UNIDADE_COD:   {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade que reportou, ou que desenhou a medida."}
+      TIPO_TXT:      {tipo: string, nulo: true, descricao: "Tipo do evento, ou os tipos do grupo, em sigla: Avistamento Ini, Bomb Ini, Incid, Obt."}
+      EVENTO_QNT:    {tipo: int, nulo: true, descricao: "Eventos por tras da linha. Na fase 3, o proprio evento mais os que o corroboram."}
+      FONTE_QNT:     {tipo: int, nulo: true, descricao: "Fontes (sistemas de origem) diferentes. Na fase 3 e a CORROBORACAO: quantas fontes independentes relatam a ameaca no mesmo lugar e hora (parametros em visoes.PITCIC)."}
+      MODALIDADE_TXT: {tipo: string, nulo: true, descricao: "Formas em que os dados chegaram (JSON, TEXTO, IMAGEM, PLANILHA, PDF, AUDIO): o cruzamento de tipos diferentes que a tese demonstra."}
+      FONTE_CONFIABILIDADE_COD: {tipo: string, nulo: true, dominio: confiabilidade, descricao: "Confiabilidade da fonte, quando o documento a traz (informe do INTEL)."}
+      INFO_CREDIBILIDADE_COD: {tipo: string, nulo: true, dominio: credibilidade, descricao: "Credibilidade da informacao, quando o documento a traz."}
+      ARMA_QNT:      {tipo: int, nulo: true, descricao: "Quantidade de armas inimigas lida do Relatorio de Bombardeio ('2/Ob/Me' -> 2)."}
+      ARMA_TIPO_COD: {tipo: string, nulo: true, descricao: "Tipo da arma COMO FOI LIDO (Mrt, Can, Fgt, Ob). Nao e traduzido: o gerador escreve Ob para obus, e no manual Ob e Obras."}
+      ARMA_CALIBRE_COD: {tipo: string, nulo: true, descricao: "Calibre como foi lido: L, Me, P."}
+      EXTRACAO_MODELO_NOME: {tipo: string, nulo: true, descricao: "Cadeia de IA por tras do dado, quando houve: o aviso para conferir."}
+      EVENTO_IDT:    {tipo: "array<string>", nulo: true, descricao: "Eventos da Silver por tras da linha: o caminho de volta ate o arquivo bruto."}
+      ATUALIZACAO_DATA: {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
 
 
 # =============================================================================
@@ -1347,6 +1406,92 @@ fontes:
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
                         observacao: "resolve para N. Radio e MEIO de transmissao de C2, nao sistema de informacao que registre o processo de estado-maior — mesma razao pela qual o documento avulso tambem nao conta."}
         extraidos_por_llm: [PRIORIDADE_COD, FUNCAO_COMBATE_COD]
+
+
+# =============================================================================
+# VISOES — a Gold
+# =============================================================================
+# Cada visao e uma tabela declarada em `entidades` (camada gold) e reescrita
+# inteira pelo job gold_visoes.py a partir da Silver. Aqui ficam os parametros
+# que mudam o resultado, para estarem a vista e nao escondidos no codigo.
+# =============================================================================
+
+visoes:
+
+  fuso: America/Sao_Paulo      # dia e periodo sao os do horario local da operacao
+
+  # Valores exibidos na Gold -> sigla do MD33-M-02, conferida no PDF (ver
+  # ir_14_06/abreviaturas.csv). Sem sigla no manual, fica por extenso. LF e MCC
+  # nao entram: no manual sao Linha de Fogo e Centro de Controle da Missao.
+  siglas:
+    # etapas do PITCIC
+    CARACTERISTICAS: Crtr Sgf
+    ZONA_ACAO: Z Aç
+    CONSIDERACOES_CIVIS: Cnsd Civ
+    VIAS_ACESSO: VA
+    RESTRICOES_MOVIMENTO: Rest Mov
+    DICOVAP: DiCoVAP             # sigla do proprio EB70-MC-10.336, sem verbete no MD33-M-02
+    ATIVIDADE: Atv
+    # elementos
+    AREA_OPERACAO: A Op
+    LUGAR: Loc
+    LOCALIDADE: Loc
+    LIMITE: Lim
+    RODOVIA: Rdv
+    EIXO_PROGRESSAO: E Prog
+    OBSTACULO: Obt
+    INCIDENTE: Incid
+    AMEACA: Amç
+    AVISTAMENTO: Avistamento
+    # tipos de evento
+    AVISTAMENTO_INIMIGO: Avistamento Ini
+    BOMBARDEIO_INIMIGO: Bomb Ini
+    MISSAO_TIRO: Mis Tir
+    POSICAO: Pos
+    MCC: Medida de coordenação e controle
+    SITUACAO_UNIDADE: Sit U
+    # especies de medida desenhada no mapa
+    LINHA_FASE: Linha de fase
+    LINHA_PARTIDA: LP
+    PONTO_CONTROLE: PCt
+    ZONA_REUNIAO: Z Reu
+    OBJETIVO: Obj
+    BARREIRA: Bar
+    FOSSO_ANTICARRO: Fosso AC
+    CAMPO_MINAS: C Min
+    CRATERA: Crat
+    # tipos de lugar de referencia
+    PONTO_NOTAVEL: Ponto notável
+    RODOVIA_KM: Rdv km
+    QUADRICULA: Quadrícula
+    # periodos do dia
+    MADRUGADA: Madrugada
+    MANHA: Manhã
+    TARDE: Tarde
+    NOITE: Noite
+
+  PITCIC:
+    tabela: PITCIC
+    le: [silver.EVENTO, silver.MEDIDA_COORDENACAO, silver.REF_GAZETTEER, silver.REF_OPERACAO]
+    ameaca_tipos: [AVISTAMENTO_INIMIGO, BOMBARDEIO_INIMIGO]
+    # lugares que servem de referencia para dizer onde foi (a quadricula e grossa demais)
+    lugar_referencia_tipos: [PONTO_NOTAVEL, LOCALIDADE, RODOVIA_KM]
+    corroboracao:
+      raio_metro: 2000
+      janela_segundos: 3600
+      observacao: >-
+        Duas fontes DIFERENTES relatando a ameaca a ate 2 km e 60 min uma da outra
+        contam como o mesmo fato. Decisao do usuario (14/09); mudar aqui muda a
+        coluna FONTE_QNT da fase 3.
+    localidade_raio_metro: 1000   # consideracoes civis: eventos a ate 1 km da localidade
+    # Incidente que restringe o movimento, por palavra do relato (regra fixa, sem IA).
+    # 'via' so como palavra inteira, para nao pegar 'viatura'.
+    restricao_movimento_palavras: ["\\bvia\\b", pista, estrada, obstru, atolad, interromp, capacidade reduzida]
+    periodos:                     # fase 4: atividade agrupada por lugar e periodo do dia
+      - {nome: MADRUGADA, ate_hora: 6}
+      - {nome: MANHA, ate_hora: 12}
+      - {nome: TARDE, ate_hora: 18}
+      - {nome: NOITE, ate_hora: 24}
 
 
 # =============================================================================

@@ -11,6 +11,38 @@ informações** e deixa a origem de cada valor rastreável para quem confere. Um
 acerto de 95% não é "a IA erra 5%"; é "o cruzamento que levaria horas sai em
 minutos, e os 5% são localizáveis".
 
+## Abreviaturas fora do MD33-M-02 (14/set/2026)
+
+- **O Relatório de Bombardeio sintético escreve o armamento inimigo como
+  "2/Ob/Me", e "Ob" não é obus.** No MD33-M-02, obus é **"O", e somente em
+  conjunto** ("Bia O" = Bateria de Obuses); **"Ob" é Obras**. As demais
+  abreviaturas do gerador batem com o manual: Mrt (morteiro), Can (canhão),
+  Fgt (foguete), Me (médio, como em "P Me"), L (leve) e P (forma de uma letra de
+  Pesado, "Pdo").
+- **Consequência:** traduzir o código pelo dicionário (`REF_ABREVIATURA`, semeado
+  do próprio manual) daria "2 Obras médias". A Gold guarda o código **como foi
+  lido**, sem traduzir. É o mesmo tipo de armadilha de `Fz`/`Fuz`: erro
+  semântico, não ortográfico.
+- Correção possível no gerador (`scripts/geradores/gerar_fogos.py`, lista
+  `ARMAMENTO`), mas exigiria regerar os PDFs e reler tudo pelo Docling. Fica
+  registrado.
+- **Outras colisões, achadas ao escolher as siglas dos valores da Gold:**
+  - **LF** é Linha de **Fogo** no MD33-M-02, e o gerador do C2_A chama as linhas
+    de fase de "LF AMBAR". O nome desenhado fica como veio; a Gold não cria sigla
+    para linha de fase.
+  - **MCC** é Centro de Controle da **Missão** no manual, e o modelo usa MCC como
+    tipo de evento para medida de coordenação e controle. Na Silver fica (camada
+    técnica); na Gold, o valor sai por extenso.
+- **Nome de coluna não é valor de célula.** A primeira versão da Gold abreviou
+  também os nomes de coluna pelo manual (`OP_COD`, `LOC_RFR_NOME`), e esbarrou em
+  ambiguidades de caixa como a do `Nr`/`NR`: `IN` é Instrução Normativa, e `A` é
+  Arma e também Área. Decisão revista no mesmo dia: nome de coluna segue o
+  IR 14-06 em todas as camadas; só o valor das células da Gold usa o MD33-M-02.
+- **O dicionário extraído do PDF tem linhas embaralhadas.** Ameaça saiu como
+  "Amg" (que é Amiga; o certo é "Amç") e Ocorrência veio misturada com Obtenção
+  e Obus. `REF_ABREVIATURA` é semeada desse arquivo e alimenta a transformação
+  `abreviatura` da Silver: cada sigla usada precisa ser conferida no PDF.
+
 ## Prioridade da voz: a palavra que o rádio perde (14/set/2026)
 
 Decisão: **a prioridade vem da IA, com o erro que ela tiver.** O pedido `voz-v2`
