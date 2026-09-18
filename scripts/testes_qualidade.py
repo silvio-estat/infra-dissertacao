@@ -16,7 +16,7 @@ OpenMetadata nao os leva embora.
     python3 scripts/testes_qualidade.py            # cria (ou atualiza) os sete
     python3 scripts/testes_qualidade.py --listar   # so mostra o que existe hoje
 
-Depois de criar, quem EXECUTA os testes e a DAG dag_trino_governance (tarefa
+Depois de criar, quem EXECUTA os testes e a DAG 5_governanca (tarefa
 data_quality), ou o botao "Run Now" na tela.
 """
 import argparse
@@ -203,7 +203,7 @@ def main():
     for teste in TESTES:
         print(" ", criar(teste))
     print(f"\n{len(TESTES)} testes declarados. Para executa-los:\n"
-          f"  docker exec dlh_airflow_scheduler airflow dags trigger dag_trino_governance")
+          f"  docker exec dlh_airflow_scheduler airflow dags trigger 5_governanca")
 
 
 if __name__ == "__main__":

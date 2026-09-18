@@ -247,7 +247,7 @@ Credenciais de desenvolvimento local: `.env.example`.
 | `4_gold_visoes` | uma tarefa por visão; reescreve a tabela inteira a partir da Silver (hoje: `pitcic`). Nomes de coluna pelo IR 14-06; valores das células com as siglas do MD33-M-02 |
 | `5_governanca` | OpenMetadata: metadados → perfil → qualidade → amostra |
 | `trino_lakehouse_metadata`, `_profiler`, `trino_sample_data_collector` | usadas pela tela do OpenMetadata, que as procura por esse nome |
-| `dag_ingestao_bronze`, `dag_silver_transform`, `dag_gold_refresh`, `dag_iceberg_maintenance`, `dag_benchmark_escalabilidade` | **fase anterior do projeto: mantenha pausadas** |
+| `dag_iceberg_maintenance` | manutenção das tabelas Iceberg: expira snapshot velho, apaga arquivo órfão, reagrupa manifestos, compacta arquivos pequenos. Diária às 02:00; a lista de tabelas sai do modelo canônico |
 
 ---
 
@@ -293,6 +293,7 @@ spark/jobs/
   ingestao_bronze.py        landing/ -> RECEPCAO_BRUTA + ARQUIVO
   canonico_para_silver.py   --ddl, --seeds e o de/para Bronze -> Silver
   gold_visoes.py            as visões da Gold (Silver -> Gold)
+  iceberg_maintenance.py    manutenção das tabelas (expire, orphan, manifests, compaction)
 scripts/
   geradores/                geradores dos dados sintéticos, um por fonte
   governanca/               provisionamento do glossário no OpenMetadata
@@ -304,5 +305,5 @@ relatorios/                 guias do OpenMetadata e histórico (os relatórios c
 ```
 
 Arquivos da fase anterior, mantidos só como histórico: `scripts/gerar_dados.py`,
-`scripts/coletar_metricas_gqm.py`, `spark/jobs/bronze_ingestor.py`, `bronze_to_silver.py`,
-`silver_to_gold.py` e `setup_venv.sh`.
+`scripts/coletar_metricas_gqm.py` e `setup_venv.sh` — os três leem tabelas (`bronze.dados`,
+`silver.gps`, `gold.coc`) que não existem mais no modelo canônico v3.

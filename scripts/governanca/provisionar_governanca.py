@@ -322,7 +322,7 @@ def aplicar_certificacao(servico: str, dry_run: bool) -> None:
     tabelas = listar_tabelas(servico)
     if not tabelas:
         print(f"  Nenhuma tabela encontrada no servico '{servico}'.")
-        print("  Rode antes a ingestao de metadados (dag_trino_governance).")
+        print("  Rode antes a ingestao de metadados (DAG 5_governanca).")
         return
 
     aplicadas = ignoradas = inalteradas = 0

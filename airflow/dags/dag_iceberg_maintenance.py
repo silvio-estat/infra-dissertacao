@@ -1,11 +1,20 @@
 """
-DAG: Manutenção Iceberg
-Executa operações periódicas de manutenção das tabelas Iceberg:
-- expire_snapshots: remove snapshots antigos
-- remove_orphan_files: limpa arquivos sem referência nos manifestos
-- rewrite_manifests: otimiza os arquivos de manifesto
-- rewrite_data_files: compacta small files (compaction)
-Agendamento: diário às 02:00.
+DAG manutencao — arruma as tabelas Iceberg por dentro. Nao move dado.
+
+    expire_snapshots ──► remove_orphan_files ──► rewrite_manifests ──► compaction_small_files
+
+Uma tabela Iceberg e um monte de arquivos Parquet no MinIO mais um indice
+(os manifestos) dizendo quais deles formam a versao atual. Cada escrita cria
+uma versao nova — um snapshot — e guarda a anterior. Isso e o que permite
+consultar a tabela como ela estava ontem, mas cobra espaco. As quatro tarefas,
+em ordem: apagar snapshot velho, apagar arquivo que sobrou sem dono, reagrupar
+o indice e juntar arquivos pequenos em grandes.
+
+Em serie porque o worker Spark e um so, e nesta ordem porque cada uma limpa o
+que a anterior deixou solto.
+
+As tabelas nao estao listadas aqui: o job as tira da secao `entidades` do modelo
+canonico. Tabela que ainda nao existe vira SKIP no log, nao erro.
 """
 from __future__ import annotations
 
@@ -21,29 +30,35 @@ default_args = {
     "email_on_failure": False,
 }
 
-# Construção dinâmica do comando Spark Submit para herdar credenciais do ambiente
+# O driver do spark-submit roda DENTRO do Airflow, que nao tem o
+# spark-defaults.conf da imagem do Spark — por isso tudo o que aquele arquivo
+# ajusta esta repetido aqui (ver o comentario longo em 3_silver_evento.py).
 SPARK_MAINT = (
-    f"spark-submit "
-    f"--master spark://spark-master:7077 "
-    f"--conf spark.cores.max=1 "
-    f"--conf spark.executor.cores=1 "
-    f"--conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions "
-    f"--conf spark.sql.catalog.lakehouse=org.apache.iceberg.spark.SparkCatalog "
-    f"--conf spark.sql.catalog.lakehouse.type=hive "
-    f"--conf spark.sql.catalog.lakehouse.uri=thrift://hive-metastore:9083 "
-    f"--conf spark.sql.catalog.lakehouse.warehouse=s3a://lakehouse/warehouse "
-    f"--conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 "
-    f"--conf spark.hadoop.fs.s3a.path.style.access=true "
+    "spark-submit "
+    "--master spark://spark-master:7077 "
+    "--conf spark.cores.max=1 "
+    "--conf spark.executor.cores=1 "
+    "--conf spark.executor.memory=4g "
+    "--conf spark.driver.memory=2g "
+    "--conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions "
+    "--conf spark.sql.catalog.lakehouse=org.apache.iceberg.spark.SparkCatalog "
+    "--conf spark.sql.catalog.lakehouse.type=hive "
+    "--conf spark.sql.catalog.lakehouse.uri=thrift://hive-metastore:9083 "
+    "--conf spark.sql.catalog.lakehouse.warehouse=s3a://lakehouse/warehouse "
+    "--conf spark.sql.catalog.lakehouse.io-impl=org.apache.iceberg.hadoop.HadoopFileIO "
+    "--conf spark.sql.iceberg.vectorization.enabled=false "
+    "--conf spark.sql.shuffle.partitions=4 "
+    "--conf spark.default.parallelism=4 "
+    "--conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 "
+    "--conf spark.hadoop.fs.s3a.path.style.access=true "
+    "--conf spark.hadoop.fs.s3a.connection.ssl.enabled=false "
     f"--conf spark.hadoop.fs.s3a.access.key={os.environ.get('MINIO_ROOT_USER', '')} "
     f"--conf spark.hadoop.fs.s3a.secret.key={os.environ.get('MINIO_ROOT_PASSWORD', '')} "
-    f"--conf spark.extraListeners=io.openlineage.spark.agent.OpenLineageSparkListener "
 )
-
-TABELAS = ["lakehouse.bronze.dados", "lakehouse.silver.dados", "lakehouse.gold.posicionamento_atual"]
 
 with DAG(
     dag_id="dag_iceberg_maintenance",
-    description="Manutenção periódica das tabelas Iceberg (expire, compact, rewrite)",
+    description="Manutencao periodica das tabelas Iceberg (expire, compact, rewrite)",
     schedule="0 2 * * *",
     start_date=datetime(2026, 4, 27),
     catchup=False,
