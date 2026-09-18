@@ -258,7 +258,136 @@ def montar_pitcic(modelo):
     return apoio, "\nUNION ALL\n".join(f"({b})" for b in blocos)
 
 
-VISOES = {"pitcic": montar_pitcic}
+# =============================================================================
+# PROBLEMA_DADOS — o que chegou errado e o que nao chegou
+# =============================================================================
+
+def montar_problema_dados(modelo):
+    """Devolve (visoes_de_apoio, consulta_final).
+
+    Quatro blocos, um por especie de problema, do mais visivel ao menos:
+
+        CHEGOU_QUEBRADO        o arquivo chegou e nao pode sequer ser aberto
+        SEM_SIDECAR            o binario chegou sem o .json que o descreve
+        SIDECAR_SEM_ARQUIVO    o .json chegou e o binario nao
+        NAO_CHEGOU             a OM nao remeteu um turno que a cadencia previa
+        INCOMPLETO_NO_ARQUIVO  a remessa chegou faltando subunidade
+
+    Os tres primeiros se veem so olhando a Bronze. Os dois ultimos NAO se veem no
+    dado: precisam da expectativa declarada — a cadencia em visoes.PROBLEMA_DADOS
+    e a ordem de batalha em REF_UNIDADE. E a diferenca entre "falta informacao" e
+    "falta o RELPER da 2a Cia, turno da tarde de 27/11".
+
+    O mesmo SQL esta em scripts/testes_qualidade.py, como teste. La ele avisa;
+    aqui ele detalha.
+    """
+    v = modelo["visoes"]["PROBLEMA_DADOS"]
+    colunas = [(c, _TIPOS[s["tipo"]]) for c, s in modelo["entidades"][v["tabela"]]["campos"].items()]
+    com_binario = ", ".join(_texto(f) for f in v["fontes_com_binario"])
+    turnos = ", ".join(_texto(t) for t in v["relper_turnos"])
+    regra = lambda nome: _texto(nome)                # o teste de qualidade que acha o mesmo
+
+    apoio = [
+        # uma linha por (OM, dia, turno, subunidade) que EFETIVAMENTE chegou
+        ("remessa", f"""
+            SELECT u.SUPERIOR_COD AS OM_COD, to_date(e.OCORRENCIA_DATA) AS DIA, s.TURNO_COD,
+                   e.UNIDADE_REPORTANTE_COD AS UNIDADE_COD, max(e.OPERACAO_COD) AS OPERACAO_COD
+            FROM {SILVER}.EVENTO e
+            JOIN {SILVER}.SITUACAO_UNIDADE s ON s.EVENTO_IDT = e.EVENTO_IDT
+            JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
+            GROUP BY 1, 2, 3, 4"""),
+        ("turno_chegou", "SELECT OM_COD, DIA, TURNO_COD, max(OPERACAO_COD) AS OPERACAO_COD "
+                         "FROM remessa GROUP BY 1, 2, 3"),
+        ("op", "SELECT max(OPERACAO_COD) AS OPERACAO_COD FROM remessa"),
+        # a janela e a OBSERVADA, da primeira a ultima remessa: ver visoes.PROBLEMA_DADOS
+        ("dia", "SELECT explode(sequence(min(DIA), max(DIA), interval 1 day)) AS DIA FROM remessa"),
+        # o que DEVERIA ter chegado: cada OM, em cada dia, nos turnos da cadencia
+        ("esperado", f"""
+            SELECT o.OM_COD, d.DIA, t.TURNO_COD
+            FROM (SELECT DISTINCT OM_COD FROM remessa) o
+            CROSS JOIN dia d
+            CROSS JOIN (SELECT explode(array({turnos})) AS TURNO_COD) t"""),
+        # quem preenche uma linha do RELPER: as SU da OM; se a OM nao tem SU, as fracoes diretas
+        ("unidade_esperada", f"""
+            SELECT f.SUPERIOR_COD AS OM_COD, f.UNIDADE_COD
+            FROM {SILVER}.REF_UNIDADE f
+            JOIN {SILVER}.REF_UNIDADE o ON o.UNIDADE_COD = f.SUPERIOR_COD AND o.ESCALAO_COD = 'OM'
+            WHERE f.ESCALAO_COD = 'SU'
+               OR f.SUPERIOR_COD NOT IN (SELECT DISTINCT SUPERIOR_COD FROM {SILVER}.REF_UNIDADE
+                                         WHERE ESCALAO_COD = 'SU' AND SUPERIOR_COD IS NOT NULL)"""),
+    ]
+
+    blocos = [
+        # 1. binario sem sidecar. A fonte fica vazia: quem a declarava era o sidecar
+        # que se perdeu. O endereco em OBJETO_TXT ainda mostra de que pasta veio.
+        _bloco(colunas, f"""
+            SELECT a.ARQUIVO_URI_TXT, a.ARQUIVO_IDT, a.MODALIDADE_COD, a.OPERACAO_COD
+            FROM {CATALOGO}.bronze.ARQUIVO a
+            LEFT JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
+            WHERE r.RECEPCAO_IDT IS NULL""",
+               PROBLEMA_TIPO_COD=_texto("SEM_SIDECAR"), OPERACAO_COD="OPERACAO_COD",
+               MODALIDADE_COD="MODALIDADE_COD", OBJETO_TXT="ARQUIVO_URI_TXT",
+               OBJETO_IDT="ARQUIVO_IDT", DETECCAO_REGRA_TXT=regra("arquivo_tem_sidecar")),
+
+        # 2. sidecar sem binario. So vale para as fontes que SEMPRE trazem arquivo:
+        # no C2_A e no relato do C2_B, ARQUIVO_IDT vazio e o normal.
+        _bloco(colunas, f"""
+            SELECT ORIGEM_URI_TXT, RECEPCAO_IDT, SISTEMA_ORIGEM_COD, MODALIDADE_COD, OPERACAO_COD
+            FROM {CATALOGO}.bronze.RECEPCAO_BRUTA
+            WHERE SISTEMA_ORIGEM_COD IN ({com_binario}) AND ARQUIVO_IDT IS NULL""",
+               PROBLEMA_TIPO_COD=_texto("SIDECAR_SEM_ARQUIVO"), OPERACAO_COD="OPERACAO_COD",
+               SISTEMA_ORIGEM_COD="SISTEMA_ORIGEM_COD", MODALIDADE_COD="MODALIDADE_COD",
+               OBJETO_TXT="ORIGEM_URI_TXT", OBJETO_IDT="RECEPCAO_IDT",
+               DETECCAO_REGRA_TXT=regra("sidecar_achou_seu_binario")),
+
+        # 3. a OM nao remeteu o turno. Nao ha arquivo a nomear: quem identifica o
+        # que falta e a unidade, o dia e o turno.
+        _bloco(colunas, """
+            SELECT e.OM_COD, e.DIA, e.TURNO_COD, op.OPERACAO_COD
+            FROM esperado e
+            CROSS JOIN op
+            LEFT JOIN turno_chegou c
+              ON c.OM_COD = e.OM_COD AND c.DIA = e.DIA AND c.TURNO_COD = e.TURNO_COD
+            WHERE c.OM_COD IS NULL""",
+               PROBLEMA_TIPO_COD=_texto("NAO_CHEGOU"), OPERACAO_COD="OPERACAO_COD",
+               SISTEMA_ORIGEM_COD=_texto("RELPER"), MODALIDADE_COD=_texto("PLANILHA"),
+               UNIDADE_COD="OM_COD", REFERENCIA_DATA="DIA", TURNO_COD="TURNO_COD",
+               DETECCAO_REGRA_TXT=regra("relper_turno_remetido")),
+
+        # 4. a remessa chegou, mas sem todas as subunidades da OM. Aqui a unidade
+        # que falta e a SUBUNIDADE, e nao a OM: e ela que o EM vai cobrar.
+        _bloco(colunas, """
+            SELECT t.OM_COD, t.DIA, t.TURNO_COD, x.UNIDADE_COD, t.OPERACAO_COD
+            FROM turno_chegou t
+            JOIN unidade_esperada x ON x.OM_COD = t.OM_COD
+            LEFT JOIN remessa r
+              ON r.OM_COD = t.OM_COD AND r.DIA = t.DIA AND r.TURNO_COD = t.TURNO_COD
+             AND r.UNIDADE_COD = x.UNIDADE_COD
+            WHERE r.UNIDADE_COD IS NULL""",
+               PROBLEMA_TIPO_COD=_texto("INCOMPLETO_NO_ARQUIVO"), OPERACAO_COD="OPERACAO_COD",
+               SISTEMA_ORIGEM_COD=_texto("RELPER"), MODALIDADE_COD=_texto("PLANILHA"),
+               UNIDADE_COD="UNIDADE_COD", REFERENCIA_DATA="DIA", TURNO_COD="TURNO_COD",
+               DETECCAO_REGRA_TXT=regra("relper_todas_subunidades")),
+
+        # 5. o arquivo chegou e nao abriu. So entra o que NAO foi reenviado
+        # corrigido depois: se o mesmo endereco ja esta em ARQUIVO ou em
+        # RECEPCAO_BRUTA, o problema foi resolvido e sai da visao sozinho —
+        # embora a linha de REJEICAO continue la, porque a Bronze e append-only.
+        # O motivo e a mensagem do erro ficam em REJEICAO, alcancavel pelo
+        # OBJETO_IDT: a visao aponta, a tabela detalha.
+        _bloco(colunas, f"""
+            SELECT r.ORIGEM_URI_TXT, r.REJEICAO_IDT
+            FROM {CATALOGO}.bronze.REJEICAO r
+            LEFT JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA rb ON rb.ORIGEM_URI_TXT = r.ORIGEM_URI_TXT
+            LEFT JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_URI_TXT = r.ORIGEM_URI_TXT
+            WHERE rb.RECEPCAO_IDT IS NULL AND a.ARQUIVO_IDT IS NULL""",
+               PROBLEMA_TIPO_COD=_texto("CHEGOU_QUEBRADO"), OBJETO_TXT="ORIGEM_URI_TXT",
+               OBJETO_IDT="REJEICAO_IDT", DETECCAO_REGRA_TXT=regra("rejeitado_foi_reenviado")),
+    ]
+    return apoio, "\nUNION ALL\n".join(f"({b})" for b in blocos)
+
+
+VISOES = {"pitcic": montar_pitcic, "problema_dados": montar_problema_dados}
 
 
 # =============================================================================
@@ -313,8 +442,12 @@ def main():
         spark.sql(f"INSERT OVERWRITE {tabela} SELECT * FROM (\n{consulta}\n)")
 
         print(f"\n  {tabela}: {spark.table(tabela).count()} linhas em {time.time() - inicio:.0f} s")
-        spark.sql(f"""SELECT FASE_NRO, ETAPA_COD, ELEMENTO_TIPO_COD, count(*) AS linhas, sum(EVENTO_QNT) AS eventos
-                      FROM {tabela} GROUP BY 1, 2, 3 ORDER BY 1, 2, 3""").show(50, truncate=False)
+        # o que o resumo agrupa e soma e declarado na visao, nao fixado aqui
+        grupo = ", ".join(spec["resumo"])
+        soma = spec.get("resumo_soma")
+        spark.sql(f"SELECT {grupo}, count(*) AS linhas"
+                  + (f", sum({soma}) AS {soma.lower()}" if soma else "")
+                  + f" FROM {tabela} GROUP BY {grupo} ORDER BY {grupo}").show(50, truncate=False)
     finally:
         spark.stop()
 

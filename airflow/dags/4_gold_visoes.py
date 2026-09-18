@@ -1,7 +1,7 @@
 """
 DAG gold_visoes — le a Silver e reescreve as visoes da Gold.
 
-    pitcic
+    pitcic ──► problema_dados
 
 Uma tarefa por visao. Cada visao e UMA tabela na Gold, com os elementos do processo
 doutrinario empilhados pelas fases (coluna FASE_NRO). Os parametros — raio da
@@ -65,7 +65,7 @@ def visao(nome: str, callbacks: list) -> SparkSubmitOperator:
 
 with DAG(
     dag_id="4_gold_visoes",
-    description="Silver -> Gold: uma tabela por visao doutrinaria (PITCIC)",
+    description="Silver -> Gold: uma tabela por visao (PITCIC e PROBLEMA_DADOS)",
     schedule=None,
     start_date=datetime(2026, 9, 1),
     catchup=False,
@@ -88,3 +88,27 @@ with DAG(
             "evento_idt":            [("silver.evento", "evento_idt")],
         }),
     ])
+
+    # PROBLEMA_DADOS: o que chegou errado e o que NAO chegou. Le tambem a Bronze,
+    # porque o binario sem sidecar nunca virou evento — nao existe na Silver.
+    problema_dados = visao("problema_dados", [
+        linhagem(le=["bronze.arquivo", "bronze.recepcao_bruta", "bronze.rejeicao",
+                     "silver.evento", "silver.situacao_unidade", "silver.ref_unidade"],
+                 escreve=["gold.problema_dados"], colunas={
+            "objeto_txt":      [("bronze.arquivo", "arquivo_uri_txt"),
+                                ("bronze.recepcao_bruta", "origem_uri_txt"),
+                                ("bronze.rejeicao", "origem_uri_txt")],
+            "objeto_idt":      [("bronze.arquivo", "arquivo_idt"),
+                                ("bronze.recepcao_bruta", "recepcao_idt"),
+                                ("bronze.rejeicao", "rejeicao_idt")],
+            "unidade_cod":     [("silver.ref_unidade", "unidade_cod"),
+                                ("silver.evento", "unidade_reportante_cod")],
+            "referencia_data": [("silver.evento", "ocorrencia_data")],
+            "turno_cod":       [("silver.situacao_unidade", "turno_cod")],
+            "modalidade_cod":  [("bronze.arquivo", "modalidade_cod"),
+                                ("bronze.recepcao_bruta", "modalidade_cod")],
+        }),
+    ])
+
+    # Em serie, e nao em paralelo: o worker Spark e unico (ver 3_silver_evento).
+    pitcic >> problema_dados

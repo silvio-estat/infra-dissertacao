@@ -366,6 +366,38 @@ dominios:
       MATUTINO:   {rotulo: Remessa da manha}
       VESPERTINO: {rotulo: Remessa do fim do dia}
 
+  problema_dado:
+    descricao: >-
+      O que ha de errado com um dado — ou com a FALTA dele. Quatro especies, em
+      ordem do mais visivel ao mais dificil de perceber: o arquivo chegou pela
+      metade, chegou sem quem o descreve, nao chegou, ou chegou inteiro mas com
+      menos conteudo do que devia. As duas ultimas so existem porque ha uma
+      expectativa declarada contra a qual comparar (a cadencia do RELPER e a
+      ordem de batalha em REF_UNIDADE); sem ela, ausencia nao se ve.
+    valores:
+      SEM_SIDECAR:
+        {rotulo: Binario sem o sidecar que o descreve}
+      SIDECAR_SEM_ARQUIVO:
+        {rotulo: Sidecar de fonte binaria que nao achou seu arquivo}
+      NAO_CHEGOU:
+        {rotulo: Remessa esperada que nunca chegou}
+      INCOMPLETO_NO_ARQUIVO:
+        {rotulo: Remessa que chegou sem parte das unidades que deveria trazer}
+      CHEGOU_QUEBRADO:
+        {rotulo: Arquivo que chegou e nao pode ser lido}
+
+  motivo_rejeicao:
+    descricao: >-
+      Por que um arquivo de landing/ nao pode sequer ser catalogado. Sao os
+      defeitos que a ingestao encontra ANTES de ler conteudo — ela nem abre o
+      binario. A lista e curta de proposito: cresce quando um defeito novo
+      aparecer, e nao por antecipacao.
+    valores:
+      JSON_INVALIDO:
+        {rotulo: "JSON que nao abre: truncado, sem chave ou mal formado"}
+      CAMINHO_INVALIDO:
+        {rotulo: "Arquivo fora da convencao landing/<operacao>/<fonte>/"}
+
   tipo_operacao:
     descricao: Natureza da operacao que delimita o conjunto de dados.
     valores:
@@ -696,6 +728,53 @@ entidades:
       RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o arquivo chegou.}
 
   # ---------------------------------------------------------------------------
+  REJEICAO:
+    descricao: >-
+      O arquivo que chegou em landing/ e NAO pode entrar na Bronze. Uma linha por
+      arquivo recusado, com o motivo e a mensagem do erro.
+
+      Existe porque rejeitar em silencio e pior que falhar: ate 18/09/2026 um
+      .json malformado derrubava a ingestao inteira (nenhum arquivo entrava); ao
+      passar a isolar o defeito, o arquivo ruim ficava so no log do Spark —
+      invisivel para o catalogo, para os testes de qualidade e para quem lesse a
+      Gold. Sem esta tabela, um RELPER que chegou quebrado e indistinguivel de um
+      RELPER que nunca foi remetido, e as duas coisas sao operacionalmente
+      diferentes: uma e falha de transmissao, a outra e a unidade que nao reportou.
+
+      E a unica tabela do modelo cujo conteudo nao e dado da operacao: e dado
+      SOBRE a chegada. Nao tem linhagem a montante — nada a alimenta, porque a
+      origem e um objeto do armazenamento que nunca virou linha. Nisso ela e igual
+      a ARQUIVO e a RECEPCAO_BRUTA, que tambem nascem sem seta.
+
+      Append-only como o resto da Bronze, e deduplicada pelo par endereco +
+      conteudo: reprocessar nao duplica, e um arquivo corrigido que continua
+      quebrado gera linha nova, porque o conteudo mudou.
+    abreviatura: REJ
+    camada: bronze
+    chave: [REJEICAO_IDT]
+    campos:
+      REJEICAO_IDT:
+        {tipo: string, nulo: false,
+         descricao: "Identificador da rejeicao, calculado do endereco e do hash do conteudo. O mesmo arquivo ruim rejeitado de novo nao gera linha nova."}
+      ORIGEM_URI_TXT:
+        {tipo: string, nulo: false,
+         descricao: "Endereco em landing/. E a chave que liga esta tabela a ARQUIVO.ARQUIVO_URI_TXT e a RECEPCAO_BRUTA.ORIGEM_URI_TXT — e por ela que se sabe se o arquivo foi reenviado corrigido depois."}
+      MOTIVO_COD:
+        {tipo: string, nulo: false, dominio: motivo_rejeicao,
+         descricao: "Por que foi recusado. Dominio fechado, para poder contar por categoria."}
+      DETALHE_TXT:
+        {tipo: string, nulo: true,
+         descricao: "A mensagem do erro, como a ferramenta a deu ('Expecting value: line 1 column 39'). Diz ONDE o arquivo quebrou, o que o motivo sozinho nao diz."}
+      CONTEUDO_HASH_COD:
+        {tipo: string, nulo: false,
+         descricao: "Hash do conteudo recusado. Distingue o mesmo arquivo rejeitado duas vezes de duas versoes diferentes dele."}
+      ARQUIVO_TAMANHO_QNT:
+        {tipo: bigint, nulo: true,
+         descricao: "Tamanho em bytes. Um arquivo muito menor que os seus pares e indicio de transmissao interrompida."}
+      EXECUCAO_DATA:
+        {tipo: timestamp, nulo: false, descricao: "Quando a ingestao recusou o arquivo."}
+
+  # ---------------------------------------------------------------------------
   EXTRACAO:
     descricao: >-
       Toda inferencia deixa uma linha aqui, seja sobre o que saiu de um binario,
@@ -905,6 +984,63 @@ entidades:
       EXTRACAO_MODELO_NOME: {tipo: string, nulo: true, descricao: "Cadeia de IA por tras do dado, quando houve: o aviso para conferir."}
       EVENTO_IDT:    {tipo: "array<string>", nulo: true, descricao: "Eventos da Silver por tras da linha: o caminho de volta ate o arquivo bruto."}
       ATUALIZACAO_DATA: {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
+
+  # ---------------------------------------------------------------------------
+  PROBLEMA_DADOS:
+    descricao: >-
+      O que chegou errado e o que NAO chegou, uma linha por problema, com nome:
+      qual unidade, qual dia, qual turno, qual arquivo. Existe porque "houve um
+      erro, falta informacao" nao e resposta utilizavel — o EM precisa saber
+      QUAL informacao falta para ir busca-la.
+
+      E visao da Gold, e nao painel de plataforma, porque a ausencia de reporte
+      e dado operacional: uma subunidade que nao remete ha dois turnos pode
+      estar sem comunicacao, deslocando ou em contato. Quem le esta tabela le
+      junto com as demais visoes, nao num console de TI.
+
+      Os quatro tipos sao os mesmos dos testes de qualidade declarados em
+      scripts/testes_qualidade.py: la eles sao o alarme (passou/falhou, com
+      historico); aqui sao o relatorio (o que, de quem, quando). O SQL de
+      deteccao e o mesmo, e mora nos dois lugares de proposito — o teste avisa,
+      a visao detalha.
+
+      A reescrita e inteira a cada execucao, como toda visao Gold.
+    abreviatura: PBDD
+    camada: gold
+    chave: [PROBLEMA_TIPO_COD, UNIDADE_COD, REFERENCIA_DATA, TURNO_COD, OBJETO_TXT]
+    campos:
+      PROBLEMA_TIPO_COD:
+        {tipo: string, nulo: false, dominio: problema_dado,
+         descricao: "Especie do problema. Decide quais das colunas seguintes fazem sentido: as de ausencia (unidade, dia, turno) ou a de arquivo (OBJETO_TXT)."}
+      OPERACAO_COD:
+        {tipo: string, nulo: true, referencia: REF_OPERACAO,
+         descricao: "Operacao. Nos problemas de arquivo vem do palpite da pasta (ARQUIVO.OPERACAO_COD), que e o que sobra quando o sidecar — a fonte de referencia — e justamente o que faltou."}
+      SISTEMA_ORIGEM_COD:
+        {tipo: string, nulo: true, dominio: sistema_origem,
+         descricao: "Fonte a que o problema pertence."}
+      MODALIDADE_COD:
+        {tipo: string, nulo: true, dominio: modalidade,
+         descricao: "Forma em que o dado viria. Permite contar problema por modalidade: o que o OCR perde, o que a planilha perde."}
+      UNIDADE_COD:
+        {tipo: string, nulo: true, referencia: REF_UNIDADE,
+         descricao: "A unidade que FALTOU: a OM que nao remeteu (NAO_CHEGOU) ou a subunidade que sumiu de dentro do relatorio (INCOMPLETO_NO_ARQUIVO). Nulo nos problemas de arquivo, que nao sabem de quem eram."}
+      REFERENCIA_DATA:
+        {tipo: timestamp, nulo: true,
+         descricao: "O dia ESPERADO da remessa que faltou — nao a data em que se percebeu. E por ele que o EM cobra a unidade. Timestamp a meia-noite local, e nao date, porque o modelo nao usa o tipo date em lugar nenhum: manter um vocabulario de tipos pequeno vale mais que a precisao aqui."}
+      TURNO_COD:
+        {tipo: string, nulo: true, dominio: turno_relatorio,
+         descricao: "Turno esperado da remessa que faltou."}
+      OBJETO_TXT:
+        {tipo: string, nulo: true,
+         descricao: "Endereco do arquivo em landing/, quando o problema tem arquivo. Vazio na ausencia: nao ha arquivo a nomear, e por isso a unidade, o dia e o turno acima e que identificam o que falta."}
+      OBJETO_IDT:
+        {tipo: string, nulo: true,
+         descricao: "Chave tecnica do registro afetado — ARQUIVO_IDT, RECEPCAO_IDT ou REJEICAO_IDT, conforme o tipo. Faz por esta visao o que EVENTO_IDT faz pela PITCIC: o caminho de volta ao registro exato, sem depender de casar texto de endereco. Vazio nos dois tipos de ausencia, que nao tem registro a apontar — e essa e justamente a razao de eles existirem."}
+      DETECCAO_REGRA_TXT:
+        {tipo: string, nulo: false,
+         descricao: "Nome do teste de qualidade que acha este mesmo problema, em scripts/testes_qualidade.py. E o elo entre o alarme e o relatorio."}
+      ATUALIZACAO_DATA:
+        {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
 
 
 # =============================================================================
@@ -1477,9 +1613,30 @@ visoes:
     TARDE: Tarde
     NOITE: Noite
 
+  PROBLEMA_DADOS:
+    tabela: PROBLEMA_DADOS
+    le: [bronze.ARQUIVO, bronze.RECEPCAO_BRUTA, bronze.REJEICAO, silver.EVENTO, silver.SITUACAO_UNIDADE, silver.REF_UNIDADE]
+    # Fontes que SEMPRE chegam com binario. E por elas que se distingue o sidecar
+    # orfao do JSON legitimo do C2_A, que nunca teve arquivo — os dois ficam com
+    # ARQUIVO_IDT vazio na Bronze e so a fonte os separa.
+    fontes_com_binario: [RELPER, FOGOS, INTEL, VOZ]
+    resumo: [PROBLEMA_TIPO_COD]                        # como o job resume a tabela ao terminar
+    # A cadencia decretada pelo EM da brigada. Mudar aqui muda o que conta como
+    # ausencia: com tres turnos, um dia sem a remessa do meio passa a ser problema.
+    relper_turnos: [MATUTINO, VESPERTINO]
+    janela_observada: true
+    janela_observada_porque: >-
+      A janela vai da primeira a ultima remessa que chegou, e nao do inicio ao fim
+      da operacao. Sem isso, o dia final da operacao — em que nenhuma OM remeteu,
+      porque a operacao terminou antes do turno — apareceria como 14 ausencias que
+      nao existem. O custo e conhecido: um dia inteiro sem remessa nas BORDAS da
+      operacao nao e acusado; no meio, e.
+
   PITCIC:
     tabela: PITCIC
     le: [silver.EVENTO, silver.MEDIDA_COORDENACAO, silver.REF_GAZETTEER, silver.REF_OPERACAO]
+    resumo: [FASE_NRO, ETAPA_COD, ELEMENTO_TIPO_COD]   # como o job resume a tabela ao terminar
+    resumo_soma: EVENTO_QNT
     ameaca_tipos: [AVISTAMENTO_INIMIGO, BOMBARDEIO_INIMIGO]
     # lugares que servem de referencia para dizer onde foi (a quadricula e grossa demais)
     lugar_referencia_tipos: [PONTO_NOTAVEL, LOCALIDADE, RODOVIA_KM]

@@ -19,6 +19,12 @@ Idempotente: a chave das duas tabelas vem do hash do conteudo, e so entra o que
 ainda nao esta na tabela. Rodar duas vezes nao duplica nem altera nada — a Bronze
 e append-only. O mesmo arquivo reenviado com outro nome nao gera linha nova.
 
+Isolamento por arquivo: um .json malformado ou um arquivo fora da convencao de
+pasta e REJEITADO sozinho — os demais entram. Antes, qualquer defeito derrubava
+o job e nenhum arquivo entrava. O rejeitado vira uma linha de REJEICAO (e sai
+tambem no log): ficar so no log o tornaria invisivel para o catalogo, para os
+testes de qualidade e para a Gold.
+
 Uso (dentro do container, via spark-submit):
     ingestao_bronze.py [--landing s3a://lakehouse/landing/]
 """
@@ -35,6 +41,7 @@ from canonico_para_silver import achar_modelo, carregar_modelo, criar_tabelas
 CATALOGO = "lakehouse"
 TABELA_RECEPCAO = f"{CATALOGO}.bronze.RECEPCAO_BRUTA"
 TABELA_ARQUIVO = f"{CATALOGO}.bronze.ARQUIVO"
+TABELA_REJEICAO = f"{CATALOGO}.bronze.REJEICAO"
 
 # landing/<operacao>/<fonte>/... — a pasta diz de que sistema o dado veio
 FONTE_POR_PASTA = {
@@ -60,9 +67,14 @@ FUSO_EXIF = timezone(timedelta(hours=-3))
 
 def partes_do_caminho(uri: str):
     """s3a://lakehouse/landing/perseu_2024/c2a/posicao/x.json
-       -> ('PERSEU_2024', 'C2_A', 'json')"""
+       -> ('PERSEU_2024', 'C2_A', 'json')
+
+    A convencao e landing/<operacao>/<fonte>/...: um arquivo solto direto em
+    landing/ nao tem fonte, e isso e rejeicao, nao excecao."""
     depois = uri.split("/landing/", 1)[1]           # perseu_2024/c2a/posicao/x.json
     pastas = depois.split("/")
+    if len(pastas) < 2:
+        raise ValueError("fora da convencao landing/<operacao>/<fonte>/")
     operacao = pastas[0].upper()
     fonte = FONTE_POR_PASTA.get(pastas[1].lower(), pastas[1].upper())
     extensao = pastas[-1].rsplit(".", 1)[-1].lower()
@@ -75,6 +87,33 @@ def sem_extensao(uri: str) -> str:
 
 def hash_de(conteudo: bytes) -> str:
     return hashlib.sha256(conteudo).hexdigest()
+
+
+def rejeitado(linha, motivo: str, erro) -> dict:
+    """Um arquivo que nao pode ser catalogado: vira uma linha de REJEICAO.
+
+    Antes, qualquer defeito aqui — um .json malformado, um arquivo fora da
+    convencao de pasta — derrubava a tarefa do Spark e, com ela, o job inteiro:
+    nenhum arquivo entrava, nem os bons. Isso e atomicidade (ou tudo, ou nada),
+    e nao isolamento. Devolvendo esta marca em vez de levantar, o arquivo ruim
+    fica de fora sozinho e os demais seguem.
+
+    A marca `_rejeitado` e o que separa as duas correntes no main; o resto sao
+    as colunas da tabela. Rejeitar em silencio seria pior que falhar: por isso
+    a linha e gravada, e nao apenas impressa.
+    """
+    conteudo = bytes(linha.content)
+    hash_hex = hash_de(conteudo)
+    return {
+        "_rejeitado": True,
+        "REJEICAO_IDT": "rej_" + hash_de(f"{linha.path}|{hash_hex}".encode())[:16],
+        "ORIGEM_URI_TXT": linha.path,
+        "MOTIVO_COD": motivo,
+        "DETALHE_TXT": str(erro)[:400],
+        "CONTEUDO_HASH_COD": "sha256:" + hash_hex,
+        "ARQUIVO_TAMANHO_QNT": int(linha.length),
+        "EXECUCAO_DATA": datetime.now(timezone.utc).replace(tzinfo=None),
+    }
 
 
 def codigo_da_operacao(registro) -> str | None:
@@ -121,8 +160,11 @@ def ler_exif(conteudo: bytes):
 
 
 def catalogar_binario(linha) -> dict:
+    try:
+        operacao, _fonte, extensao = partes_do_caminho(linha.path)
+    except Exception as erro:
+        return rejeitado(linha, "CAMINHO_INVALIDO", erro)
     conteudo = bytes(linha.content)
-    operacao, _fonte, extensao = partes_do_caminho(linha.path)
     hash_hex = hash_de(conteudo)
 
     captura_data, captura_wkt = (None, None)
@@ -158,9 +200,14 @@ def abrir_json(linha, arquivos_por_nome: dict):
     """Devolve as linhas de RECEPCAO_BRUTA de um .json: uma por registro.
     `arquivos_por_nome` diz, para cada binario, seu ARQUIVO_IDT e modalidade —
     e assim que se descobre se este .json e o sidecar de alguem."""
-    dado = json.loads(bytes(linha.content).decode("utf-8"))
+    try:
+        dado = json.loads(bytes(linha.content).decode("utf-8"))
+        _operacao_pasta, fonte, _ = partes_do_caminho(linha.path)
+    except json.JSONDecodeError as erro:
+        return [rejeitado(linha, "JSON_INVALIDO", erro)]
+    except Exception as erro:
+        return [rejeitado(linha, "CAMINHO_INVALIDO", erro)]
     registros = dado if isinstance(dado, list) else [dado]
-    _operacao_pasta, fonte, _ = partes_do_caminho(linha.path)
 
     arquivo_idt, modalidade = arquivos_por_nome.get(sem_extensao(linha.path), (None, "JSON"))
 
@@ -251,8 +298,13 @@ def main():
     binarios = tudo.filter(~tudo.path.endswith(".json"))
     jsons = tudo.filter(tudo.path.endswith(".json"))
 
+    def separar(rdd):
+        """(o que da para catalogar, o que foi rejeitado). Ver rejeitado()."""
+        tudo = rdd.cache()
+        return tudo.filter(lambda d: "_rejeitado" not in d), tudo.filter(lambda d: "_rejeitado" in d)
+
     # 1) os binarios viram ARQUIVO
-    arquivos = binarios.rdd.map(catalogar_binario).cache()
+    arquivos, bin_ruins = separar(binarios.rdd.map(catalogar_binario))
     n_arquivos = gravar_novos(spark, arquivos, TABELA_ARQUIVO, "ARQUIVO_IDT")
 
     # 2) quem e sidecar de quem: mesmo caminho sem a extensao
@@ -260,16 +312,28 @@ def main():
         sem_extensao(d["ARQUIVO_URI_TXT"]): (d["ARQUIVO_IDT"], d["MODALIDADE_COD"])
         for d in arquivos.collect()
     }
-    arquivos.unpersist()
 
     # 3) os .json viram RECEPCAO_BRUTA (o sidecar ja sai apontando para o ARQUIVO)
-    recepcoes = jsons.rdd.flatMap(lambda linha: abrir_json(linha, arquivos_por_nome))
+    recepcoes, json_ruins = separar(jsons.rdd.flatMap(lambda linha: abrir_json(linha, arquivos_por_nome)))
     n_recepcoes = gravar_novos(spark, recepcoes, TABELA_RECEPCAO, "RECEPCAO_IDT")
 
+    # 4) o que ficou de fora vira linha de REJEICAO — e nao so log. E dela que a
+    # visao gold.PROBLEMA_DADOS tira o tipo CHEGOU_QUEBRADO.
+    ruins = bin_ruins.union(json_ruins)
+    n_rejeitados = gravar_novos(spark, ruins, TABELA_REJEICAO, "REJEICAO_IDT")
+    lista = ruins.collect()
+
     print(f"landing: {binarios.count()} binarios, {jsons.count()} json")
-    print(f"novas linhas: ARQUIVO={n_arquivos}  RECEPCAO_BRUTA={n_recepcoes}")
+    print(f"novas linhas: ARQUIVO={n_arquivos}  RECEPCAO_BRUTA={n_recepcoes}  REJEICAO={n_rejeitados}")
     print(f"total: ARQUIVO={spark.table(TABELA_ARQUIVO).count()}  "
-          f"RECEPCAO_BRUTA={spark.table(TABELA_RECEPCAO).count()}")
+          f"RECEPCAO_BRUTA={spark.table(TABELA_RECEPCAO).count()}  "
+          f"REJEICAO={spark.table(TABELA_REJEICAO).count()}")
+    if lista:
+        print(f"\n  !! {len(lista)} arquivo(s) REJEITADO(S) — nao entraram na Bronze:")
+        for r in lista:
+            print(f"     {r['MOTIVO_COD']:18s} {r['ORIGEM_URI_TXT']}\n       -> {r['DETALHE_TXT']}")
+    else:
+        print("\n  nenhum arquivo rejeitado")
     spark.stop()
 
 
