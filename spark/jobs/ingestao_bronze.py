@@ -42,6 +42,7 @@ CATALOGO = "lakehouse"
 TABELA_RECEPCAO = f"{CATALOGO}.bronze.RECEPCAO_BRUTA"
 TABELA_ARQUIVO = f"{CATALOGO}.bronze.ARQUIVO"
 TABELA_REJEICAO = f"{CATALOGO}.bronze.REJEICAO"
+TABELA_INGESTAO = f"{CATALOGO}.bronze.INGESTAO"
 
 # landing/<operacao>/<fonte>/... — a pasta diz de que sistema o dado veio
 FONTE_POR_PASTA = {
@@ -259,7 +260,59 @@ def gravar_novos(spark, rdd_de_dicts, tabela: str, chave: str) -> int:
 
 
 # =============================================================================
-# 5. O job
+# 5. A conferencia da landing: onde foi parar cada objeto da pasta
+# =============================================================================
+
+def conferir_landing(spark, produzidos, vistos: int) -> dict:
+    """Comeca pelo que esta em landing/ e pergunta onde cada objeto foi parar.
+
+    Todos os outros testes comparam o repositorio consigo mesmo; este compara o
+    repositorio com o mundo fora dele. Tres destinos sao legitimos:
+
+      virou linha   o endereco esta em ARQUIVO, RECEPCAO_BRUTA ou REJEICAO
+      duplicata     endereco novo, mas TODO o conteudo que ele produz ja esta na
+                    Bronze — a deduplicacao por hash funcionando (e o unico jeito
+                    de ver um reenvio byte a byte, que por desenho nao gera linha)
+      sem destino   nenhum dos dois: o objeto sumiu entre a porta e a Bronze
+
+    `produzidos` e um RDD (endereco em landing, hash do conteudo que ele gerou):
+    um par por binario, N pares por lote JSON de N registros.
+    """
+    def coluna(tabela, nome):
+        return {r[0] for r in spark.table(tabela).select(nome).distinct().collect()}
+
+    enderecos = (coluna(TABELA_ARQUIVO, "ARQUIVO_URI_TXT")
+                 | coluna(TABELA_RECEPCAO, "ORIGEM_URI_TXT")
+                 | coluna(TABELA_REJEICAO, "ORIGEM_URI_TXT"))
+    hashes = coluna(TABELA_ARQUIVO, "CONTEUDO_HASH_COD") | coluna(TABELA_RECEPCAO, "CONTEUDO_HASH_COD")
+    b_enderecos = spark.sparkContext.broadcast(enderecos)
+    b_hashes = spark.sparkContext.broadcast(hashes)
+
+    def classificar(par):
+        uri, hs = par
+        if uri in b_enderecos.value:
+            return "com_registro"
+        # duplicata so se TODO o conteudo ja for conhecido: um lote em que
+        # metade dos registros e nova nao e reenvio, e alguma coisa se perdeu
+        return "duplicado" if hs and all(h in b_hashes.value for h in hs) else "sem_destino"
+
+    contagem = (produzidos.groupByKey()
+                .map(lambda p: (classificar((p[0], list(p[1]))), 1))
+                .reduceByKey(lambda a, b: a + b)
+                .collectAsMap())
+    com_registro = contagem.get("com_registro", 0)
+    return {
+        "ARQUIVO_VISTO_QNT": vistos,
+        "ARQUIVO_COM_REGISTRO_QNT": com_registro,
+        "DUPLICADO_QNT": contagem.get("duplicado", 0),
+        # o que nem chegou a produzir par (ficou fora de `produzidos`) tambem nao
+        # tem destino: por isso o resto vem da subtracao, e nao da contagem
+        "SEM_DESTINO_QNT": vistos - com_registro - contagem.get("duplicado", 0),
+    }
+
+
+# =============================================================================
+# 6. O job
 # =============================================================================
 
 def get_spark():
@@ -290,6 +343,8 @@ def main():
     # as tabelas vem do modelo canonico; criar e idempotente
     modelo = carregar_modelo(achar_modelo(), validar_mapeamentos=False)
     criar_tabelas(spark, modelo)
+
+    agora = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # tudo que ha em landing/, como bytes: caminho, tamanho, hora de chegada, conteudo
     tudo = (spark.read.format("binaryFile")
@@ -323,11 +378,34 @@ def main():
     n_rejeitados = gravar_novos(spark, ruins, TABELA_REJEICAO, "REJEICAO_IDT")
     lista = ruins.collect()
 
+    # 5) a conferencia: cada objeto de landing/ tem de ter um destino
+    vistos = tudo.count()
+    produzidos = (arquivos.map(lambda d: (d["ARQUIVO_URI_TXT"], d["CONTEUDO_HASH_COD"]))
+                  .union(recepcoes.map(lambda d: (d["ORIGEM_URI_TXT"], d["CONTEUDO_HASH_COD"])))
+                  .union(ruins.map(lambda d: (d["ORIGEM_URI_TXT"], d["CONTEUDO_HASH_COD"]))))
+    rodada = conferir_landing(spark, produzidos, vistos)
+    rodada.update({
+        "INGESTAO_IDT": "ing_" + hash_de(f"{agora.isoformat()}|{a.landing}".encode())[:16],
+        "LANDING_URI_TXT": a.landing,
+        "ARQUIVO_NOVO_QNT": n_arquivos,
+        "RECEPCAO_NOVA_QNT": n_recepcoes,
+        "REJEITADO_QNT": n_rejeitados,
+        "EXECUCAO_SEGUNDOS": (datetime.now(timezone.utc).replace(tzinfo=None) - agora).total_seconds(),
+        "EXECUCAO_DATA": agora,
+    })
+    esquema = spark.table(TABELA_INGESTAO).schema
+    linha = tuple(rodada[c.name.upper()] for c in esquema)
+    spark.createDataFrame([linha], esquema).writeTo(TABELA_INGESTAO).append()
+
     print(f"landing: {binarios.count()} binarios, {jsons.count()} json")
     print(f"novas linhas: ARQUIVO={n_arquivos}  RECEPCAO_BRUTA={n_recepcoes}  REJEICAO={n_rejeitados}")
     print(f"total: ARQUIVO={spark.table(TABELA_ARQUIVO).count()}  "
           f"RECEPCAO_BRUTA={spark.table(TABELA_RECEPCAO).count()}  "
           f"REJEICAO={spark.table(TABELA_REJEICAO).count()}")
+    print(f"conferencia da landing: {rodada['ARQUIVO_VISTO_QNT']} vistos = "
+          f"{rodada['ARQUIVO_COM_REGISTRO_QNT']} com registro "
+          f"+ {rodada['DUPLICADO_QNT']} duplicados "
+          f"+ {rodada['SEM_DESTINO_QNT']} SEM DESTINO")
     if lista:
         print(f"\n  !! {len(lista)} arquivo(s) REJEITADO(S) — nao entraram na Bronze:")
         for r in lista:

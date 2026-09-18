@@ -150,9 +150,9 @@ with DAG(
             "spark.hadoop.fs.s3a.aws.credentials.provider": "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
         },
         verbose=False,
-        # landing/ nao e tabela: as tres tabelas Bronze sao a raiz do grafo de linhagem
+        # landing/ nao e tabela: as quatro tabelas Bronze sao a raiz do grafo de linhagem
         on_success_callback=linhagem(le=[], escreve=["bronze.recepcao_bruta", "bronze.arquivo",
-                                                     "bronze.rejeicao"]),
+                                                     "bronze.rejeicao", "bronze.ingestao"]),
     )
 
     conferir >> [ingerir, nada_a_fazer]

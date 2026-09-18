@@ -246,7 +246,7 @@ Credenciais de desenvolvimento local: `.env.example`.
 | `3_silver_evento` | uma tarefa por receita do YAML; escreve `EVENTO`, `SITUACAO_UNIDADE` e `MEDIDA_COORDENACAO` |
 | `4_gold_visoes` | uma tarefa por visão; reescreve a tabela inteira a partir da Silver (hoje: `pitcic`). Nomes de coluna pelo IR 14-06; valores das células com as siglas do MD33-M-02 |
 | `5_governanca` | OpenMetadata: metadados → perfil → qualidade → amostra |
-| `trino_lakehouse_metadata`, `_profiler`, `trino_sample_data_collector` | usadas pela tela do OpenMetadata, que as procura por esse nome |
+| `trino_lakehouse_metadata` | cataloga as tabelas no OpenMetadata; rodar sempre que criar tabela nova |
 | `dag_iceberg_maintenance` | manutenção das tabelas Iceberg: expira snapshot velho, apaga arquivo órfão, reagrupa manifestos, compacta arquivos pequenos. Diária às 02:00; a lista de tabelas sai do modelo canônico |
 
 ---

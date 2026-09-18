@@ -728,6 +728,55 @@ entidades:
       RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o arquivo chegou.}
 
   # ---------------------------------------------------------------------------
+  INGESTAO:
+    descricao: >-
+      Uma linha por execucao da ingestao, com a CONFERENCIA da landing: quantos
+      objetos havia na pasta e o que aconteceu com cada um.
+
+      E a unica tabela do modelo que compara o repositorio com o MUNDO FORA dele.
+      Todos os testes de qualidade olham o repositorio contra si mesmo — se um
+      arquivo nunca chegar a ser lido, nenhum deles nota, porque nao ha linha que
+      o denuncie. Aqui a conta e feita do outro lado: comeca pelo que esta em
+      landing/ e pergunta onde cada objeto foi parar.
+
+      Sao tres destinos legitimos, e SEM_DESTINO_QNT conta o que nao se encaixa
+      em nenhum: (1) virou linha — o endereco esta em ARQUIVO, RECEPCAO_BRUTA ou
+      REJEICAO; (2) e duplicata — endereco novo, mas todo o conteudo que ele
+      produz ja esta na Bronze, que e a deduplicacao por hash funcionando; (3) foi
+      recusado, e esta em REJEICAO. Um objeto fora dos tres sumiu entre a porta e
+      a Bronze, e e isso que o teste `landing_sem_arquivo_perdido` vigia.
+
+      DUPLICADO_QNT resolve de quebra uma cegueira da arquitetura: o reenvio byte
+      a byte nao gera linha nenhuma (por desenho), entao ate aqui ele era
+      invisivel. Agora fica contado por rodada.
+    abreviatura: INGE
+    camada: bronze
+    chave: [INGESTAO_IDT]
+    campos:
+      INGESTAO_IDT:
+        {tipo: string, nulo: false, descricao: "Identificador da execucao, calculado do instante e do prefixo conferido."}
+      LANDING_URI_TXT:
+        {tipo: string, nulo: false, descricao: "Prefixo conferido nesta rodada. Fica registrado porque conferir um recorte de landing/ e conferir tudo sao coisas diferentes."}
+      ARQUIVO_VISTO_QNT:
+        {tipo: bigint, nulo: false, descricao: "Objetos encontrados em landing/ nesta rodada — o total do lado de fora, contra o qual tudo o mais se compara."}
+      ARQUIVO_COM_REGISTRO_QNT:
+        {tipo: bigint, nulo: false, descricao: "Objetos cujo endereco esta em ARQUIVO, RECEPCAO_BRUTA ou REJEICAO. O caminho normal."}
+      DUPLICADO_QNT:
+        {tipo: bigint, nulo: false, descricao: "Objetos de endereco novo cujo conteudo ja estava na Bronze: o mesmo pacote reenviado com outro nome. Nao geram linha — por isso so aqui aparecem."}
+      SEM_DESTINO_QNT:
+        {tipo: bigint, nulo: false, descricao: "Objetos que nao viraram linha, nao foram recusados e nao sao duplicata. Deve ser SEMPRE zero: e o alarme de arquivo perdido entre a landing e a Bronze."}
+      ARQUIVO_NOVO_QNT:
+        {tipo: bigint, nulo: false, descricao: "Linhas novas em ARQUIVO nesta rodada."}
+      RECEPCAO_NOVA_QNT:
+        {tipo: bigint, nulo: false, descricao: "Linhas novas em RECEPCAO_BRUTA. Nao e contagem de arquivos: um lote JSON com N registros produz N linhas."}
+      REJEITADO_QNT:
+        {tipo: bigint, nulo: false, descricao: "Linhas novas em REJEICAO."}
+      EXECUCAO_SEGUNDOS:
+        {tipo: double, nulo: true, descricao: Tempo da rodada.}
+      EXECUCAO_DATA:
+        {tipo: timestamp, nulo: false, descricao: Quando a ingestao rodou.}
+
+  # ---------------------------------------------------------------------------
   REJEICAO:
     descricao: >-
       O arquivo que chegou em landing/ e NAO pode entrar na Bronze. Uma linha por

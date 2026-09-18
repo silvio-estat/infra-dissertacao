@@ -2,7 +2,7 @@
 """
 testes_qualidade.py — declara no OpenMetadata os testes de qualidade do repositorio.
 
-Doze testes, escolhidos para MOSTRAR O QUE A PLATAFORMA FAZ — nao para cobrir o
+Treze testes, escolhidos para MOSTRAR O QUE A PLATAFORMA FAZ — nao para cobrir o
 modelo canonico inteiro (que renderia 76 testes estruturais e nenhum leitor). Sao
 dois grupos:
 
@@ -10,10 +10,12 @@ dois grupos:
      unicidade do hash, integridade da linhagem. Seis passam; `arquivo_operacao_da_pasta`
      falha de proposito: o gerador remeteu uma planilha na pasta do ano errado.
 
-  2. CINCO de completude (Bronze e Silver) — FALTA dado? Sao os que respondem
-     "como voce sabe que uma informacao nao chegou ao EM": arquivo recusado sem
-     reenvio, binario sem sidecar, sidecar sem binario, turno que nenhuma OM
-     remeteu e subunidade que sumiu de dentro de um relatorio que chegou. `relper_turno_remetido` falha de proposito
+  2. SEIS de completude (Bronze e Silver) — FALTA dado? Sao os que respondem
+     "como voce sabe que uma informacao nao chegou ao EM": objeto de landing/ que
+     nao chegou a lugar nenhum, arquivo recusado sem reenvio, binario sem sidecar,
+     sidecar sem binario, turno que nenhuma OM remeteu e subunidade que sumiu de
+     dentro de um relatorio que chegou. O primeiro deles e o unico do conjunto
+     inteiro que compara o repositorio com o mundo fora dele. `relper_turno_remetido` falha de proposito
      e devolve os 11 turnos que o gerador deixou de remeter.
 
 Os dois que falham de proposito sao o ponto, nao um defeito: e o que se mostra
@@ -25,7 +27,7 @@ botao de rodar e historico. A diferenca e que aqui ele fica VERSIONADO no
 repositorio — quem repetir o experimento tem os mesmos testes, e um reset do
 OpenMetadata nao os leva embora.
 
-    python3 scripts/testes_qualidade.py            # cria (ou atualiza) os doze
+    python3 scripts/testes_qualidade.py            # cria (ou atualiza) os treze
     python3 scripts/testes_qualidade.py --listar   # so mostra o que existe hoje
 
 Depois de criar, quem EXECUTA os testes e a DAG 5_governanca (tarefa
@@ -44,7 +46,7 @@ SERVICO = "trino_lakehouse.iceberg"
 MODALIDADES = ["JSON", "TEXTO", "PLANILHA", "IMAGEM", "AUDIO", "PDF"]
 
 # -----------------------------------------------------------------------------
-# OS DOZE TESTES
+# OS TREZE TESTES
 # -----------------------------------------------------------------------------
 # `porque` vira a descricao na tela do OpenMetadata: quem abrir o catalogo le
 # a justificativa junto com o resultado.
@@ -194,6 +196,22 @@ FROM esperado e
 LEFT JOIN remessa r ON r.om_cod = e.om_cod AND r.dia = e.dia AND r.turno_cod = e.turno_cod
 WHERE r.om_cod IS NULL
 """.strip(),
+    },
+    {
+        "nome": "landing_sem_arquivo_perdido",
+        "rotulo": "Todo objeto de landing/ teve um destino na Bronze",
+        "porque": "O UNICO teste que compara o repositorio com o mundo FORA dele. Todos os demais "
+                  "olham o repositorio contra si mesmo — e um arquivo que nunca chegou a ser lido "
+                  "nao deixa linha que o denuncie, entao nenhum deles o nota. Aqui a conta comeca "
+                  "pela pasta: a cada rodada, a ingestao conta os objetos de landing/ e verifica "
+                  "onde cada um foi parar. Tres destinos sao legitimos (virou linha, foi recusado, "
+                  "ou e duplicata byte a byte de algo que ja entrou) e SEM_DESTINO_QNT conta o que "
+                  "nao se encaixa em nenhum: o arquivo que sumiu entre a porta e a Bronze. A "
+                  "consulta devolve as rodadas em que isso aconteceu; zero linhas e o esperado.",
+        "tabela": "bronze.ingestao",
+        "definicao": "tableCustomSQLQuery",
+        "sql": "SELECT ingestao_idt, execucao_data, arquivo_visto_qnt, sem_destino_qnt "
+               "FROM iceberg.bronze.ingestao WHERE sem_destino_qnt > 0",
     },
     {
         "nome": "rejeitado_foi_reenviado",
