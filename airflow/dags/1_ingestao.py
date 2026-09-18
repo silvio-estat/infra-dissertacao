@@ -14,6 +14,16 @@ a Bronze deduplica pelo hash e um reenvio byte a byte nao gera linha nova.
 `ingerir_bronze` chama o job Spark `ingestao_bronze.py`, que so cataloga
 (RECEPCAO_BRUTA + ARQUIVO). Ler o conteudo dos binarios e trabalho das DAGs
 de extracao.
+
+O arquivo que nao pode ser catalogado — JSON malformado, caminho fora da
+convencao — nao derruba a ingestao: e recusado sozinho e vira uma linha de
+REJEICAO, que a visao gold.PROBLEMA_DADOS mostra como CHEGOU_QUEBRADO.
+
+Efeito colateral disso, de proposito: enquanto um arquivo ruim estiver em
+landing/, ele continua contando como pendente e a DAG segue chamando o Spark a
+cada disparo. E o comportamento que se quer — corrigido o arquivo no mesmo
+endereco, ele entra na rodada seguinte sem ninguem fazer nada. O custo e uma
+execucao do job, que e idempotente.
 """
 from __future__ import annotations
 
@@ -140,8 +150,9 @@ with DAG(
             "spark.hadoop.fs.s3a.aws.credentials.provider": "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
         },
         verbose=False,
-        # landing/ nao e tabela: as duas tabelas Bronze sao a raiz do grafo de linhagem
-        on_success_callback=linhagem(le=[], escreve=["bronze.recepcao_bruta", "bronze.arquivo"]),
+        # landing/ nao e tabela: as tres tabelas Bronze sao a raiz do grafo de linhagem
+        on_success_callback=linhagem(le=[], escreve=["bronze.recepcao_bruta", "bronze.arquivo",
+                                                     "bronze.rejeicao"]),
     )
 
     conferir >> [ingerir, nada_a_fazer]

@@ -21,8 +21,18 @@ campos (`operacao`: 'Perseu', `ano`: '2024'), formatados pelo proprio sistema.
 O codigo canonico PERSEU_2024 e so NOME_ANO em maiusculas. A fracao vai
 como SIGLA ('2o Pel Fuz/1a Cia Fuz/511o Btl Inf Mtz'), como o sistema exporta.
 
-Defeito plantado: um lote de posicoes reenviado com outro nome de arquivo
-(mesmo conteudo) — a deduplicacao por hash em RECEPCAO_BRUTA tem o que pegar.
+Defeitos plantados, todos na exportacao de posicoes:
+
+  arquivo_reenviado        um lote reenviado com outro nome, byte a byte igual —
+                           a deduplicacao por hash em RECEPCAO_BRUTA tem o que pegar
+  lote_truncado            a transmissao caiu no meio: o JSON acaba no meio de um
+                           registro. Tem de ser recusado SOZINHO, sem derrubar o
+                           resto da carga, e virar linha em bronze.REJEICAO
+  arquivo_fora_da_convencao   um lote na raiz de landing/, sem <operacao>/<fonte>/:
+                           sem a pasta nao ha como atribuir fonte nem operacao
+
+Os dois ultimos existem para a camada de rejeicao ter o que registrar. Repare que
+sao defeitos de TRANSPORTE, e nao de conteudo: o dado estava certo quando saiu.
 """
 
 import math
@@ -91,7 +101,29 @@ def gerar_posicoes(ctx: Contexto) -> dict:
     shutil.copyfile(origem, copia)
     ctx.registrar_defeito("C2_A", copia.relative_to(ctx.saida), "arquivo_reenviado",
                           f"copia byte a byte de {origem.name}; mesmo hash, nao deve gerar linha nova")
-    return {"registros": total, "arquivos": arquivos + 1}
+
+    # defeito: a janela de transmissao fechou no meio do envio e o lote chegou
+    # pela metade. O JSON acaba no meio de um registro e nao abre — a ingestao
+    # tem de recusar SO ELE e seguir com os demais. E o RD-4 no concreto: o
+    # regime de chegada e intermitente, e transmissao interrompida acontece.
+    inteiro = pasta / f"posicao_{ctx.operacao.dias[2].isoformat()}T14.json"
+    truncado = pasta / f"posicao_{ctx.operacao.dias[2].isoformat()}T14_parcial.json"
+    bruto = inteiro.read_text(encoding="utf-8")
+    truncado.write_text(bruto[: int(len(bruto) * 0.4)], encoding="utf-8")
+    ctx.registrar_defeito("C2_A", truncado.relative_to(ctx.saida), "lote_truncado",
+                          "transmissao interrompida: o JSON para no meio de um registro e nao abre. "
+                          "O lote inteiro chegou depois, com outro nome — os dados nao se perderam")
+
+    # defeito: um lote que foi parar na RAIZ de landing/, fora da convencao
+    # <operacao>/<fonte>/. Sem a pasta nao ha como saber de que operacao nem de
+    # que sistema o arquivo e: a ingestao nao adivinha, recusa.
+    solto = ctx.saida / "landing" / "posicao_sem_pasta.json"
+    shutil.copyfile(inteiro, solto)
+    ctx.registrar_defeito("C2_A", solto.relative_to(ctx.saida), "arquivo_fora_da_convencao",
+                          "lote correto, mas na raiz de landing/, sem <operacao>/<fonte>/: "
+                          "a ingestao nao consegue atribuir fonte nem operacao e recusa")
+
+    return {"registros": total, "arquivos": arquivos + 3}
 
 
 # =============================================================================
