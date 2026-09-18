@@ -1,5 +1,7 @@
 # Python
 venv/
+venv-geradores/
+venv-docling/
 __pycache__/
 *.pyc
 *.pyo
@@ -31,6 +33,9 @@ airflow/plugins/
 # Assistentes de IA — não versionar
 .claude/
 CLAUDE.md
+claude.md
+CLAUDE.local.md
+.mcp.json
 
 # Informações locais — não versionar
 outras_info/
@@ -56,3 +61,10 @@ documentos_apoio/
 
 # Relatórios gerados (output reproduzível)
 relatorios/metricas_gqm_*.json
+
+# Contem o JWT do ingestion-bot, proprio de cada instalacao.
+# A versao versionada e openlineage.yml.example.
+infra/openlineage/openlineage.yml
+
+# Dados sinteticos gerados (reproduziveis por scripts/geradores/gerar_tudo.py)
+dados_sinteticos/

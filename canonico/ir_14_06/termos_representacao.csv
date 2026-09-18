@@ -1,0 +1,29 @@
+# IR 14-06, TITULO X, CAPITULO I (Art. 138) - Termos de Representacao
+# Vocabulario FECHADO: o nome de coluna admite UM unico termo de representacao (Art. 76, III).
+# Novos termos so podem ser criados por solicitacao a Administracao de Dados (Art. 138).
+# origem_abreviatura: IR_14_06 = consta em exemplo da norma | PROPOSTA = requer catalogacao (Art. 34-35)
+categoria,termo,abreviatura,abreviatura_bd,origem_abreviatura,tipo,definicao
+Tempo,DATA,Data,DATA,PROPOSTA,Tipo especifico de data do banco de dados,"Um dia de um calendario especifico, inclui dia, mes e ano. Opcionalmente, a data pode incluir a hora, minutos e segundos. O calendario usado normalmente e o Gregoriano."
+Tempo,GRUPO DATA HORA,GDH,GDH,PROPOSTA,Caracteres,"Um dia do calendario militar, no formato DDHHMIMESAA, onde: DD - dia no mes; HH - hora em 24 h; MI - minutos; MES - nome do mes abreviado em 3 letras; AA - ano."
+Tempo,DIA,,,,Numerico,"O numero de um dia no mes, sem representar o mes e ano."
+Tempo,MES,,,,Numerico,"O numero de um mes no ano, sem representar dia e ano."
+Tempo,ANO,,,,Numerico,Um ano de um calendario especifico.
+Tempo,HORA,,,,String de caracteres ou numerico,"O tempo de um dia, medido em horas, e opcionalmente minutos, segundos, milisegundos, etc; sem representar dia, mes e ano."
+Tempo,DIAS,,,,Numerico,Tempo (duracao) medido em dias e opcionalmente fracoes. Nao representa data.
+Tempo,MESES,,,,Numerico,Tempo (duracao) medido em meses e opcionalmente fracoes. Nao representa data.
+Tempo,ANOS,,,,Numerico,Tempo (duracao) medido em anos e opcionalmente fracoes. Nao representa data.
+Tempo,HORAS,,,,Numerico,Tempo (duracao) medido em horas e opcionalmente fracoes. Nao representa data.
+Tempo,MINUTOS,,,,Numerico,Tempo (duracao) medido em minutos e opcionalmente fracoes. Nao representa data.
+Tempo,SEGUNDOS,,,,Numerico,Tempo (duracao) medido em segundos e opcionalmente fracoes. Nao representa data.
+Quantidades medidas e valores,QUANTIDADE,Qnt,QNT,MD33-M-02,Numerico,Um numero de unidades nao monetarias. Normalmente associada a uma unidade de medida.
+Quantidades medidas e valores,VALOR,VLR,VLR,IR_14_06,Numerico,"Um numero de unidades monetarias, especificados em uma determinada moeda. A moeda pode ficar implicita ou explicita no nome do elemento de dados."
+Quantidades medidas e valores,PERCENTUAL,Pctl,PCTL,PROPOSTA,Numerico,Razao entre valores numericos expressos como uma porcentagem.
+Designacao e descricao,NOME,Nome,NOME,PROPOSTA,Caracteres,"Uma palavra ou frase que constitui a designacao de uma pessoa, objeto, lugar, evento ou conceito."
+Designacao e descricao,SIGLA,Sigla,SIGLA,PROPOSTA,Caracteres,Representacao reduzida de um nome.
+Designacao e descricao,DESCRICAO,Dcri,DCRI,MD33-M-02,Caracteres,"Uma serie de sentencas descrevendo uma pessoa, objeto, evento ou conceito."
+Identificacao e codificacao,CODIGO,Cod,COD,MD33-M-02,Caracteres,"Combinacao de um ou mais caracteres numericos, alfabeticos ou caracteres especiais que representam um membro dentre um conjunto de valores."
+Identificacao e codificacao,NUMERO,Nr,NRO,MD33-M-02,Numerico,Um numero normalmente usado para indicar uma sequencia ou um membro de uma serie.
+Identificacao e codificacao,INDICADOR,Indic,INDIC,MD33-M-02,Caracteres,"Um codigo de um valor de um determinado dominio estatico. Exemplos: S ou N, representando Sim ou Nao; A ou I, para ativo ou inativo; P, R ou C, para programado, realizado ou cancelado."
+Identificacao e codificacao,IDENTIFICADOR,Idt,IDT,MD33-M-02,Numerico,"Um numero usado para designar uma instancia especifica de uma classe de objetos ou entidade, mas sem significado no contexto de negocio. Usado nas chaves artificiais."
+Conteudos genericos,TEXTO,Txt,TXT,PROPOSTA,Caracteres ou tipo LOB especifico do banco,"Texto formatado ou nao, podendo conter caracteres especiais. Geralmente usado para observacoes e conteudos textuais extensos."
+Conteudos genericos,IMAGEM,Img,IMG,MD33-M-02,Tipo especifico de LOB no banco de dados,"Um conteudo grafico associado a um tipo de codificacao de imagem como bitmap, JPG, GIF, MPEG ou outros."

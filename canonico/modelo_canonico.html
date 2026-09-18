@@ -1,0 +1,1214 @@
+<title>Modelo Canônico ARQ_TEMAC</title>
+<meta name="description" content="Como seis fontes heterogêneas convergem na tabela EVENTO e como a linhagem liga cada número ao registro bruto que o originou.">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --paper:      #f3f4f0;
+    --surface:    #fbfbf8;
+    --ink:        #1e2420;
+    --ink-soft:   #59615a;
+    --rule:       #d9dbd1;
+    --rule-soft:  #e6e7df;
+    --accent:     #3f5c42;
+    --accent-ink: #2f4733;
+    --bronze:     #8a6a3d;
+    --slate:      #566b7a;
+    --amber:      #9a5a0c;
+
+    --font-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --font-sans:  "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono:  "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #15180f;
+      --surface:    #1e2219;
+      --ink:        #e6e8df;
+      --ink-soft:   #9aa295;
+      --rule:       #343a2e;
+      --rule-soft:  #262b20;
+      --accent:     #8fb488;
+      --accent-ink: #a6c69f;
+      --bronze:     #c69a5f;
+      --slate:      #8fa9b8;
+      --amber:      #d98a3c;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #15180f;
+    --surface:    #1e2219;
+    --ink:        #e6e8df;
+    --ink-soft:   #9aa295;
+    --rule:       #343a2e;
+    --rule-soft:  #262b20;
+    --accent:     #8fb488;
+    --accent-ink: #a6c69f;
+    --bronze:     #c69a5f;
+    --slate:      #8fa9b8;
+    --amber:      #d98a3c;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 5rem) 1.5rem 6rem;
+  }
+
+  .prose p, .prose li, .prose dd { max-width: 41rem; }
+
+  /* ---------- header ---------- */
+  header { margin-bottom: 3.5rem; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: .74rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 0 0 1.1rem;
+  }
+
+  h1 {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: clamp(1.9rem, 5vw, 2.7rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 1rem;
+  }
+
+  .lead {
+    font-size: 1.16rem;
+    color: var(--ink);
+    max-width: 40rem;
+    margin: 0 0 1.4rem;
+  }
+
+  .meta {
+    font-family: var(--font-mono);
+    font-size: .78rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--rule);
+    padding-top: .9rem;
+    margin: 0;
+  }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 3.75rem; }
+
+  h2 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 1.4rem;
+    letter-spacing: -0.005em;
+    text-wrap: balance;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.1rem;
+    margin: 0 0 1.3rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .7rem;
+  }
+
+  h2 .n {
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+
+  h3 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 1.03rem;
+    margin: 0 0 .35rem;
+  }
+
+  p { margin: 0 0 1rem; }
+  a { color: var(--accent-ink); text-underline-offset: 2px; }
+
+  code, .kw {
+    font-family: var(--font-mono);
+    font-size: .88em;
+    background: var(--rule-soft);
+    padding: .08em .32em;
+    border-radius: 2px;
+  }
+
+  /* ---------- theses ---------- */
+  dl.theses { margin: 0; display: grid; gap: 0; }
+  dl.theses div {
+    display: grid;
+    gap: .3rem .9rem;
+    padding: 1.15rem 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  dl.theses div:first-child { border-top: none; }
+  dl.theses dt {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: .82rem;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  dl.theses dd { margin: 0; }
+
+  /* ---------- plate (diagram panel — always light) ---------- */
+  figure.plate {
+    color-scheme: light;
+    background: #f5f4ef;
+    border: 1px solid #cfd0c6;
+    border-radius: 3px;
+    padding: 1.6rem 1.2rem 1.1rem;
+    margin: 1.75rem 0;
+    overflow-x: auto;
+  }
+  figure.plate .mermaid {
+    margin: 0;
+    min-height: 2rem;
+    text-align: center;
+    color: #1e2420;
+    visibility: hidden;
+  }
+  figure.plate .mermaid[data-processed],
+  figure.plate .mermaid.raw { visibility: visible; }
+  figure.plate .mermaid svg { max-width: 100%; height: auto; }
+  figure.plate .mermaid.raw {
+    white-space: pre;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: .76rem;
+    line-height: 1.5;
+    overflow-x: auto;
+  }
+  figure.plate figcaption {
+    margin-top: 1.1rem;
+    padding-top: .8rem;
+    border-top: 1px solid #dedfd4;
+    font-family: var(--font-sans);
+    font-size: .82rem;
+    color: #5c655e;
+  }
+  figure.plate details { margin-top: .7rem; }
+  figure.plate summary {
+    font-family: var(--font-mono);
+    font-size: .74rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #5c655e;
+    cursor: pointer;
+  }
+  figure.plate details pre {
+    margin: .6rem 0 0;
+    background: #eeede6;
+    border-radius: 2px;
+    padding: .8rem .9rem;
+    overflow-x: auto;
+  }
+  figure.plate details code {
+    display: block;
+    background: none;
+    padding: 0;
+    font-size: .76rem;
+    line-height: 1.55;
+    color: #2a2f26;
+    white-space: pre;
+  }
+
+  /* ---------- legend ---------- */
+  ul.legend {
+    list-style: none;
+    margin: 1.4rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: .55rem 1.4rem;
+  }
+  ul.legend li {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    font-size: .92rem;
+    color: var(--ink-soft);
+  }
+  ul.legend svg { width: 34px; height: 20px; flex: none; color: var(--ink); }
+  ul.legend b { color: var(--ink); font-weight: 500; font-family: var(--font-sans); }
+
+  /* ---------- numbered stages ---------- */
+  ol.stages {
+    list-style: none;
+    counter-reset: s;
+    margin: 1.6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 1.5rem;
+  }
+  ol.stages li {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 2.1rem 1fr;
+    gap: 1rem;
+  }
+  ol.stages li::before {
+    content: counter(s, decimal-leading-zero);
+    font-family: var(--font-mono);
+    font-size: .82rem;
+    font-weight: 500;
+    color: var(--accent-ink);
+    padding-top: .12rem;
+  }
+  ol.stages p:last-child { margin-bottom: 0; }
+
+  /* ---------- table ---------- */
+  .scroll { overflow-x: auto; margin: 1.4rem 0 0; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: .9rem;
+    min-width: 40rem;
+  }
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    font-size: .82rem;
+    color: var(--ink-soft);
+    padding-top: .7rem;
+  }
+  th, td {
+    text-align: left;
+    padding: .55rem .8rem .55rem 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: .78rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+  }
+  tbody th {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  td .mod {
+    font-family: var(--font-mono);
+    font-size: .82rem;
+    color: var(--slate);
+  }
+
+  /* ---------- glossary ---------- */
+  dl.glossary {
+    margin: 1.4rem 0 0;
+    display: grid;
+    gap: 0;
+  }
+  dl.glossary div {
+    display: grid;
+    grid-template-columns: 13rem 1fr;
+    gap: .4rem 1.2rem;
+    padding: .7rem 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  dl.glossary div:first-child { border-top: none; }
+  dl.glossary dt {
+    font-family: var(--font-mono);
+    font-size: .86rem;
+    color: var(--accent-ink);
+  }
+  dl.glossary dd { margin: 0; font-size: .96rem; }
+
+  @media (max-width: 34rem) {
+    dl.glossary div { grid-template-columns: 1fr; gap: .15rem; }
+  }
+
+  /* ---------- worked example ---------- */
+  ol.walk {
+    list-style: none;
+    counter-reset: w;
+    margin: 1.6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 2.1rem;
+  }
+  ol.walk > li {
+    counter-increment: w;
+    max-width: none;
+  }
+  ol.walk > li > h3 {
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    margin: 0 0 .5rem;
+  }
+  ol.walk > li > h3::before {
+    content: counter(w, decimal-leading-zero);
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--accent-ink);
+    flex: none;
+  }
+  ol.walk .tag {
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: .12em .5em;
+    border-radius: 2px;
+    background: var(--rule-soft);
+    color: var(--ink-soft);
+  }
+  ol.walk .tag.bronze { color: var(--bronze); }
+  ol.walk .tag.silver { color: var(--slate); }
+  ol.walk p { max-width: 41rem; }
+
+  pre.sheet {
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    line-height: 1.65;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    margin: 1.1rem 0;
+    color: var(--ink);
+    white-space: pre;
+  }
+
+  .note {
+    border-left: 2px solid var(--accent);
+    padding: .1rem 0 .1rem 1rem;
+    margin: 1.1rem 0;
+    color: var(--ink-soft);
+    font-size: .95rem;
+  }
+  .note b { color: var(--ink); font-weight: 500; font-family: var(--font-sans); }
+
+  table.mini { min-width: 28rem; font-size: .86rem; }
+  table.mini tbody th { color: var(--accent-ink); }
+  .trace {
+    font-family: var(--font-mono);
+    font-size: .82rem;
+    line-height: 1.8;
+    background: var(--rule-soft);
+    border-radius: 3px;
+    padding: 1rem 1.1rem;
+    margin: 1.1rem 0;
+    overflow-x: auto;
+  }
+
+  /* ---------- footer ---------- */
+  footer {
+    margin-top: 4rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.2rem;
+    font-size: .86rem;
+    color: var(--ink-soft);
+  }
+  footer p { max-width: 41rem; }
+
+  /* ---------- theme toggle ---------- */
+  .toggle {
+    position: fixed;
+    top: .9rem;
+    right: .9rem;
+    font-family: var(--font-mono);
+    font-size: .7rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: .35rem .6rem;
+    cursor: pointer;
+  }
+  .toggle:hover { color: var(--ink); border-color: var(--ink-soft); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<button class="toggle" id="toggle" type="button" aria-label="Alternar tema claro e escuro">tema</button>
+
+<div class="wrap prose">
+
+  <header>
+    <p class="eyebrow">ARQ_TEMAC · parte empírica · modelo_canonico.yaml</p>
+    <h1>O modelo canônico em dois diagramas e um exemplo</h1>
+    <p class="lead">Seis sistemas de origem, seis modalidades de arquivo, uma única tabela de
+      destino — e uma <strong>operação</strong> que amarra tudo. Esta página mostra o percurso que
+      todo dado faz, o que permite cruzar fontes tão diferentes, e como, a partir de qualquer
+      número na camada final, se volta ao registro bruto que o gerou.</p>
+    <p class="meta">versão 3 · atualizado em 2026-09-11 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
+  </header>
+
+  <section>
+    <h2><span class="n">Por quê</span> As duas teses que os diagramas servem</h2>
+    <p>Toda decisão de modelagem aqui existe para sustentar uma destas duas afirmações. Se um
+      detalhe do desenho não ajuda nenhuma delas, ele não deveria estar no desenho.</p>
+    <dl class="theses">
+      <div>
+        <dt>Heterogeneidade</dt>
+        <dd>A arquitetura ingere e integra dados de tipos muito diferentes — JSON, planilha,
+          texto livre, imagem, áudio, PDF — sob um modelo canônico único. A coluna
+          <code>MODALIDADE_ORIGEM_COD</code> em <code>EVENTO</code> permite contar quantas formas
+          físicas de dado uma consulta atravessou; a coluna <code>OPERACAO_COD</code> é o que
+          permite que essa consulta faça sentido — só se cruzam dados da mesma operação.</dd>
+      </div>
+      <div>
+        <dt>Linhagem</dt>
+        <dd>Dá para rastrear qualquer número da camada final até o registro bruto que o originou,
+          incluindo qual modelo de IA fez a extração e com que versão de prompt. Em
+          <code>EVENTO</code>, o primeiro elo é <code>RECEPCAO_IDT</code> (quando a fonte chegou
+          como JSON) ou <code>ARQUIVO_IDT</code> (quando chegou como arquivo binário); o segundo,
+          <code>EXTRACAO_IDT</code>, existe sempre que houve arquivo: registra <em>como</em> o conteúdo
+          saiu dele — leitura direta ou IA — e, no segundo caso, qual modelo e qual prompt.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section>
+    <h2><span class="n">Diagrama 1</span> O processo: da fonte à camada Silver</h2>
+    <p>O dado desce por camadas (o padrão <em>Medallion</em>): primeiro é guardado cru, depois
+      catalogado sem ser interpretado, e só então convertido para o formato canônico. Cada
+      camada tem um trabalho e só um.</p>
+
+    <figure class="plate">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das seis fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
+flowchart TD
+  subgraph FONTES["FONTES · sistemas de origem"]
+    C2A["C2_A<br/>JSON com geometria"]
+    C2B["C2_B<br/>texto livre + foto"]
+    REL["RELPER<br/>planilha ou PDF assinado"]
+    FOG["FOGOS<br/>Relatorio de Bombardeio (Anexo I)"]
+    INT["INTEL<br/>informe de inteligencia assinado"]
+    VOZ["VOZ<br/>audio de radio"]
+  end
+
+  LAND[("landing/<br/>arquivo bruto, como chegou")]
+
+  C2A --> LAND
+  C2B --> LAND
+  REL --> LAND
+  FOG --> LAND
+  INT --> LAND
+  VOZ --> LAND
+
+  subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
+    RCPB["RECEPCAO_BRUTA<br/>o registro estruturado de TODO evento:<br/>o JSON do C2, ou o sidecar .json do arquivo.<br/>payload cru inteiro, hash, operacao"]
+    ARQ["ARQUIVO<br/>manifesto do binario (xlsx, pdf, foto, audio):<br/>URI, hash, MIME, operacao (da pasta)"]
+    EXT["EXTRACAO<br/>1 linha por leitura de um binario:<br/>ferramenta+versao, houve IA? (S/N),<br/>modelo e prompt quando houve"]
+  end
+
+  LAND -->|"JSON nativo do C2, ou o sidecar .json<br/>que acompanha todo arquivo"| RCPB
+  LAND -->|"o binario: xlsx, pdf, foto, audio"| ARQ
+  ARQ -->|"toda leitura do binario:<br/>celula / texto do PDF (direta)<br/>OCR / transcricao / LLM (IA)"| EXT
+  RCPB -.->|"o sidecar aponta para seu binario (ARQUIVO_IDT)"| ARQ
+
+  MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio · gazetteer<br/>abreviatura · split_escala · sobra · contexto_operacao"}}
+
+  RCPB -->|"quem, quando, onde, a OPERACAO<br/>+ ponteiro de linhagem (RECEPCAO_IDT)"| MAP
+  ARQ -->|"ponteiro (ARQUIVO_IDT);<br/>geo do EXIF, na foto"| MAP
+  EXT -->|"conteudo do arquivo (celulas, colunas, texto)<br/>+ ponteiro de linhagem (EXTRACAO_IDT)"| MAP
+
+  subgraph SEEDS["TABELAS DE CONSULTA · seeds"]
+    ROPE["REF_OPERACAO<br/>'Perseu' + '2024' do C2_A, sidecar, pasta<br/>tudo vira PERSEU_2024"]
+    RUNI["REF_UNIDADE<br/>'1a Cia Fuz' vira BI511C1"]
+    RGAZ["REF_GAZETTEER<br/>'BR-154 km 43' vira ponto"]
+    RABV["REF_ABREVIATURA<br/>'Fz' vira Fuzil"]
+  end
+
+  ROPE -.-> MAP
+  RUNI -.-> MAP
+  RGAZ -.-> MAP
+  RABV -.-> MAP
+
+  subgraph SILVER["SILVER · modelo canonico unico"]
+    EVT["EVENTO<br/>o denominador comum de toda fonte:<br/>quem, quando, onde, tipo, funcao de combate<br/>por onde chegou, de que registro bruto, qual IA"]
+    SIT["SITUACAO_UNIDADE<br/>extensao - so o RELPER produz:<br/>efetivo, baixas, viaturas, suprimento"]
+  end
+
+  MAP ==>|"toda fonte"| EVT
+  MAP ==>|"so RELPER"| SIT
+  EVT -->|"1 : 0..1"| SIT
+
+  EVT -.->|"RECEPCAO_IDT · elo 1, sempre"| RCPB
+  EVT -.->|"ARQUIVO_IDT · o binario, quando ha"| ARQ
+  EVT -.->|"EXTRACAO_IDT · elo 2, sempre que ha binario"| EXT
+</pre>
+      <figcaption>Prancha 1 — o percurso do dado. Seta cheia é fluxo; seta pontilhada é um
+        ponteiro (a linhagem); seta grossa é o fluxo principal, onde toda fonte cai. A prancha
+        tem a mesma leitura em tela clara ou escura.</figcaption>
+      <details>
+        <summary>Código-fonte Mermaid</summary>
+        <pre><code class="src-view"></code></pre>
+      </details>
+    </figure>
+
+    <ul class="legend" aria-label="Legenda das formas e setas do diagrama">
+      <li><svg viewBox="0 0 34 20" aria-hidden="true"><rect x="1.5" y="2" width="31" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span><b>Retângulo</b> — uma tabela ou etapa</span></li>
+      <li><svg viewBox="0 0 34 20" aria-hidden="true"><path d="M8 2h18l6 8-6 8H8l-6-8z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span><b>Hexágono</b> — um processo (a transformação)</span></li>
+      <li><svg viewBox="0 0 34 20" aria-hidden="true"><path d="M4 5c0-1.7 5-3 13-3s13 1.3 13 3v10c0 1.7-5 3-13 3S4 16.7 4 15z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 5c0 1.7 5 3 13 3s13-1.3 13-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg><span><b>Cilindro</b> — um armazenamento de arquivos</span></li>
+      <li><svg viewBox="0 0 34 20" aria-hidden="true"><line x1="2" y1="10" x2="26" y2="10" stroke="currentColor" stroke-width="1.4"/><polygon points="26,6 33,10 26,14" fill="currentColor"/></svg><span><b>Seta cheia</b> — o dado flui nesse sentido</span></li>
+      <li><svg viewBox="0 0 34 20" aria-hidden="true"><line x1="2" y1="10" x2="26" y2="10" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 3"/><polygon points="26,6 33,10 26,14" fill="currentColor"/></svg><span><b>Seta pontilhada</b> — um ponteiro: a linha aponta para outra</span></li>
+      <li><svg viewBox="0 0 34 20" aria-hidden="true"><line x1="2" y1="10" x2="25" y2="10" stroke="currentColor" stroke-width="3.4"/><polygon points="25,4 34,10 25,16" fill="currentColor"/></svg><span><b>Seta grossa</b> — o fluxo principal</span></li>
+    </ul>
+
+    <ol class="stages">
+      <li>
+        <div>
+          <h3>Fontes</h3>
+          <p>Cada sistema entrega o que já produz, no formato em que produz. O <code>C2_A</code>
+            manda JSON com a geometria embutida; o <code>RELPER</code>, uma planilha — ou o mesmo
+            formulário impresso, assinado e escaneado; a artilharia, o Relatório de Bombardeio
+            digitalizado; a seção de inteligência, um informe assinado; a rede de rádio, um
+            arquivo de áudio. Nada é adaptado na origem.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3><code>landing/</code></h3>
+          <p>O arquivo cai no armazenamento de objetos exatamente como chegou, byte a byte.
+            Nenhum campo é lido ainda. Guardar antes de interpretar é o princípio de
+            <em>schema-on-read</em>: pode-se ingerir uma fonte antes de modelá-la.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Bronze — <code>RECEPCAO_BRUTA</code>, <code>ARQUIVO</code> e <code>EXTRACAO</code></h3>
+          <p>Toda fonte passa por aqui antes da Silver. <code>RECEPCAO_BRUTA</code> guarda o
+            registro estruturado de <em>todo</em> evento — o JSON nativo do <code>C2</code>, ou o
+            <em>sidecar</em>, o pequeno <code>.json</code> de proveniência que acompanha cada
+            arquivo (operação, unidade, data). <code>ARQUIVO</code> cataloga cada binário — onde
+            está, seu <em>hash</em>, seu tipo, a operação da pasta — e nunca abre o binário.
+            <code>EXTRACAO</code> grava uma linha por <em>leitura</em> de um binário, seja ela
+            direta (célula de planilha, camada de texto do PDF) ou por IA (reconhecimento óptico,
+            transcrição de fala, um modelo de linguagem local): qual ferramenta e versão, se houve
+            inferência (<code>INFERENCIA_INDIC</code>, S/N), qual modelo e versão de prompt quando
+            houve, quanto tempo levou. Todo binário passa por aqui — é o único caminho de
+            <code>ARQUIVO</code> até <code>EVENTO</code>.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>De / para — <code>modelo_canonico.yaml</code></h3>
+          <p>O job de transformação lê o YAML e, para cada campo de cada fonte, aplica a regra
+            ali declarada. Não há <code>if fonte == ...</code> no código: integrar uma fonte nova
+            é acrescentar um bloco no arquivo. É aqui que as tabelas de consulta entram —
+            <code>REF_UNIDADE</code> traduz <span class="kw">1a Cia Fuz</span> no código da
+            unidade, <code>REF_GAZETTEER</code> troca <span class="kw">BR-154 km 43</span> por
+            uma coordenada, <code>REF_ABREVIATURA</code> resolve <span class="kw">Fz</span> para
+            <span class="kw">Fuzil</span>.</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>Silver — <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code></h3>
+          <p>Todas as fontes desembocam em <code>EVENTO</code>, uma tabela só, com o que
+            <em>toda</em> fonte tem em comum: quem reportou, quando, onde, que tipo de fato, por
+            qual sistema chegou, de que registro bruto veio. O que só o <code>RELPER</code> tem —
+            efetivo, baixas, viaturas, dias de suprimento — vai para a extensão
+            <code>SITUACAO_UNIDADE</code>, a única que existe.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2><span class="n">Diagrama 2</span> A estrutura: quais tabelas apontam para quais</h2>
+    <p>O mesmo modelo visto pelas chaves. As caixas listam só as colunas que importam para a
+      leitura — <code>PK</code> marca a chave primária (identifica a linha),
+      <code>FK</code> marca a chave estrangeira (aponta para a linha de outra tabela).</p>
+
+    <figure class="plate">
+      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: REF_OPERACAO dá contexto a EVENTO, ARQUIVO e RECEPCAO_BRUTA; RECEPCAO_BRUTA origina EVENTO e, quando é sidecar, aponta para o ARQUIVO da mídia; ARQUIVO é entrada de EXTRACAO e origina EVENTO; EXTRACAO produz EVENTO; EVENTO estende SITUACAO_UNIDADE numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
+erDiagram
+  REF_OPERACAO   ||--o{ EVENTO         : "contexto"
+  REF_OPERACAO   ||--o{ ARQUIVO        : "contexto"
+  REF_OPERACAO   ||--o{ RECEPCAO_BRUTA : "contexto"
+  RECEPCAO_BRUTA ||--|{ EVENTO         : "origina — sempre (JSON ou sidecar)"
+  RECEPCAO_BRUTA ||--o| ARQUIVO        : "sidecar do arquivo"
+  ARQUIVO     ||--o{ EXTRACAO         : "e entrada de"
+  ARQUIVO     ||--o{ EVENTO           : "e o binario de"
+  EXTRACAO    ||--o{ EVENTO           : "produz"
+  EVENTO      ||--o| SITUACAO_UNIDADE : "estende (1 : 0..1)"
+  REF_UNIDADE ||--o{ EVENTO           : "unidade reportante"
+  REF_UNIDADE ||--o{ REF_UNIDADE      : "unidade superior"
+
+  REF_OPERACAO {
+    string OPERACAO_COD PK
+    string OPERACAO_NOME
+    timestamp INICIO_DATA
+    string AREA_WKT
+  }
+  RECEPCAO_BRUTA {
+    string RECEPCAO_IDT PK
+    string OPERACAO_COD FK
+    string MODALIDADE_COD
+    string CONTEUDO_JSON_TXT
+    string ARQUIVO_IDT FK
+  }
+  ARQUIVO {
+    string ARQUIVO_IDT PK
+    string OPERACAO_COD FK
+    string CONTEUDO_HASH_COD
+    string MIME_TIPO_COD
+    string DIGITALIZADO_INDIC
+  }
+  EXTRACAO {
+    string EXTRACAO_IDT PK
+    string ARQUIVO_IDT FK
+    string INFERENCIA_INDIC
+    string FERRAMENTA_NOME
+    string MODELO_NOME
+    string PROMPT_VERSAO_COD
+    string SAIDA_TXT
+  }
+  EVENTO {
+    string EVENTO_IDT PK
+    string OPERACAO_COD FK
+    string SISTEMA_ORIGEM_COD
+    string MODALIDADE_ORIGEM_COD
+    string TIPO_COD
+    string FUNCAO_COMBATE_COD
+    string FUNCAO_C2_INDIC
+    string RECEPCAO_IDT FK
+    string ARQUIVO_IDT FK
+    string EXTRACAO_IDT FK
+  }
+  SITUACAO_UNIDADE {
+    string EVENTO_IDT PK
+    string TURNO_COD
+    int EF_PRESENTE_QNT
+    int VTR_OPERACIONAL_QNT
+    string ATRIBUTO_EXTRA_TXT
+  }
+</pre>
+      <figcaption>Prancha 2 — as nove tabelas e suas ligações por chave. O losango cheio marca o
+        lado &ldquo;um&rdquo; da relação; o pé-de-galinha marca o lado &ldquo;muitos&rdquo;.
+        <code>OPERACAO_COD</code> aparece nas três tabelas brutas e em <code>EVENTO</code>: é a
+        coluna que atravessa tudo. Todo <code>EVENTO</code> tem um <code>RECEPCAO_IDT</code> (o
+        JSON ou o sidecar — daí o traço cheio); tem também <code>ARQUIVO_IDT</code> quando há um
+        binário por trás, que é quase sempre.</figcaption>
+      <details>
+        <summary>Código-fonte Mermaid</summary>
+        <pre><code class="src-view"></code></pre>
+      </details>
+    </figure>
+
+    <p><code>REF_GAZETTEER</code> e <code>REF_ABREVIATURA</code> não aparecem como ligação porque
+      não são chave estrangeira de nada: elas são <em>consultadas durante a transformação</em>, e
+      o resultado já entra gravado em <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code>.
+      <code>REF_UNIDADE</code> aparece porque <code>EVENTO.UNIDADE_REPORTANTE_COD</code> guarda o
+      código que ela define — e aponta para si mesma, porque toda unidade tem uma superior (menos
+      a brigada, no topo). <code>REF_OPERACAO</code> aparece porque <code>OPERACAO_COD</code> é
+      chave estrangeira de verdade em três tabelas: é o contexto que não se resolve e some, fica
+      gravado.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">O elo</span> O que une tudo: a operação</h2>
+    <p>Uma posição de GPS, um relatório de bombardeio, uma foto de incidente e uma mensagem de
+      voz só podem ser cruzados se pertencem à <strong>mesma operação</strong>. É a chave de
+      junção entre as fontes heterogêneas — e o recorte de toda visão da camada Gold: uma carta
+      de situação é sempre <em>de uma operação</em>. Por isso <code>EVENTO.OPERACAO_COD</code>
+      não é nulo: evento fora de operação não existe neste estudo.</p>
+
+    <h3>A tabela <code>REF_OPERACAO</code></h3>
+    <p>Uma seed pequena e curada, no molde de <code>REF_UNIDADE</code>. O código é a
+      <strong>chave natural</strong> da operação — nome + ano, escrita <code>NOME_ANO</code>.
+      É a mesma chave que o <code>C2_A</code> usa por dentro: ele exporta <code>"operacao":
+      "Perseu"</code> e <code>"ano": "2024"</code>, formatados pelo próprio sistema, e não há
+      dicionário a consultar — só juntar e pôr em maiúsculas.</p>
+    <div class="scroll">
+      <table class="mini">
+        <tbody>
+          <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code></td></tr>
+          <tr><th scope="row">OPERACAO_NOME</th><td>Operação Perseu</td></tr>
+          <tr><th scope="row">OPERACAO_TIPO_COD</th><td><code>ADESTRAMENTO</code></td></tr>
+          <tr><th scope="row">INICIO_DATA · FIM_DATA</th><td><code>2026-05-04</code> … <code>2026-05-18</code></td></tr>
+          <tr><th scope="row">AREA_WKT</th><td><code>POLYGON((…))</code> &nbsp;(a área de operações)</td></tr>
+          <tr><th scope="row">UNIDADE_RESP_COD</th><td><code>BDA51</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A janela e a área servem de rede de segurança: um arquivo que chegou sem se identificar é
+      atribuído à operação cuja <code>INICIO/FIM</code> e <code>AREA_WKT</code> contêm a hora e o
+      ponto de captura (a transformação <code>contexto_operacao</code>).</p>
+
+    <h3>O sidecar: uma forma só de dar contexto a qualquer arquivo</h3>
+    <p>Um <code>.xlsx</code>, um PDF, uma foto, um <code>.wav</code> — nenhum se descreve bem: quem
+      remeteu, quando, em que operação. A prática (arquivos de imagem de reconhecimento,
+      gravadores de rádio, o padrão STANAG 4609) é <strong>não confiar no binário para se
+      descrever</strong>. Aqui a regra vale para <em>todo</em> arquivo em <code>landing/</code>:
+      ele chega acompanhado de um pequeno JSON de mesmo nome — o <em>sidecar</em> — com a
+      proveniência.</p>
+    <pre class="sheet">landing/perseu_2024/relper/relper_bi511_matutino.xlsx     ← o binário    → ARQUIVO
+landing/perseu_2024/relper/relper_bi511_matutino.json     ← o sidecar    → RECEPCAO_BRUTA
+
+  relper_bi511_matutino.json
+  {
+    "operacao":     "PERSEU_2024",
+    "om_remetente": "1o Btl Inf Mtz / 511",
+    "data_hora":    "2024-11-27T06:00:00Z",
+    "turno":        "MATUTINO"
+  }</pre>
+    <p>O sidecar entra em <code>RECEPCAO_BRUTA</code> exatamente como o JSON do <code>C2_A</code>;
+      o binário entra em <code>ARQUIVO</code>; os dois se ligam por <code>ARQUIVO_IDT</code>. O que
+      é <em>sobre</em> o arquivo (operação, unidade, data) vem do sidecar; o <em>conteúdo</em> — as
+      células da planilha, as colunas do PDF — continua sendo lido do binário, por
+      <code>celula</code> ou OCR.</p>
+    <p>Para o áudio o sidecar vem do <em>voice logger</em>: o gravador não transcreve, mas sempre
+      carimba rede, frequência, hora e, num exercício, a operação. No <code>C2_B</code>, o registro
+      JSON do incidente <em>já é</em> o sidecar da foto — não foi preciso inventar nada, só
+      reconhecer o papel que ele cumpre.</p>
+
+    <h3>Como a operação chega, por modalidade</h3>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th scope="col">Fonte</th><th scope="col">A operação vem de</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="mod">JSON</span> C2_A</td><td>campos nativos <code>operacao</code> + <code>ano</code> — a chave natural do sistema, formatada por ele</td></tr>
+          <tr><td><span class="mod">JSON</span> C2_B relato</td><td>campo nativo no payload</td></tr>
+          <tr><td>C2_B incidente · RELPER · FOGOS · INTEL · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
+          <tr><td>arquivo sem sidecar (fallback)</td><td>hora + geo de captura dentro da janela e da área de <code>REF_OPERACAO</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note"><b>O palpite e a referência.</b> A operação é carimbada em
+      <code>ARQUIVO.OPERACAO_COD</code> pela pasta de <code>landing/</code> no momento da
+      ingestão — é o que está sempre disponível. O valor <em>de referência</em> é o do sidecar ou
+      do cabeçalho. Divergência entre os dois é sinal de qualidade, do mesmo tipo que a
+      coordenada do EXIF contra a que o operador digitou.</div>
+  </section>
+
+  <section>
+    <h2><span class="n">De ponta a ponta</span> Uma planilha e seu sidecar, do arquivo ao número rastreável</h2>
+    <p>Um exemplo mínimo e concreto, para fixar o mecanismo. O <code>1º/511º BI Mtz</code> remete
+      o relatório periódico da manhã: um arquivo Excel com <strong>duas observações</strong> (uma
+      linha por companhia) e <strong>duas colunas de medida</strong> (efetivo presente e viaturas
+      operacionais), mais o <strong>sidecar</strong>. Segue-se tudo à medida que desce pelas
+      camadas.</p>
+
+    <ol class="walk">
+
+      <li>
+        <h3>O arquivo, como sai da unidade <span class="tag">origem</span></h3>
+        <p>O <code>1º/511º BI Mtz</code> remete dois arquivos: a planilha e o seu
+          <strong>sidecar</strong> — o <code>.json</code> de proveniência, gerado pelo portal de
+          submissão. Os cabeçalhos das colunas da planilha são fixados pelo estado-maior da
+          brigada; as duas linhas de dados são o que varia.</p>
+        <pre class="sheet">relper_bi511_2024-11-27_matutino.xlsx            (14,8 KB)
+
+  Fração              | Ef Pres | Vtr Op
+  --------------------|---------|-------
+  1ª Cia Fuz/511      |   118   |   11
+  2ª Cia Fuz/511      |   121   |   12
+
+relper_bi511_2024-11-27_matutino.json           (o sidecar)
+
+  { "operacao": "PERSEU_2024", "om_remetente": "1o Btl Inf Mtz / 511",
+    "data_hora": "2024-11-27T06:00:00Z", "turno": "MATUTINO" }</pre>
+        <p>A planilha carrega o <em>conteúdo</em> (os números); o sidecar carrega o que é
+          <em>sobre</em> o arquivo (operação, quem remeteu, quando).</p>
+      </li>
+
+      <li>
+        <h3><code>landing/</code> — os bytes, intactos <span class="tag">object storage</span></h3>
+        <p>O par é copiado para o armazenamento de objetos exatamente como chegou. Nenhuma célula
+          foi lida. Se a coluna <code>Vtr Op</code> nem existisse no formulário oficial, o arquivo
+          entraria do mesmo jeito — o esquema só será exigido na leitura.</p>
+        <pre class="sheet">s3a://lakehouse/landing/perseu_2024/relper/relper_bi511_2024-11-27_matutino.xlsx
+s3a://lakehouse/landing/perseu_2024/relper/relper_bi511_2024-11-27_matutino.json</pre>
+      </li>
+
+      <li>
+        <h3><code>ARQUIVO</code> — o binário, uma linha <span class="tag bronze">bronze</span></h3>
+        <p>O manifesto do <code>.xlsx</code>. São duas observações dentro do arquivo, mas
+          <strong>uma só linha aqui</strong> — a planilha é um documento único; o desdobramento
+          em duas acontece na Silver.</p>
+        <div class="scroll">
+          <table class="mini">
+            <tbody>
+              <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code></td></tr>
+              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code> &nbsp;(da pasta <code>landing/perseu_2024/…</code>)</td></tr>
+              <tr><th scope="row">CONTEUDO_HASH_COD</th><td><code>sha256:9f3c1a4e…</code></td></tr>
+              <tr><th scope="row">ARQUIVO_URI_TXT</th><td><code>s3a://…/perseu_2024/relper/relper_bi511_2024-11-27_matutino.xlsx</code></td></tr>
+              <tr><th scope="row">MIME_TIPO_COD</th><td><code>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code></td></tr>
+              <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
+              <tr><th scope="row">RECEBIMENTO_DATA</th><td><code>2024-11-27T09:12:07Z</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </li>
+
+      <li>
+        <h3><code>RECEPCAO_BRUTA</code> — o sidecar, uma linha <span class="tag bronze">bronze</span></h3>
+        <p>O sidecar entra cru, inteiro, numa coluna de texto — sem um campo ser lido. É o mesmo
+          tratamento que o JSON do <code>C2_A</code> recebe. Uma linha por arquivo remetido (que
+          depois vira dois eventos).</p>
+        <div class="scroll">
+          <table class="mini">
+            <tbody>
+              <tr><th scope="row">RECEPCAO_IDT</th><td><code>rcp_c4d80a</code></td></tr>
+              <tr><th scope="row">SISTEMA_ORIGEM_COD</th><td><code>RELPER</code></td></tr>
+              <tr><th scope="row">OPERACAO_COD</th><td><code>PERSEU_2024</code> &nbsp;(do próprio sidecar — o valor de referência)</td></tr>
+              <tr><th scope="row">MODALIDADE_COD</th><td><code>PLANILHA</code></td></tr>
+              <tr><th scope="row">CONTEUDO_JSON_TXT</th><td><code>{"operacao":"PERSEU_2024","om_remetente":…}</code></td></tr>
+              <tr><th scope="row">ARQUIVO_IDT</th><td><code>arq_7b91f2</code> &nbsp;(liga o sidecar ao binário)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><b>O palpite e a referência.</b> A operação aparece <em>duas</em> vezes:
+          em <code>ARQUIVO</code> ela veio da pasta (<code>landing/perseu_2024/…</code>), carimbada
+          na ingestão; em <code>RECEPCAO_BRUTA</code> ela veio do próprio sidecar. É esta segunda
+          que <code>EVENTO</code> herda. As duas concordando é o esperado; divergirem seria sinal
+          de arquivo na pasta errada — do mesmo tipo que a coordenada do EXIF contra a digitada.</div>
+      </li>
+
+      <li>
+        <h3><code>EXTRACAO</code> — uma linha, sem IA <span class="tag bronze">bronze</span></h3>
+        <p><code>ARQUIVO</code> e <code>EXTRACAO</code> são duas tabelas Bronze com papéis
+          distintos, apesar do nome parecido: <code>ARQUIVO</code> diz <em>que arquivo
+          chegou</em> — todo binário ganha uma linha, a planilha inclusive, e a ingestão nunca o
+          abre; <code>EXTRACAO</code> diz <em>o que foi lido de dentro dele, por quem e como</em>.
+          Todo binário passa pelas duas: <code>ARQUIVO → EXTRACAO → EVENTO</code>, um caminho só.</p>
+        <p>Aqui a planilha é lida direto com uma biblioteca (<code>openpyxl</code>), célula por
+          célula, resultado determinístico — mesma entrada, mesma saída. Isso gera uma linha em
+          <code>EXTRACAO</code> com <code>INFERENCIA_INDIC = N</code>, <code>FERRAMENTA_NOME =
+          'openpyxl 3.1.5'</code>, <code>MODELO_NOME</code> nulo (não há modelo) e as células em
+          <code>SAIDA_TXT</code>. A versão da biblioteca fica registrada de propósito: bibliotecas
+          têm defeitos, e sem ela um erro de leitura seria indistinguível de um erro no arquivo.
+          <em>O mesmo formulário impresso, assinado e escaneado</em> chegaria como PDF e passaria
+          por reconhecimento óptico: a linha teria <code>INFERENCIA_INDIC = S</code>, a ferramenta
+          e o modelo do OCR. No YAML esse caminho é a receita <code>situacao_digitalizada</code> —
+          um <strong>bloco de mapeamento</strong>, não uma tabela: escreve nas mesmas
+          <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code> que a planilha nativa. Uma pergunta
+          de banca — <em>quantos números passaram por IA?</em> — vira uma condição:
+          <code>WHERE INFERENCIA_INDIC = 'S'</code>.</p>
+      </li>
+
+      <li>
+        <h3>De/para — o job lê o <code>modelo_canonico.yaml</code> e monta o SQL <span class="tag">transformação</span></h3>
+        <p>Para <em>cada</em> uma das duas linhas da planilha, as regras declaradas no YAML são
+          aplicadas:</p>
+        <div class="trace">do SIDECAR:
+  operacao "PERSEU_2024"     → referencia REF_OPERACAO → OPERACAO_COD           = PERSEU_2024
+  data_hora "…T06:00:00Z"    → ts_iso                  → OCORRENCIA_DATA        = 2024-11-27 06:00:00
+  turno    "MATUTINO"        → dominio turno_relatorio → TURNO_COD              = MATUTINO
+
+da PLANILHA (uma vez por linha):
+  Fração  "1ª Cia Fuz/511"   → referencia REF_UNIDADE  → UNIDADE_REPORTANTE_COD = BI511C1
+  Ef Pres "118"              → celula                  → EF_PRESENTE_QNT        = 118   (inteiro, não texto)
+  Vtr Op  "11"               → celula                  → VTR_OPERACIONAL_QNT    = 11
+
+constantes / derivados:
+  SISTEMA_ORIGEM_COD = RELPER   MODALIDADE_ORIGEM_COD = PLANILHA
+  TIPO_COD = SITUACAO_UNIDADE   FUNCAO_COMBATE_COD = LOGISTICA   FUNCAO_C2_INDIC = N
+  REGISTRO_ORIGEM_COD = BI511-20260909-M-BI511C1   (sidecar: OM+data+turno; planilha: fração)
+
+ponteiros de linhagem:
+  RECEPCAO_IDT = rcp_c4d80a      ARQUIVO_IDT = arq_7b91f2</div>
+        <div class="note"><b>Se a OM tivesse acrescentado uma coluna <code>Obs</code></b> que o
+          formulário não previa, ela iria inteira para <code>ATRIBUTO_EXTRA_TXT</code> como
+          <code>{"Obs": "sem energia no gerador"}</code> — preservada sem nunca ter sido
+          modelada. Num banco relacional, essa coluna não teria onde entrar: seria descartada na
+          carga ou exigiria alterar a tabela. É o argumento de <em>schema-on-read</em> em uma
+          célula.</div>
+      </li>
+
+      <li>
+        <h3><code>EVENTO</code> — duas linhas: o fan-out <span class="tag silver">silver</span></h3>
+        <p>Um arquivo, duas companhias, dois eventos. O que <em>toda</em> fonte tem em comum.</p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>EVENTO_IDT</th><th>OPERAÇÃO</th><th>SISTEMA</th><th>MODALIDADE</th><th>TIPO</th><th>FUNÇÃO</th><th>C2</th><th>OCORRÊNCIA</th><th>UNIDADE</th><th>RECEPCAO_IDT</th><th>ARQUIVO_IDT</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>evt_3a0091</code></td><td><code>PERSEU_2024</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2024-11-27 06:00</td><td><code>BI511C1</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
+              <tr><td><code>evt_3a0092</code></td><td><code>PERSEU_2024</code></td><td>RELPER</td><td>PLANILHA</td><td>SITUACAO_UNIDADE</td><td>LOGISTICA</td><td>N</td><td>2024-11-27 06:00</td><td><code>BI511C2</code></td><td><code>rcp_c4d80a</code></td><td><code>arq_7b91f2</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Os dois eventos herdam o mesmo <code>RECEPCAO_IDT</code> (o sidecar) e o mesmo
+          <code>ARQUIVO_IDT</code> (a planilha) — um arquivo, um sidecar, dois eventos. Numa linha
+          do <code>C2_A</code>, o <code>ARQUIVO_IDT</code> ficaria vazio (não há binário); num
+          relato em texto do <code>C2_B</code>, idem.</p>
+      </li>
+
+      <li>
+        <h3><code>SITUACAO_UNIDADE</code> — duas linhas, uma por evento <span class="tag silver">silver</span></h3>
+        <p>Os números que só o relatório periódico tem. Ligada a <code>EVENTO</code> um-para-um
+          pela chave <code>EVENTO_IDT</code>.</p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>EVENTO_IDT</th><th>TURNO</th><th>EF_PRESENTE_QNT</th><th>VTR_OPERACIONAL_QNT</th><th>ATRIBUTO_EXTRA_TXT</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>evt_3a0091</code></td><td>MATUTINO</td><td>118</td><td>11</td><td>—</td></tr>
+              <tr><td><code>evt_3a0092</code></td><td>MATUTINO</td><td>121</td><td>12</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </li>
+
+      <li>
+        <h3>A volta: do número ao byte <span class="tag">linhagem</span></h3>
+        <p>Pergunta de auditoria: <em>de onde veio o 118 de efetivo presente da 1ª Cia?</em></p>
+        <div class="trace">SITUACAO_UNIDADE.EF_PRESENTE_QNT = 118   (linha evt_3a0091)
+   └─ EVENTO_IDT evt_3a0091   (OPERACAO_COD = PERSEU_2024)
+        ├─ EVENTO.EXTRACAO_IDT = ext_5d20c7
+        │    └─ EXTRACAO: INFERENCIA_INDIC = N · FERRAMENTA_NOME = 'openpyxl 3.1.5' · MODELO_NOME nulo
+        │         SAIDA_TXT → linha "1ª Cia Fuz/511", coluna "Ef Pres" = 118   ✔
+        │         └─ EXTRACAO.ARQUIVO_IDT = arq_7b91f2
+        │              └─ ARQUIVO.ARQUIVO_URI_TXT = s3a://…/perseu_2024/relper/…matutino.xlsx
+        │                   hash sha256:9f3c1a4e…   (confere que o arquivo não mudou)   ✔
+        └─ EVENTO.RECEPCAO_IDT = rcp_c4d80a
+             └─ RECEPCAO_BRUTA.ORIGEM_URI_TXT = s3a://…/…matutino.json
+                  └─ o sidecar que disse "operacao: PERSEU_2024, remetente 1º/511º BI"   ✔</div>
+        <p>Dois ramos: o número saiu da planilha — e <code>EXTRACAO</code> diz com que
+          biblioteca, em que versão, sem IA —, o contexto (operação, remetente) saiu do sidecar.
+          Se fosse a versão escaneada, o mesmo ramo diria <code>INFERENCIA_INDIC = S</code> e
+          <em>com que ferramenta e modelo</em> aquele <code>118</code> foi lido da imagem. É a
+          tese de linhagem inteira num único número.</p>
+      </li>
+
+    </ol>
+  </section>
+
+  <section>
+    <h2><span class="n">Referência</span> As seis fontes</h2>
+    <p>Cada linha da coluna &ldquo;Bloco no YAML&rdquo; é um conjunto de regras de/para dentro de
+      <code>fontes:</code> — <strong>não</strong> uma tabela. Uma fonte pode ter mais de um bloco,
+      um por forma de entrada: o <code>RELPER</code> chega como planilha <em>ou</em> como PDF
+      assinado, e o <code>C2_B</code>, como texto <em>ou</em> como foto. Todos escrevem nas
+      mesmas tabelas da coluna &ldquo;Grava em&rdquo;.</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Fonte</th>
+            <th scope="col">Modalidade</th>
+            <th scope="col">Bloco no YAML</th>
+            <th scope="col">Grava em</th>
+            <th scope="col">Operação vem de</th>
+            <th scope="col">Passa por IA?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">C2_A</th>
+            <td><span class="mod">JSON</span></td>
+            <td><code>posicao</code>, <code>mcc</code></td>
+            <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
+            <td>nome + ano no payload</td>
+            <td>Não — geometria já vem nativa</td>
+          </tr>
+          <tr>
+            <th scope="row">C2_B</th>
+            <td><span class="mod">TEXTO</span></td>
+            <td><code>relato</code></td>
+            <td><code>RECEPCAO_BRUTA</code> → <code>EVENTO</code></td>
+            <td>campo no payload</td>
+            <td>LLM: tipo, função de combate, prioridade, confiabilidade, credibilidade</td>
+          </tr>
+          <tr>
+            <th scope="row">C2_B</th>
+            <td><span class="mod">IMAGEM</span></td>
+            <td><code>incidente</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar (o registro do incidente)</td>
+            <td>Não — a coordenada vem do metadado da foto</td>
+          </tr>
+          <tr>
+            <th scope="row">RELPER</th>
+            <td><span class="mod">PLANILHA</span></td>
+            <td><code>situacao</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td>sidecar</td>
+            <td>Não — leitura direta de célula (<code>EXTRACAO</code> com <code>INFERENCIA_INDIC = N</code>)</td>
+          </tr>
+          <tr>
+            <th scope="row">RELPER</th>
+            <td><span class="mod">PDF</span></td>
+            <td><code>situacao_digitalizada</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code> + <code>SITUACAO_UNIDADE</code></td>
+            <td>sidecar</td>
+            <td>OCR + LLM: unidade reportante</td>
+          </tr>
+          <tr>
+            <th scope="row">FOGOS</th>
+            <td><span class="mod">PDF</span></td>
+            <td><code>relatorio_bombardeio</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar</td>
+            <td>OCR + LLM: data, prioridade. Só a 1ª parte do Anexo I (informes de observador sobre bombardeio inimigo) vira evento</td>
+          </tr>
+          <tr>
+            <th scope="row">INTEL</th>
+            <td><span class="mod">PDF</span></td>
+            <td><code>informe</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar</td>
+            <td>OCR + LLM: data, tipo, prioridade. A avaliação <span class="kw">B2</span> é lida do cabeçalho, não inferida</td>
+          </tr>
+          <tr>
+            <th scope="row">VOZ</th>
+            <td><span class="mod">AUDIO</span></td>
+            <td><code>transcricao</code></td>
+            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
+            <td>sidecar do <em>voice logger</em></td>
+            <td>Transcrição de fala + LLM: prioridade, função. A hora vem do gravador</td>
+          </tr>
+        </tbody>
+        <caption>Todo binário gera pelo menos uma linha em <code>EXTRACAO</code>; nas linhas
+          marcadas com IA ela traz <code>INFERENCIA_INDIC = S</code>, modelo e prompt — é o que
+          torna a extração auditável.</caption>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">Referência</span> Vocabulário das transformações</h2>
+    <p>O nome que aparece em <code>transformacao:</code> no de/para. O código de cada uma vive no
+      job de transformação, não no YAML — o YAML só diz qual aplicar a cada campo.</p>
+    <dl class="glossary">
+      <div><dt>direto</dt><dd>Copia o valor sem mexer.</dd></div>
+      <div><dt>json</dt><dd>Extrai um campo do payload JSON pelo caminho indicado. O payload fica preservado inteiro em <code>RECEPCAO_BRUTA</code>; a leitura acontece aqui.</dd></div>
+      <div><dt>celula</dt><dd>Lê uma célula da planilha pelo cabeçalho decretado no formulário.</dd></div>
+      <div><dt>ts_iso / ts_br</dt><dd>Texto vira data — no formato ISO ou no formato brasileiro.</dd></div>
+      <div><dt>ponto_de_latlon</dt><dd>Par de números vira ponto geográfico.</dd></div>
+      <div><dt>geojson_para_wkt</dt><dd>Geometria em GeoJSON vira o mesmo em WKT (o texto padrão do modelo).</dd></div>
+      <div><dt>dms_para_ponto</dt><dd>Coordenada em grau-minuto-segundo, escrita por extenso, vira ponto.</dd></div>
+      <div><dt>decametrica_para_ponto</dt><dd>Coordenada métrica militar (ex.: <span class="kw">03250-10550</span>) vira ponto.</dd></div>
+      <div><dt>gazetteer</dt><dd>Nome de lugar vira ponto, consultando <code>REF_GAZETTEER</code>. Não converte — consulta.</dd></div>
+      <div><dt>abreviatura</dt><dd>Abreviatura digitada vira termo, consultando <code>REF_ABREVIATURA</code>.</dd></div>
+      <div><dt>dominio</dt><dd>Valor da origem vira valor canônico, pelos sinônimos da lista fechada.</dd></div>
+      <div><dt>referencia</dt><dd>Valor da origem vira o código de uma tabela de consulta.</dd></div>
+      <div><dt>contexto_operacao</dt><dd>Hora e ponto de captura viram <code>OPERACAO_COD</code>, pela janela e pela área de <code>REF_OPERACAO</code>. É o recurso para o arquivo que chegou sem se identificar.</dd></div>
+      <div><dt>constante</dt><dd>Grava um valor fixo, igual para toda linha daquela fonte.</dd></div>
+      <div><dt>derivado</dt><dd>Calculado por uma regra declarada no próprio campo de destino.</dd></div>
+      <div><dt>split_escala</dt><dd>Um campo de origem, dois de destino: <span class="kw">B2</span> vira confiabilidade <span class="kw">B</span> e credibilidade <span class="kw">2</span>.</dd></div>
+      <div><dt>sobra</dt><dd>Tudo que o formulário não previa vai para uma coluna JSON, com o nome que a unidade deu.</dd></div>
+    </dl>
+  </section>
+
+  <footer>
+    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 11 de
+      setembro de 2026). Em caso de divergência, o YAML é a fonte de verdade — os diagramas
+      seguem ele, não o contrário.</p>
+    <p>Sistemas de origem identificados por código genérico (<code>C2_A</code>,
+      <code>C2_B</code>). Nomes de unidade e de lugar usados como exemplo são sintéticos.</p>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  (function () {
+    // ----- theme toggle -----
+    var root = document.documentElement;
+    var btn = document.getElementById('toggle');
+    try {
+      var saved = localStorage.getItem('arqtemac-tema');
+      if (saved === 'dark' || saved === 'light') root.dataset.theme = saved;
+    } catch (e) {}
+    btn.addEventListener('click', function () {
+      var cur = root.dataset.theme;
+      if (!cur) {
+        cur = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      var next = cur === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try { localStorage.setItem('arqtemac-tema', next); } catch (e) {}
+    });
+
+    // ----- copy each diagram's source into its "ver codigo-fonte" panel -----
+    var plates = Array.prototype.slice.call(document.querySelectorAll('figure.plate'));
+    plates.forEach(function (fig) {
+      var pre = fig.querySelector('pre.mermaid');
+      var code = fig.querySelector('code.src-view');
+      if (!pre || !code) return;
+      var src = pre.innerHTML
+        .replace(/<br\s*\/?>/gi, '<br/>')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/^\s*\n/, '').replace(/\s+$/, '');
+      code.textContent = src;
+    });
+
+    function degrade() {
+      plates.forEach(function (fig) {
+        var pre = fig.querySelector('pre.mermaid');
+        if (pre) pre.classList.add('raw');
+      });
+    }
+
+    if (!window.mermaid) { degrade(); return; }
+
+    try {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'loose',
+        theme: 'base',
+        flowchart: { useMaxWidth: true, htmlLabels: true },
+        er: { useMaxWidth: true },
+        themeVariables: {
+          background: '#f5f4ef',
+          primaryColor: '#eae9df',
+          primaryTextColor: '#1e2420',
+          primaryBorderColor: '#8a9184',
+          lineColor: '#3f5c42',
+          secondaryColor: '#e3ebe0',
+          tertiaryColor: '#efece1',
+          clusterBkg: '#eceadf',
+          clusterBorder: '#b7beaa',
+          titleColor: '#1e2420',
+          edgeLabelBackground: '#f5f4ef',
+          attributeBackgroundColorOdd: '#f2f1ea',
+          attributeBackgroundColorEven: '#e9e8dd',
+          fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace',
+          fontSize: '14px'
+        }
+      });
+      var run = mermaid.run({ querySelector: 'figure.plate pre.mermaid' });
+      if (run && typeof run.catch === 'function') run.catch(degrade);
+    } catch (e) {
+      degrade();
+    }
+  })();
+</script>

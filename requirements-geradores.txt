@@ -1,0 +1,14 @@
+# ============================================================
+# infra-dissertacao — dependencias dos geradores sinteticos
+# (scripts/geradores/). Rodam na maquina host, fora do Docker,
+# sem GPU. Instalar num venv proprio:
+#   python3 -m venv venv-geradores && source venv-geradores/bin/activate
+#   pip install -r requirements-geradores.txt
+# ============================================================
+pyyaml>=6.0          # le canonico/modelo_canonico.yaml (dominios, sinonimos)
+numpy>=1.26          # trajetorias, ruido de radio, degradacao de imagem
+pillow>=10.0         # fotos sinteticas, formularios "escaneados" -> PDF
+piexif>=1.1.3        # EXIF (GPS e data) nas fotos de incidente
+openpyxl>=3.1        # planilha do RELPER
+piper-tts>=1.3       # sintese de voz pt-BR em CPU (vozes baixadas sob demanda)
+minio>=7.2           # envio de landing/ para o MinIO

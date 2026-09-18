@@ -1,0 +1,1535 @@
+# =============================================================================
+# MODELO CANONICO — ARQ_TEMAC
+# =============================================================================
+# Um arquivo, duas metades:
+#
+#   entidades   as tabelas de destino: quais colunas existem e o que cada uma e.
+#   fontes      o de/para: por onde cada campo de cada sistema chega ate elas.
+#
+# O job de transformacao le este arquivo e monta o SQL. Nao ha `if fonte == ...`
+# no codigo: integrar uma fonte nova e acrescentar um bloco aqui.
+#
+# NOMES seguem o IR 14-06 (Portaria 011-STI/2004), que rege a atribuicao de
+# nomes de dados no Exercito: MAIUSCULAS, termos separados por _, no maximo 30
+# caracteres, sem acento, na ordem Propriedade + Representacao.
+#
+#     FONTE_CONFIABILIDADE_COD
+#     |________propriedade_____|_COD = CODIGO (termo de representacao)
+#
+# O termo final vem de uma lista fechada (canonico/ir_14_06/termos_representacao.csv),
+# e as abreviaturas vem do MD33-M-02, o manual das Forcas Armadas.
+#
+# IDIOMA — regra do trabalho:
+#   termo de DOUTRINA vai para o portugues (genero de documento, tipo de evento,
+#   funcao de combate, escalao). Termo de INFORMATICA fica em ingles ou na forma
+#   mais usual (WKT, MIME, JSON, PDF, GPS, OCR). O criterio e a natureza do
+#   termo, nao a lingua: SITREP saiu porque e doutrina ("Parte de Situacao" no
+#   MD33-M-02, com a sigla estrangeira apenas glosada); GPS ficou porque nomeia
+#   uma tecnologia e e a forma corrente.
+#
+# SIGILO: as fontes sao identificadas por codigo generico (C2_A, C2_B).
+# =============================================================================
+
+metadados:
+  versao: 3
+  atualizado_em: 2026-09-15
+  nota: >-
+    Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
+    correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
+    reancorados em fontes com referente: gps e obstaculo no C2_A, relt_intel e
+    seg_area no C2_B, paf na documentacao de fogos, pessoal e material no novo
+    relatorio periodico. O tipo sensor foi descontinuado: nao acrescentava
+    modalidade nem no de extracao, e portanto nao sustentava nenhuma das duas
+    teses. Entram a fonte RELPER e a modalidade PLANILHA, a entidade
+    SITUACAO_UNIDADE, a referencia REF_ABREVIATURA e o indicador de mediacao
+    por sistema de C2.
+  nota_2026_09_09: >-
+    Toda fonte passa a atravessar obrigatoriamente a camada Bronze antes da
+    Silver, para que o tratamento seja uniforme (dentro da especificidade de
+    cada modalidade). Antes disso, as fontes que chegavam como JSON (C2_A, C2_B)
+    iam da pasta landing/ direto para EVENTO, sem tabela Bronze — so os binarios
+    tinham ARQUIVO. Agora ha a entidade RECEPCAO_BRUTA: 1 linha por registro
+    JSON, com o payload cru preservado numa coluna, append-only. EVENTO ganha
+    RECEPCAO_IDT, o elo de linhagem simetrico ao ARQUIVO_IDT dos binarios.
+    Bronze fica com duas formas — RECEPCAO_BRUTA para payload estruturado que
+    cabe em coluna, ARQUIVO + EXTRACAO para binario cujos bytes vivem no
+    armazenamento de objetos — e nenhuma fonte pula a camada.
+  nota_operacao_2026_09_09: >-
+    Entra REF_OPERACAO e a coluna OPERACAO_COD (nao nula em EVENTO; carimbada
+    tambem em ARQUIVO e RECEPCAO_BRUTA). E a chave que une as fontes
+    heterogeneas e o recorte de toda visao Gold — sem ela, adestramentos
+    diferentes se misturam. O codigo e legivel (PERSEU_2024), e o hash interno
+    do C2_A vira chave alternativa (OPERACAO_ORIGEM_C2A_COD). Decisao do usuario
+    (2026-09-10): a operacao do estudo e a Perseu 2024, exercicio real e publico
+    (25 nov a 5 dez 2024, Vale do Paraiba ate Resende); os seeds geograficos
+    foram movidos para essa regiao, com toponimos e rodovias inventados.
+
+    Decisao do usuario: SIDECAR EM TUDO. Todo arquivo em landing/ — xlsx, PDF,
+    imagem, audio — chega com um .json de proveniencia ao lado. O sidecar entra
+    em RECEPCAO_BRUTA; o binario, em ARQUIVO; ligados por ARQUIVO_IDT. Efeito:
+    EVENTO.RECEPCAO_IDT vira NAO NULO (todo evento nasce de um registro
+    estruturado), e a operacao vem SEMPRE do sidecar/JSON — uma regra so, sem
+    caso especial por modalidade. Some a regra antiga "RECEPCAO_IDT OU
+    ARQUIVO_IDT": foto, audio e agora planilha/PDF tem os dois. O conteudo do
+    arquivo (celulas, colunas) continua vindo do binario por celula/OCR.
+
+    Decisao do usuario: UMA operacao no estudo (seed operacoes.csv com uma
+    linha). Fallback contexto_operacao e a resolucao do hash ficam modelados
+    mas nao sao exercitados. Hierarquia de unidades continua a de tempo de paz
+    (sem organizacao para o combate / GITE).
+  nota_2026_09_10: >-
+    Rodada de preparacao dos geradores sinteticos. FOGOS passa a ser FIEL ao
+    Anexo I do EB60-ME-12.301: a col_A e 'Informe de / Hora' (codinome do
+    observador + grupo data-hora), a col_B e a posicao do OBSERVADOR e a area
+    bombardeada esta na col_F — o de/para anterior trocava as duas. A avaliacao
+    'B2' nao existe no Anexo I e migrou para uma fonte propria, INTEL (informe
+    de inteligencia em PDF assinado), que e o documento que a carrega de fato.
+    Entra o tipo BOMBARDEIO_INIMIGO: a 1a parte do relatorio registra fogos do
+    INIMIGO observados, e nao missao de tiro nossa. C2_B ganha `id` no relato e
+    `data_hora`/`descricao` no incidente (REGISTRO_ORIGEM_COD e OCORRENCIA_DATA
+    sao nao nulos e nao tinham origem). VOZ simplificada: o sidecar traz so
+    operacao, hora e estacao; a hora da transmissao vale como hora do fato.
+    Classes de suprimento I, III, V e VIII conferidas contra o Quadro 5-1 do
+    EB70-MC-10.238. Decisao do usuario: a extracao por IA e APONTADA (modelo,
+    prompt, confianca declarada) e a conferencia fica com o estado-maior — nao
+    se calcula taxa de acerto contra gabarito.
+  nota_2026_09_11: >-
+    TODO binario passa por EXTRACAO — nao so o que exige IA. Antes, a leitura
+    direta (celula de planilha por openpyxl, camada de texto do PDF) ia para
+    ARQUIVO.EXTRAIDO_TXT e so a inferencia gerava linha em EXTRACAO: dois
+    caminhos para o mesmo papel. Agora ha um so: ARQUIVO (manifesto) ->
+    EXTRACAO (como o conteudo saiu do binario) -> EVENTO. EXTRAIDO_TXT sai de
+    ARQUIVO; o texto lido mora sempre em EXTRACAO.SAIDA_TXT. Tres ganhos: a
+    ingestao so cataloga (nunca abre o binario); a biblioteca e sua versao
+    ficam registradas tambem na leitura direta (versoes tem defeitos); e uma
+    releitura vira linha nova em vez de alteracao numa tabela append-only.
+    Decisao do usuario: CONFIANCA_PCTL sai e entra INFERENCIA_INDIC (S/N).
+    O que as ferramentas entregam nao e probabilidade calibrada nem e a mesma
+    grandeza (Tesseract: indice por palavra; Whisper: media de log-verossimilhanca
+    por trecho; modelo de linguagem: nada) — uma coluna numerica sugeriria uma
+    comparabilidade que nao existe. O indicador responde a unica pergunta que
+    a tese faz: houve inferencia ou nao. MODELO_NOME passa a ser nulo quando
+    nao houve; FERRAMENTA_NOME (biblioteca + versao) e sempre obrigatorio.
+    EVENTO.EXTRACAO_IDT anda junto com ARQUIVO_IDT: ou os dois, ou nenhum.
+
+    Tambem hoje, decisao do usuario: o C2_A identifica a operacao pela CHAVE
+    NATURAL (nome, ano), formatada pelo proprio sistema — e nao por um hash
+    interno. Cai a chave alternativa OPERACAO_ORIGEM_C2A_COD de REF_OPERACAO e
+    o "dicionario" hash -> codigo. O codigo canonico PERSEU_2024 e a mesma chave
+    escrita como NOME_ANO; a ingestao ja grava assim em RECEPCAO_BRUTA, e a
+    Bronze inteira fica filtravel por operacao. A grafia so pode variar onde uma
+    pessoa digita — o cabecalho do PDF, a celula da planilha — e ali o valor do
+    documento e conferencia contra o do sidecar, nao referencia.
+  nota_2026_09_13: >-
+    Entra AJUSTE_EXTRACAO: o conteudo de cada valor de EXTRACAO.PROMPT_VERSAO_COD
+    — o prompt montado e os parametros da chamada. Ate aqui o codigo da versao
+    nao apontava para nada consultavel e, como o prompt e montado deste YAML a
+    cada execucao, o texto podia mudar sem mudar o codigo. Decisao do usuario: a
+    tabela cobre TODO ajuste (prompt, vocabulario do transcritor, parametros do
+    OCR), nao so prompts; e declarada aqui como as demais tabelas, e EXTRACAO nao
+    muda — a ligacao e pela coluna que ja existia.
+
+    Tambem hoje, decisao do usuario: a extracao por modelo de linguagem precisa
+    ser SUFICIENTE e medida, nao otima — o objetivo e mostrar que os tipos de
+    dado cruzam sob schema-on-read, nao calibrar prompt. O relato do C2_B fica em
+    relato-v3 (uma chamada) e nao na v5 (duas chamadas, ~12 vezes mais lenta,
+    ganho dentro do erro de 22 fatos); as 300 linhas relato-v5 ja gravadas
+    ficam. A medicao contra gabarito, que a nota de 10/09 descartava, existe:
+    scripts/medir_acerto_relato.py. Os textos de todas as versoes estao em
+    canonico/prompts.md.
+
+    Ainda em 13/09, os PDFs. O OCR embaralha tabela: o modelo de linguagem
+    estruturou bem o informe do INTEL (prosa) e mal o RELPER escaneado (colunas
+    deslocadas). O INTEL deixa de ser "grade" e passa a ser cadeia de dois
+    modelos, como a voz (tesseract -> qwen -> EVENTO), medida numa amostra dos 30
+    informes antes de virar tarefa. Decisoes do usuario: a hora do corpo do
+    informe e lida como UTC (deslize do gerador, ver a receita); o lugar e pedido
+    como esta escrito, sem a lista do gazetteer; o RELPER escaneado NAO vai para
+    a Silver — os numeros sairiam errados, e o limite fica registrado como achado.
+    A voz ganha REGISTRO_ORIGEM_COD, sem o qual seus eventos nao tinham chave.
+
+    Revisao no mesmo dia: o RELPER escaneado VAI para a Silver. O OCR de texto
+    embaralhava a tabela; o Docling (servico `docling`, versao fixada) reconstroi
+    a grade, com 95,7% dos numeros na celula certa nos 7 pares. A receita
+    `situacao_digitalizada` passa a funcionar de fato — `herda` nao era lido pelo
+    job — com duas regras novas: coluna por POSICAO no escaneado, e `cede_a`, que
+    deixa a remessa que chegou nos dois formatos so com a planilha. Ideia do
+    usuario: como a estrutura das unidades e conhecida, a fracao lida por OCR
+    ('10 Pel', '510 GAC') e atribuida a sigla mais parecida da OM remetente
+    (`busca: mais_parecido`, ate 2 letras de diferenca) — de 73 para 145 linhas
+    com unidade, sem nenhuma atribuida errada nas remessas gemeas. O FOGOS vai
+    pelo mesmo caminho: grade do Docling por posicao (as onze colunas da 1a parte
+    declaradas em `colunas:`), hora pelo grupo data-hora e lugar pela coordenada
+    decametrica, que perde o digito dos milhares de km do Norte e e desempatada
+    pela area da operacao — nos 11 bombardeios do gabarito, a 1,3-6,1 m do fato.
+  nota_2026_09_14: >-
+    Entra MEDIDA_COORDENACAO, a segunda extensao de EVENTO: especie, nome e
+    observacao das feicoes desenhadas no mapa do C2_A. Ate aqui a Silver guardava
+    so o tipo (MCC ou OBSTACULO), a geometria e a hora — o nome 'O7' e a especie
+    'objetivo' ficavam na Bronze, e a Gold nao le a Bronze. Decisao do usuario,
+    pela regra ja escrita neste modelo: atributo que so uma fonte tem, com esquema
+    fixado por norma (as especies sao doutrinarias), vira extensao. Duas chaves
+    novas no de/para: `tabela_extensao`, na receita, quando so UMA receita da
+    fonte tem extensao (o C2_A tem `posicao` e `mcc`); e `de`, quando o mesmo
+    campo da origem alimenta duas regras com conversoes diferentes (`especie`
+    vira TIPO_COD e MEDIDA_ESPECIE_COD).
+
+    Tambem em 14/09: a voz passa a trazer a prioridade (pedido voz-v2), com o erro
+    que a inferencia tiver — decisao do usuario; o acerto medido esta no
+    ACHADOS.md. Condicoes meteorologicas: nao ha fonte no estudo, e a limitacao
+    fica declarada; a arquitetura recebe a fonte quando ela existir, por um bloco
+    em `fontes`, sem mudar tabela.
+
+    Ainda em 14/09, a Gold. Quatro visoes (COC, PITCIC, PPCOT, Avaliacao), cada uma
+    UMA tabela na camada gold, com os elementos do processo empilhados pelas
+    fases doutrinarias; todas saem da mesma Silver e a sobreposicao entre elas e
+    desejada (os produtos do PITCIC alimentam o exame de situacao do PPCOT).
+    Decisoes do usuario: Spark escreve a Gold (Trino so consulta), com as contas
+    geograficas em funcoes Python no proprio job, sem biblioteca nova; nomes de
+    coluna seguem o IR 14-06 em todas as camadas, e so os VALORES das celulas da
+    Gold usam as siglas do MD33-M-02 (revisto no mesmo dia: a primeira versao
+    abreviava tambem os nomes); metas de indicador nao sao inventadas. Primeira
+    visao construida: PITCIC.
+  nota_2026_09_15: >-
+    A hora do C2_B estava 3 h adiantada na Silver. O C2_B escreve data e hora em
+    horario de Brasilia sem fuso ('25/11/2024 14:09:32') e `ts_br` lia como UTC.
+    Achado ao validar a corroboracao da Gold-PITCIC contra o gabarito: relato e
+    radio do mesmo fato caiam 2h20 a 2h45 um do outro. `ts_br` passa a aceitar
+    `fuso`, e as duas receitas do C2_B declaram "-03:00". Os eventos antigos foram
+    apagados antes do reprocessamento, porque a hora entra no EVENTO_IDT.
+
+
+# =============================================================================
+# DOMINIOS — listas de valores permitidos
+# =============================================================================
+# `sinonimos` e o que faz a integracao funcionar: cada sistema escreve do seu
+# jeito e todos convergem para o mesmo valor. Valor que nao casa com nenhum
+# sinonimo nao passa despercebido — vira erro de qualidade.
+# =============================================================================
+
+dominios:
+
+  sistema_origem:
+    descricao: Sistema ou processo que produziu o dado.
+    valores:
+      C2_A:   {rotulo: Aplicativo C2 A}
+      C2_B:   {rotulo: Aplicativo C2 B}
+      RELPER: {rotulo: Relatorio Periodico de Pessoal e Material}
+      FOGOS:  {rotulo: Documentacao de fogos}
+      VOZ:    {rotulo: Mensagem de voz}
+      INTEL:  {rotulo: Informe de inteligencia}
+    # RELPER: o MD33-M-02 cataloga RPP (Relatorio Periodico de Pessoal) e RPI
+    # (Relatorio Periodico de Inteligencia). O formulario decretado pelo EM da
+    # brigada consolida pessoal e material num documento so, entao o codigo
+    # generaliza o genero em vez de adotar a especie.
+
+  modalidade:
+    descricao: >-
+      Forma fisica em que o dado chegou. E a coluna que sustenta a tese de
+      heterogeneidade: permite contar quantas modalidades uma consulta atravessou.
+    valores:
+      JSON:     {rotulo: JSON estruturado}
+      TEXTO:    {rotulo: Texto livre}
+      PLANILHA: {rotulo: Planilha eletronica}
+      IMAGEM:   {rotulo: Imagem}
+      AUDIO:    {rotulo: Audio}
+      PDF:      {rotulo: Documento digitalizado}
+
+  tipo_evento:
+    descricao: Natureza do fato relatado.
+    valores:
+      POSICAO:             {rotulo: Relato de posicao, quando: "a fracao informa onde esta e o que faz; nada de novo aconteceu", sinonimos: [tordilho]}
+      AVISTAMENTO:         {rotulo: Avistamento, quando: "viu algo digno de nota que NAO e forca oponente: pessoas, veiculos civis, movimento de populacao", sinonimos: [potro]}
+      AVISTAMENTO_INIMIGO: {rotulo: Avistamento de forca oponente, quando: "viu forca oponente: tropa, viatura militar ou indicio de presenca inimiga", sinonimos: [cavalo]}
+      INCIDENTE:           {rotulo: Incidente, quando: "algo deu errado ou exige providencia: acidente, avaria, obstaculo na via, pessoa ferida", sinonimos: [brasa]}
+      OBSTACULO:           {rotulo: Obstaculo, quando: "feicao que impede ou canaliza o movimento: campo de minas, cratera, barreira", sinonimos: [bigorna, campo de minas, cratera, barreira, fosso anticarro]}
+      MCC:                 {rotulo: Medida de coordenacao e controle, quando: "medida de coordenacao e controle desenhada no mapa: limite, eixo, linha de fase, objetivo", sinonimos: [linha de fase, zona de reuniao, limite, eixo de progressao, ponto de controle, objetivo, linha de partida]}
+      MISSAO_TIRO:         {rotulo: Missao de tiro, quando: "pedido ou execucao de fogo pela propria forca", sinonimos: [martelo]}
+      BOMBARDEIO_INIMIGO:  {rotulo: Bombardeio inimigo observado, quando: "fogo do inimigo observado, com local e efeito", sinonimos: [tambor]}
+      SITUACAO_UNIDADE:    {rotulo: Situacao periodica da unidade, quando: "numeros periodicos de pessoal e material de uma unidade; so o formulario produz", sinonimos: [celeiro]}
+    # Os codinomes de radio entram como SINONIMOS, e nao como tabela separada:
+    # 'cavalo' no audio transcrito casa direto com AVISTAMENTO_INIMIGO.
+    #
+    # MCC e OBSTACULO vem da mesma tela do C2_A (as feicoes desenhadas no mapa)
+    # e se separam pela `especie` que o C2_A exporta: campo de minas e cratera
+    # sao obstaculo (algo no terreno, funcao PROTECAO); linha de fase e zona de
+    # reuniao sao medida de coordenacao (algo combinado, funcao MOV_MANOBRA).
+    # As especies entram como SINONIMOS, o mesmo mecanismo dos codinomes.
+    #
+    # SITUACAO_PESSOAL e SITUACAO_MEIO, que existiam separados na v2, viraram um
+    # tipo so: o formulario do EM reporta efetivo e material na MESMA linha, e
+    # parti-lo em dois eventos duplicaria unidade, data e geometria sem ganho.
+    # SENSOR saiu junto com a fonte SIM.
+    #
+    # BOMBARDEIO_INIMIGO e MISSAO_TIRO sao coisas distintas: o Relatorio de
+    # Bombardeio (Anexo I) registra fogos que o INIMIGO fez sobre nos, vistos
+    # por observador ou deduzidos de cratera; missao de tiro e o nosso fogo.
+
+  especie_medida:
+    descricao: >-
+      Especie da feicao desenhada no mapa do C2_A (MEDIDA_COORDENACAO). As mesmas
+      palavras sao sinonimos de MCC e OBSTACULO em tipo_evento: la decidem o TIPO;
+      aqui ficam como a especie, para a Gold saber se a medida e objetivo ou linha.
+    valores:
+      LINHA_FASE:         {rotulo: Linha de fase, sinonimos: [linha de fase]}
+      LINHA_PARTIDA:      {rotulo: Linha de partida, sinonimos: [linha de partida]}
+      LIMITE:             {rotulo: Limite, sinonimos: [limite]}
+      EIXO_PROGRESSAO:    {rotulo: Eixo de progressao, sinonimos: [eixo de progressao]}
+      ZONA_REUNIAO:       {rotulo: Zona de reuniao, sinonimos: [zona de reuniao]}
+      PONTO_CONTROLE:     {rotulo: Ponto de controle, sinonimos: [ponto de controle]}
+      OBJETIVO:           {rotulo: Objetivo, sinonimos: [objetivo]}
+      BARREIRA:           {rotulo: Barreira, sinonimos: [barreira]}
+      FOSSO_ANTICARRO:    {rotulo: Fosso anticarro, sinonimos: [fosso anticarro]}
+      CAMPO_MINAS:        {rotulo: Campo de minas, sinonimos: [campo de minas]}
+      CRATERA:            {rotulo: Cratera, sinonimos: [cratera]}
+
+  funcao_combate:
+    descricao: >-
+      Funcao de combate a que o CONTEUDO do evento pertence. Escalar: um evento
+      trata de uma coisa.
+    valores:
+      MOV_MANOBRA:  {rotulo: Movimento e Manobra, sinonimos: [bussola]}
+      INTELIGENCIA: {rotulo: Inteligencia, sinonimos: [luneta]}
+      FOGOS:        {rotulo: Fogos, sinonimos: [lanca]}
+      PROTECAO:     {rotulo: Protecao, sinonimos: [escudo]}
+      LOGISTICA:    {rotulo: Logistica, sinonimos: [celeiro]}
+    # COMANDO E CONTROLE NAO ESTA AQUI — e a decisao de modelagem mais
+    # importante da v3, e a razao esta em EVENTO.FUNCAO_C2_INDIC.
+    #
+    # C2 nao e par das demais: e transversal. Um relatorio de minagem entregue
+    # direto ao repositorio e PROTECAO. O MESMO relatorio produzido dentro de um
+    # aplicativo de C2 e PROTECAO **e** C2 — e o que discrimina os dois casos nao
+    # e o conteudo nem a modalidade, e por onde o dado nasceu. Isso e procedencia,
+    # nao natureza; logo mora em outro eixo, e nao disputa esta coluna.
+
+  prioridade:
+    descricao: Urgencia atribuida ao tratamento do evento.
+    valores:
+      URGENTE:     {rotulo: Urgente, quando: "risco imediato a tropa ou a missao; exige acao agora",     sinonimos: [Alta, Critica, Imediato, relampago]}
+      PRIORITARIO: {rotulo: Prioritario, quando: "precisa de providencia, mas nao e imediato", sinonimos: [Media, Moderada, chuva]}
+      ROTINA:      {rotulo: Rotina, quando: "informativo; nada a fazer",      sinonimos: [Baixa, Normal, orvalho]}
+
+  confiabilidade:
+    descricao: Confiabilidade da fonte. Escala doutrinaria de A a F.
+    valores:
+      A: {rotulo: Fonte confiavel, sinonimos: [granito]}
+      B: {rotulo: Fonte geralmente confiavel}
+      C: {rotulo: Fonte razoavelmente confiavel, sinonimos: [arenito]}
+      D: {rotulo: Fonte nao usualmente confiavel}
+      E: {rotulo: Fonte nao confiavel, sinonimos: [areia]}
+      F: {rotulo: Confiabilidade nao pode ser julgada}
+
+  credibilidade:
+    descricao: >-
+      Credibilidade da informacao. Escala doutrinaria de algarismo, que anda
+      junto com a letra da confiabilidade: 'B2' e fonte geralmente confiavel
+      com informacao provavelmente verdadeira.
+    valores:
+      "1": {rotulo: Confirmada por outras fontes}
+      "2": {rotulo: Provavelmente verdadeira}
+      "3": {rotulo: Possivelmente verdadeira}
+      "4": {rotulo: Duvidosa}
+      "5": {rotulo: Improvavel}
+      "6": {rotulo: Veracidade nao pode ser julgada}
+
+  metodo_localizacao:
+    descricao: Como a posicao foi obtida. Explica a precisao.
+    valores:
+      GPS:       {rotulo: Receptor de navegacao por satelite}
+      MANUAL:    {rotulo: Informada pelo operador}
+      GAZETTEER: {rotulo: Resolvida por indice de nomes geograficos}
+      OCR_COORD: {rotulo: Lida por reconhecimento optico de caractere}
+    # GPS e OCR ficam: nomeiam tecnologia, nao doutrina, e sao a forma corrente.
+
+  escalao:
+    descricao: Escalao hierarquico da organizacao militar.
+    valores:
+      BDA: {rotulo: Brigada}
+      OM:  {rotulo: Organizacao Militar}
+      SU:  {rotulo: Subunidade}
+      FR:  {rotulo: Fracao}
+
+  tipo_local:
+    descricao: Natureza de uma referencia geografica.
+    valores:
+      RODOVIA_KM:    {rotulo: Marco quilometrico de rodovia}
+      LOCALIDADE:    {rotulo: Povoado ou nucleo habitado}
+      PONTO_NOTAVEL: {rotulo: Ponte, entroncamento ou elevacao}
+      QUADRICULA:    {rotulo: Quadricula da carta militar}
+
+  turno_relatorio:
+    descricao: >-
+      Turno do relatorio periodico. O EM da brigada fixa duas remessas por dia;
+      e o que permite medir a AUSENCIA de reporte, que e dado operacional: saber
+      quais OM nao remeteram no turno das 18h e resposta de comando.
+    valores:
+      MATUTINO:   {rotulo: Remessa da manha}
+      VESPERTINO: {rotulo: Remessa do fim do dia}
+
+  tipo_operacao:
+    descricao: Natureza da operacao que delimita o conjunto de dados.
+    valores:
+      ADESTRAMENTO: {rotulo: Exercicio de adestramento}
+      REAL:         {rotulo: Operacao real}
+    # No estudo de caso os dados sao de um exercicio de adestramento (sinteticos).
+    # A coluna existe para que a arquitetura nao presuma o tipo: uma operacao real
+    # entra pela mesma porta.
+
+
+# =============================================================================
+# ENTIDADES — as tabelas
+# =============================================================================
+# Nove tabelas, e cada uma tem um proposito de uma frase:
+#
+#   RECEPCAO_BRUTA   registro estruturado cru de todo evento: o JSON ou o sidecar
+#   ARQUIVO          manifesto do binario bruto (planilha, imagem, audio, PDF)
+#   EXTRACAO         como o conteudo saiu de cada binario: leitura direta ou IA
+#   EVENTO           onde todas as fontes convergem
+#   SITUACAO_UNIDADE os numeros que so o relatorio periodico tem
+#   REF_OPERACAO     as operacoes que delimitam o estudo, para consulta
+#   REF_UNIDADE      hierarquia militar, para consulta
+#   REF_GAZETTEER    nome de lugar -> coordenada, para consulta
+#   REF_ABREVIATURA  abreviatura -> termo, para consulta
+#
+# TODA fonte passa pela Bronze antes da Silver, e TODO evento nasce de um
+# registro estruturado em RECEPCAO_BRUTA — nada vai da landing/ direto para
+# EVENTO. Esse registro e:
+#   - o proprio JSON, quando a fonte ja e estruturada (C2_A, C2_B); ou
+#   - o SIDECAR: um pequeno JSON de proveniencia que acompanha TODO arquivo em
+#     landing/ (planilha, PDF, imagem, audio), mesmo nome, extensao .json. Nao
+#     se confia no binario para se descrever — mesmo principio do STANAG 4609.
+# O binario, quando existe, vira tambem uma linha em ARQUIVO; sidecar e binario
+# se ligam por ARQUIVO_IDT. So C2_A e o relato em texto do C2_B nao tem binario.
+# Formas diferentes, mesmo tratamento: cru, versionado, nunca normalizado.
+#
+# O QUE UNE TUDO: a OPERACAO. Toda linha de EVENTO carrega OPERACAO_COD (nao
+# nulo) — uma posicao de GPS, um relatorio de bombardeio e uma mensagem de voz
+# so se cruzam se pertencem a mesma operacao, e toda visao Gold e recortada por
+# ela. O valor vem SEMPRE do registro em RECEPCAO_BRUTA (o JSON ou o sidecar):
+# uma regra so, sem caso especial por modalidade. O conteudo do documento
+# (celulas da planilha, colunas do PDF) continua sendo lido do binario; o
+# sidecar carrega o que e ABOUT o arquivo (operacao, unidade remetente, data).
+# O OPERACAO_COD de ARQUIVO vem da pasta (landing/<operacao>/...), carimbado na
+# ingestao; serve de conferencia contra o do sidecar. Fallback, quase nunca
+# usado: arquivo sem sidecar -> hora + geo de captura dentro da janela e da
+# AREA_WKT de REF_OPERACAO (transformacao contexto_operacao).
+#
+# O estudo de caso e de UMA operacao: a seed operacoes.csv tem uma linha. O
+# aparato (fallback por contexto) esta modelado para
+# que uma segunda operacao entre sem tocar em codigo, mas nao e exercitado aqui.
+#
+# A regra que separa EVENTO de SITUACAO_UNIDADE, e que vale para qualquer fonte
+# futura: esta em EVENTO o que TODA fonte tem (quem, quando, onde, por onde
+# chegou, de que registro bruto veio). Vira tabela de extensao o que SO UMA
+# fonte tem. Foto, audio e relato livre nao tem atributo proprio — produzem uma
+# linha de RECEPCAO_BRUTA (e, se ha binario, uma de ARQUIVO), mais um EVENTO, e
+# nada alem. A planilha tem (SITUACAO_UNIDADE) e o mapa do C2_A tambem
+# (MEDIDA_COORDENACAO, desde 14/09): por isso ha duas extensoes, e so duas.
+# =============================================================================
+
+entidades:
+
+  # ---------------------------------------------------------------------------
+  EVENTO:
+    descricao: >-
+      Fato relatado, observado ou ocorrido no terreno. Todas as fontes
+      desembocam aqui, seja qual for a modalidade em que chegaram.
+    abreviatura: EVT
+    camada: silver
+    chave: [EVENTO_IDT]
+    campos:
+      EVENTO_IDT:
+        {tipo: string, nulo: false,
+         descricao: "Identificador do evento. Calculado a partir da fonte, do identificador de origem e do instante, para que reprocessar o mesmo arquivo nao duplique linha. Numa planilha, entra tambem a unidade da linha: um arquivo produz um evento por linha."}
+      OPERACAO_COD:
+        {tipo: string, nulo: false, referencia: REF_OPERACAO,
+         descricao: "Operacao a que o evento pertence. Chave de juncao entre as fontes heterogeneas e recorte de toda visao Gold. nulo: false — evento fora de operacao nao existe neste estudo. Vem sempre do registro em RECEPCAO_BRUTA (o JSON nativo ou o sidecar); confere contra ARQUIVO.OPERACAO_COD, o palpite da pasta."}
+      SISTEMA_ORIGEM_COD:
+        {tipo: string, nulo: false, dominio: sistema_origem,
+         descricao: Sistema que produziu o dado.}
+      REGISTRO_ORIGEM_COD:
+        {tipo: string, nulo: false,
+         descricao: Identificador do registro no sistema de origem.}
+      MODALIDADE_ORIGEM_COD:
+        {tipo: string, nulo: false, dominio: modalidade,
+         descricao: "Forma em que o dado chegou. Sustenta a tese de heterogeneidade."}
+      TIPO_COD:
+        {tipo: string, nulo: false, dominio: tipo_evento, descricao: Natureza do fato.}
+      FUNCAO_COMBATE_COD:
+        {tipo: string, nulo: true, dominio: funcao_combate,
+         descricao: "Funcao de combate do conteudo do evento. Escalar: nao inclui C2, que e transversal e vive na coluna seguinte."}
+      FUNCAO_C2_INDIC:
+        tipo: string
+        nulo: false
+        valores: [S, N]
+        derivado: true
+        regra: "S quando SISTEMA_ORIGEM_COD in (C2_A, C2_B); N nos demais casos."
+        descricao: >-
+          Indica se a funcao de combate Comando e Controle participou do evento.
+          C2 e transversal: soma-se a funcao do conteudo em vez de substitui-la,
+          e um relatorio de minagem produzido dentro do C2_A e PROTECAO + C2.
+          A regra e por procedencia, e nao por conteudo, porque o que caracteriza
+          a participacao de C2 e o dado ter nascido dentro de um sistema de
+          informacao de C2, que registra o processo de estado-maior. Radio e
+          documento avulso sao MEIOS de transmissao: carregam o dado sem
+          registrar o processo, e por isso nao contam.
+          Consequencia que vale para a tese: C2 e a unica funcao de combate que
+          nunca precisa de inferencia: le-se da procedencia, com certeza,
+          enquanto todas as outras sao deduzidas do conteudo.
+      OCORRENCIA_DATA:
+        {tipo: timestamp, nulo: false, descricao: Quando o fato ocorreu no terreno.}
+      CHEGADA_DATA:
+        {tipo: timestamp, nulo: false, descricao: Quando o registro entrou na plataforma.}
+      LATENCIA_INGESTAO_SEGUNDOS:
+        {tipo: double, nulo: true,
+         descricao: "Diferenca entre as duas datas acima. SEGUNDOS e termo de representacao catalogado, por isso nao leva sufixo."}
+      UNIDADE_REPORTANTE_COD:
+        {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: Unidade que reportou.}
+      GEOMETRIA_WKT:
+        {tipo: string, nulo: true,
+         descricao: "Onde foi, em Well-Known Text. E a coluna que quatro modalidades diferentes alimentam. WKT nomeia um padrao tecnico (OGC) sem equivalente no catalogo de termos de representacao do Art. 138: excecao documentada."}
+      PRECISAO_METRO:
+        {tipo: double, nulo: true,
+         descricao: "Incerteza da localizacao. Sem sufixo porque METRO ja implica quantidade."}
+      LOCALIZACAO_METODO_COD:
+        {tipo: string, nulo: true, dominio: metodo_localizacao,
+         descricao: "Como a posicao foi obtida. Explica a precisao."}
+      PRIORIDADE_COD:
+        {tipo: string, nulo: true, dominio: prioridade, descricao: Urgencia do tratamento.}
+      FONTE_CONFIABILIDADE_COD:
+        {tipo: string, nulo: true, dominio: confiabilidade, descricao: Confiabilidade da fonte.}
+      INFO_CREDIBILIDADE_COD:
+        {tipo: string, nulo: true, dominio: credibilidade,
+         descricao: "Credibilidade da informacao. Chega junto com a confiabilidade num codigo unico de duas posicoes, separado na ingestao."}
+      RELATO_TXT:
+        {tipo: string, nulo: true,
+         descricao: "Narrativa livre, quando houver. E a entrada da extracao por modelo de linguagem. Sufixo TXT conforme o termo TEXTO do Art. 138."}
+      RECEPCAO_IDT:
+        {tipo: string, nulo: false, referencia: RECEPCAO_BRUTA,
+         descricao: "Registro estruturado que originou o evento: o JSON do C2_A/C2_B, ou o sidecar do arquivo. Primeiro elo da linhagem, e existe SEMPRE — todo arquivo, inclusive planilha e PDF, chega com sidecar."}
+      ARQUIVO_IDT:
+        {tipo: string, nulo: true, referencia: ARQUIVO,
+         descricao: "Arquivo binario bruto por tras do evento (foto, planilha, PDF, audio), quando ha um. Vazio so para C2_A e para o relato em texto do C2_B. Quando preenchido, vem JUNTO com RECEPCAO_IDT — o sidecar e o binario sao dois registros brutos do mesmo evento."}
+      EXTRACAO_IDT:
+        {tipo: string, nulo: true, referencia: EXTRACAO,
+         descricao: "Extracao que produziu o dado: a leitura do binario, direta ou por IA. Segundo elo: leva ate a ferramenta, o modelo e a versao de prompt. Anda junto com ARQUIVO_IDT — todo evento que veio de arquivo passou por EXTRACAO (ARQUIVO -> EXTRACAO -> EVENTO); nulo so para as fontes JSON puras, que nao tem binario."}
+      EXTRACAO_MODELO_NOME:
+        {tipo: string, nulo: true,
+         descricao: "A cadeia de ferramentas de IA por tras do evento, da ultima leitura para a primeira (ex.: 'ollama qwen3.5:4b <- faster-whisper 1.1.0 medium-int8'). E o AVISO para quem le: este dado passou por inferencia e deve ser conferido — a responsabilidade pela interpretacao continua sendo do militar. Preenchida pelo job, e nao pela receita, sempre que houve inferencia no caminho; nula na leitura direta (planilha) e nas fontes JSON. Repetida aqui de proposito, para aparecer sem juncao."}
+
+  # ---------------------------------------------------------------------------
+  SITUACAO_UNIDADE:
+    descricao: >-
+      Os numeros do relatorio periodico: efetivo, baixas, viaturas e suprimento
+      de uma unidade num turno. Extensao de EVENTO; a outra e MEDIDA_COORDENACAO.
+
+      Ela existe porque estes valores so fazem sentido para UMA fonte. Se
+      morassem em EVENTO, toda linha vinda de foto, audio, PDF ou posicao os
+      teria vazios — a tabela inchada que a versao 2 desmontou. Ficando aqui,
+      EVENTO permanece generico o bastante para as seis modalidades conviverem,
+      e a unica modalidade tabular do conjunto mantem seus numeros com tipo de
+      verdade: 87 e inteiro, e nao o texto "87".
+
+      Justifica-se como tabela fixa, e nao como conteudo semiestruturado, porque
+      o esquema e decretado por norma: o EM da brigada publica o formulario e
+      todas as OM subordinadas preenchem o mesmo.
+    abreviatura: SITU
+    camada: silver
+    chave: [EVENTO_IDT]
+    campos:
+      EVENTO_IDT:
+        {tipo: string, nulo: false, referencia: EVENTO,
+         descricao: "Evento correspondente. Um para um: cada linha da planilha e um evento."}
+      TURNO_COD:
+        {tipo: string, nulo: false, dominio: turno_relatorio,
+         descricao: "Remessa do dia. Com a cadencia declarada, a ausencia de linha vira medida."}
+      EF_PREVISTO_QNT:
+        {tipo: int, nulo: true, descricao: "Efetivo previsto no quadro organico. Ef e Pes sao abreviaturas do MD33-M-02."}
+      EF_PRESENTE_QNT:
+        {tipo: int, nulo: true, descricao: Efetivo presto ao servico no momento do relatorio.}
+      BAIXA_COMBATE_QNT:
+        {tipo: int, nulo: true, descricao: Baixas por acao de combate.}
+      BAIXA_NAO_COMBATE_QNT:
+        {tipo: int, nulo: true, descricao: Baixas por acidente, doenca ou outra causa.}
+      EVACUADO_QNT:
+        {tipo: int, nulo: true, descricao: Militares afastados para atendimento externo.}
+      VTR_OPERACIONAL_QNT:
+        {tipo: int, nulo: true, descricao: "Viaturas prontas para emprego. Vtr e abreviatura do MD33-M-02."}
+      VTR_TOTAL_QNT:
+        {tipo: int, nulo: true, descricao: Viaturas organicas da unidade.}
+      COMBUSTIVEL_PCTL:
+        {tipo: double, nulo: true, descricao: Nivel medio de combustivel das viaturas.}
+      SUP_CL_I_DIAS:
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe I: subsistencia, inclusive agua (Quadro 5-1 do EB70-MC-10.238). D Sup (Dia de Suprimento) e a unidade doutrinaria, catalogada no MD33-M-02; DIAS e termo de representacao do Art. 138."}
+      SUP_CL_III_DIAS:
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe III: combustiveis, oleos e lubrificantes."}
+      SUP_CL_V_DIAS:
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe V: armamento e municao."}
+      SUP_CL_VIII_DIAS:
+        {tipo: double, nulo: true, descricao: "Dias de suprimento de Classe VIII: saude. As quatro classes sao as que o formulario do EM pede; as dez classes da F Ter estao no Quadro 5-1 do EB70-MC-10.238."}
+      NECESSIDADE_TXT:
+        tipo: string
+        nulo: true
+        descricao: >-
+          Necessidade prioritaria declarada pela unidade. E a unica celula de
+          preenchimento livre do formulario, e por isso o lugar onde a
+          abreviatura digitada a mao aparece: uma OM escreve Fuzil, outra
+          escreve Fz. Resolve contra REF_ABREVIATURA pela transformacao
+          `abreviatura`, e o que nao casar fica registrado em vez de virar nulo
+          calado.
+      FORMULARIO_VERSAO_COD:
+        tipo: string
+        nulo: true
+        descricao: >-
+          Versao do formulario que a OM usou. Existe para o caso espelho do
+          anterior: quando o EM revisa o formulario, por algumas semanas
+          convivem duas versoes, porque nem toda OM atualizou. O caminho
+          relacional exige que a migracao ocorra antes do primeiro arquivo novo
+          chegar, e depois quebra com os antigos; aqui as duas convivem e a
+          divergencia e consultavel.
+      ATRIBUTO_EXTRA_TXT:
+        tipo: string
+        nulo: true
+        descricao: >-
+          As colunas que o formulario NAO previa, guardadas em JSON com o nome
+          que a OM deu. E o coracao do argumento de schema-on-read: a OM que
+          acha que precisa mandar mais informacao acrescenta uma coluna, e no
+          caminho relacional essa coluna nao tem onde entrar — o ETL a descarta
+          em silencio ou a carga falha, e preserva-la exige ALTER TABLE por uma
+          coluna que talvez so uma unidade use. Aqui ela e preservada sem nunca
+          ter sido modelada, e quando o EM concluir que a ideia era boa e
+          incorpora-la ao formulario oficial, o historico ja esta gravado e se
+          recupera aplicando o esquema novo na leitura. No caminho relacional
+          esses meses foram destruidos no momento da carga.
+          Consequencia doutrinaria: coluna a mais nao e defeito de qualidade, e
+          o campo sinalizando que o formulario do EM esta incompleto. O
+          Lakehouse captura o sinal; o pipeline relacional o destroi na carga.
+
+  # ---------------------------------------------------------------------------
+  MEDIDA_COORDENACAO:
+    descricao: >-
+      A feicao desenhada no mapa do C2_A: especie e nome de cada medida de
+      coordenacao e controle (linha de fase 'LF AMBAR', objetivo 'O7', ponto de
+      controle 'P Ct 12') e de cada obstaculo lancado na mesma tela (barreira,
+      fosso anticarro). Extensao de EVENTO, a segunda do modelo.
+
+      Existe pela mesma regra que criou SITUACAO_UNIDADE: so uma fonte tem estes
+      atributos, e o esquema e fixado por norma, porque as especies sao
+      doutrinarias. Em EVENTO ficam o tipo (MCC ou OBSTACULO), a geometria e a
+      hora; aqui fica o que permite a Gold dizer QUAL medida — e comparar a
+      posicao da tropa com o objetivo O7 e o que torna possivel a comparacao
+      entre o planejado e o atual.
+    abreviatura: MDD      # Medida = Mdd no MD33-M-02. MCC nao: la e Centro de Controle da Missao
+    camada: silver
+    chave: [EVENTO_IDT]
+    campos:
+      EVENTO_IDT:
+        {tipo: string, nulo: false, referencia: EVENTO,
+         descricao: "Evento correspondente. Um para um: cada feicao desenhada no mapa e um evento."}
+      MEDIDA_ESPECIE_COD:
+        {tipo: string, nulo: false, dominio: especie_medida,
+         descricao: "Especie da feicao: linha de fase, objetivo, ponto de controle, barreira..."}
+      MEDIDA_NOME:
+        {tipo: string, nulo: true,
+         descricao: "Nome dado no mapa ('LF AMBAR', 'O7', 'P Ct 12'). E por ele que o estado-maior se refere a medida."}
+      OBSERVACAO:
+        {tipo: string, nulo: true,
+         descricao: "Observacao livre de quem desenhou, quando houver (ex.: 'barreira de troncos na estrada'). Sem sufixo: OBSERVACAO tem representacao implicita TEXTO (Art. 139-143 do IR 14-06)."}
+
+  # ---------------------------------------------------------------------------
+  RECEPCAO_BRUTA:
+    descricao: >-
+      O registro estruturado cru de TODO evento. Duas formas do mesmo papel:
+      o proprio JSON, quando a fonte ja e estruturada (C2_A, C2_B); e o SIDECAR
+      — o pequeno JSON de proveniencia (operacao, unidade remetente, hora, geo,
+      rede) que acompanha todo arquivo em landing/, do xlsx ao .wav. O registro
+      cru vai inteiro para uma coluna de texto, sem um campo sequer ser lido, e
+      a tabela e append-only: reprocessar nunca apaga nem altera o que ja entrou.
+
+      Granularidade: uma linha por unidade estruturada que chega. Para o C2_A e
+      uma por relato; para uma planilha RELPER e uma por arquivo (que depois se
+      abre em N eventos), como acontece em ARQUIVO. O sidecar carrega o que e
+      ABOUT o arquivo; o conteudo do arquivo (celulas, colunas) continua sendo
+      lido do binario.
+
+      Ela existe para que a camada Bronze trate toda fonte do mesmo jeito, e e o
+      palco do argumento de schema-on-read: o payload esta aqui preservado e o
+      esquema so e aplicado na leitura, em EVENTO. Da para ingerir uma fonte
+      antes de modela-la.
+    abreviatura: RCPB
+    camada: bronze
+    chave: [RECEPCAO_IDT]
+    campos:
+      RECEPCAO_IDT:      {tipo: string, nulo: false, descricao: "Identificador do registro bruto. Calculado do sistema de origem, do hash do conteudo e do ARQUIVO que ele acompanha, para que reprocessar o mesmo registro nao gere linha nova. O arquivo entra na conta porque receber um sidecar PARA UM arquivo e distinto de receber o mesmo texto para outro: a mesma remessa enviada em planilha e em escaneado tem sidecares de texto identico e mesmo assim sao duas recepcoes."}
+      SISTEMA_ORIGEM_COD: {tipo: string, nulo: false, dominio: sistema_origem, descricao: Sistema que produziu o registro.}
+      OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao declarada no proprio registro, no codigo NOME_ANO: o sidecar ja traz assim; o C2_A traz nome e ano em dois campos e a ingestao os junta. Valor de referencia da linhagem: e o que EVENTO herda, e o que se confere contra o palpite da pasta em ARQUIVO."}
+      MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: "Modalidade do registro: JSON (C2_A, C2_B) ou a do arquivo que o sidecar acompanha (PLANILHA, PDF, IMAGEM, AUDIO)."}
+      CONTEUDO_JSON_TXT: {tipo: string, nulo: false, descricao: "O registro cru, JSON inteiro, como texto. Nenhum campo foi lido ainda. Mesma propriedade CONTEUDO do hash abaixo."}
+      CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo registro reenviado nao gera linha nova."}
+      ORIGEM_URI_TXT:    {tipo: string, nulo: false, descricao: "Endereco do .json em landing/ de onde o registro foi lido. Fecha a volta ate o byte que chegou."}
+      ARQUIVO_IDT:       {tipo: string, nulo: true, referencia: ARQUIVO, descricao: "Binario que este sidecar acompanha. Vazio so para o JSON do C2_A e o relato em texto do C2_B, que nao tem binario."}
+      RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o registro entrou na plataforma.}
+
+  # ---------------------------------------------------------------------------
+  ARQUIVO:
+    descricao: >-
+      Manifesto de um arquivo binario bruto: planilha, imagem, audio ou
+      documento. O binario fica no armazenamento de objetos; aqui ficam o
+      endereco, o hash e os metadados tecnicos (tamanho, tipo, captura). O
+      conteudo NAO esta aqui: a ingestao so cataloga, nunca abre o binario; o
+      que foi lido dele mora em EXTRACAO. E o equivalente de RECEPCAO_BRUTA
+      para o dado que nao cabe numa coluna.
+    abreviatura: ARQ
+    camada: bronze
+    chave: [ARQUIVO_IDT]
+    campos:
+      ARQUIVO_IDT:       {tipo: string, nulo: false, descricao: Identificador do arquivo.}
+      OPERACAO_COD:      {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao a que o arquivo pertence, carimbada na ingestao pela convencao de pasta (landing/<operacao>/<tipo>/...). E o palpite do momento em que o arquivo pousou; o valor de referencia e o de RECEPCAO_BRUTA (sidecar) ou do cabecalho do documento. Divergencia entre os dois e sinal de qualidade, como a coordenada do EXIF contra a digitada."}
+      CONTEUDO_HASH_COD: {tipo: string, nulo: false, descricao: "Hash do conteudo. Da deduplicacao de graca: o mesmo arquivo reenviado nao gera linha nova."}
+      ARQUIVO_URI_TXT:   {tipo: string, nulo: false, descricao: Endereco no armazenamento de objetos.}
+      MIME_TIPO_COD:     {tipo: string, nulo: false, descricao: "Tipo do arquivo. Ex.: image/jpeg, audio/wav, application/pdf, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet."}
+      MODALIDADE_COD:    {tipo: string, nulo: false, dominio: modalidade, descricao: Modalidade do arquivo.}
+      ARQUIVO_TAMANHO_QNT: {tipo: bigint, nulo: false, descricao: Tamanho em bytes.}
+      CAPTURA_DATA:      {tipo: timestamp, nulo: true, descricao: "Instante da captura, lido do metadado tecnico do proprio arquivo."}
+      CAPTURA_GEOMETRIA_WKT: {tipo: string, nulo: true, descricao: "Coordenada lida do metadado da foto. E uma fonte independente do que o operador digitou, o que permite confrontar as duas."}
+      DIGITALIZADO_INDIC: {tipo: string, nulo: true, valores: [S, N], descricao: "S ou N. S: o documento e imagem digitalizada, sem camada de texto — a extracao precisara de OCR e a qualidade e menor. Detectado no catalogo, sem ler o conteudo; e o que decide qual ferramenta a extracao chama. Sufixo INDIC conforme o termo INDICADOR do Art. 138."}
+      RECEBIMENTO_DATA:  {tipo: timestamp, nulo: false, descricao: Quando o arquivo chegou.}
+
+  # ---------------------------------------------------------------------------
+  EXTRACAO:
+    descricao: >-
+      Toda inferencia deixa uma linha aqui, seja sobre o que saiu de um binario,
+      sobre a saida de outra inferencia, ou sobre um registro que nunca teve
+      binario. As tres entradas possiveis sao tres colunas: ARQUIVO_IDT,
+      EXTRACAO_ORIGEM_IDT e RECEPCAO_IDT — exatamente uma delas e a entrada
+      imediata.
+
+      Uma linha para cada vez que conteudo saiu de um binario — por leitura
+      direta (celula de planilha, camada de texto de PDF) ou por inferencia
+      (reconhecimento optico, transcricao de audio, modelo de linguagem) — e
+      tambem para cada inferencia feita sobre a SAIDA de outra: a cadeia
+      ARQUIVO -> transcricao -> classificacao e tres linhas, nao uma. TODO
+      binario passa por aqui: e o unico caminho de ARQUIVO ate EVENTO. E esta
+      tabela que permite responder "de onde veio este numero, quem o leu e
+      com que versao" — e, pelo INFERENCIA_INDIC, se houve IA no caminho. Um
+      arquivo pode ter varias linhas: reprocessar com ferramenta nova
+      acrescenta uma, nunca altera a anterior.
+    abreviatura: EXTR
+    camada: bronze
+    chave: [EXTRACAO_IDT]
+    campos:
+      EXTRACAO_IDT:      {tipo: string, nulo: false, descricao: Identificador da extracao.}
+      ARQUIVO_IDT:       {tipo: string, nulo: true, referencia: ARQUIVO, descricao: "Binario de onde tudo partiu. Fica preenchido mesmo quando a entrada imediata foi outra extracao — assim toda leitura sabe a qual arquivo pertence. Nulo quando a inferencia foi feita sobre um registro que nunca teve binario: o relato em texto do C2_B."}
+      RECEPCAO_IDT:      {tipo: string, nulo: true, referencia: RECEPCAO_BRUTA, descricao: "Registro estruturado sobre o qual a inferencia foi feita, quando nao houve binario. E o caso do relato do C2_B: o texto livre chega dentro do proprio JSON, e o modelo de linguagem le dali."}
+      EXTRACAO_ORIGEM_IDT: {tipo: string, nulo: true, referencia: EXTRACAO, descricao: "A extracao que esta leu, quando a entrada NAO foi o binario. E o caso de toda cadeia de dois modelos: o transcritor le o audio e devolve texto; o modelo de linguagem le ESSE TEXTO e devolve campos. Sem esta coluna as duas inferencias ficam penduradas no mesmo arquivo como se fossem independentes, e se perde a informacao de que uma leu a outra. Nulo quando a entrada foi o proprio binario."}
+      INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
+      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
+      MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, por (Tesseract), small-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}
+      PROMPT_VERSAO_COD: {tipo: string, nulo: true, referencia: AJUSTE_EXTRACAO, descricao: "O AJUSTE com que a ferramenta foi chamada, sem o qual o resultado nao se reproduz: a versao do prompt do modelo de linguagem, o vocabulario inicial do transcritor, o modo de segmentacao e a resolucao do reconhecimento optico (ex.: psm4-200dpi). O conteudo de cada codigo esta em AJUSTE_EXTRACAO. Nulo na leitura direta, que nao tem ajuste."}
+      SAIDA_TXT:         {tipo: string, nulo: true, descricao: "O que saiu do binario: as celulas, o texto do PDF, a transcricao, os campos que o modelo devolveu. E daqui — nunca do binario — que o de/para le o conteudo."}
+      EXTRACAO_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto.}
+      STATUS_COD:        {tipo: string, nulo: false, descricao: "OK, PARCIAL ou FALHA. FALHA cobre tambem a leitura direta: planilha corrompida, PDF que nao abre."}
+      EXECUCAO_DATA:     {tipo: timestamp, nulo: false, descricao: Quando a extracao rodou.}
+
+  # ---------------------------------------------------------------------------
+  AJUSTE_EXTRACAO:
+    descricao: >-
+      O conteudo de cada ajuste citado em EXTRACAO.PROMPT_VERSAO_COD: o texto
+      MONTADO que a ferramenta recebeu (prompt do modelo de linguagem, vocabulario
+      inicial do transcritor) e os parametros da chamada (opcoes do modelo,
+      idioma, resolucao e segmentacao do reconhecimento optico). Uma linha por
+      versao, gravada pela tarefa de extracao na primeira vez que a usa.
+
+      Existe porque o codigo da versao e escrito a mao na DAG, mas o prompt e
+      montado deste modelo e do gazetteer a cada execucao: mudar um `quando:`
+      muda o texto sem mudar o codigo. A tarefa recalcula o hash e o compara com
+      o daqui — mesmo codigo com hash diferente PARA a extracao, em vez de gravar
+      linhas que dizem uma versao que nao e a delas. Fecha a tese de linhagem:
+      do numero na Gold ate o texto exato que o modelo leu.
+    abreviatura: AJEX
+    camada: bronze
+    chave: [PROMPT_VERSAO_COD]
+    campos:
+      PROMPT_VERSAO_COD:   {tipo: string, nulo: false, descricao: "Codigo do ajuste, o mesmo de EXTRACAO.PROMPT_VERSAO_COD (ex.: relato-v3, vocab-v1, psm4-200dpi). O nome vem de quando so havia prompt; cobre todo ajuste."}
+      FERRAMENTA_NOME:     {tipo: string, nulo: false, descricao: "Ferramenta a que o ajuste se aplica, sem versao: ollama, faster-whisper, tesseract. A versao fica em EXTRACAO, porque a biblioteca pode mudar sem mudar o ajuste."}
+      PARAMETROS_JSON_TXT: {tipo: string, nulo: false, descricao: "Parametros da chamada, em JSON com chaves ordenadas: as opcoes do modelo de linguagem (formato, raciocinio, temperatura), o idioma do transcritor, a resolucao e a segmentacao do OCR."}
+      PROMPT_TXT:          {tipo: string, nulo: true, descricao: "O texto montado que a ferramenta recebeu. A DAG acrescenta a entrada de cada item depois dele (RELATO: ou TRANSCRICAO:). Nulo quando o ajuste e so parametro, como no OCR."}
+      CONTEUDO_HASH_COD:   {tipo: string, nulo: false, descricao: "sha256 de PARAMETROS_JSON_TXT e PROMPT_TXT, no formato 'sha256:<hex>' das demais tabelas. E o que a tarefa compara antes de extrair."}
+      REGISTRO_DATA:       {tipo: timestamp, nulo: false, descricao: "Quando o ajuste foi registrado: a primeira rodada que o usou. As versoes de 12/09, anteriores a tabela, levam a data da primeira extracao de cada uma."}
+
+  # ---------------------------------------------------------------------------
+  REF_OPERACAO:
+    descricao: >-
+      As operacoes e exercicios que delimitam o estudo. Tabela de consulta, e a
+      mais importante do conjunto: e ela que da contexto a todo evento. Sem ela,
+      dados de adestramentos diferentes se misturariam e as visoes Gold nao
+      teriam recorte.
+
+      O codigo e a chave natural da operacao, nome + ano, escrita como
+      NOME_ANO (PERSEU_2024). E a mesma chave que o C2_A usa por dentro — ele
+      exporta nome e ano em dois campos, formatados pelo sistema — e a que
+      aparece no sidecar de todo arquivo e no nome da pasta em landing/. Nao ha
+      dicionario a consultar: so formatar.
+
+      A janela (INICIO_DATA / FIM_DATA) e a AREA_WKT servem de criterio de
+      atribuicao por contexto: um arquivo que chegou pelado, sem se identificar,
+      e atribuido a operacao cuja janela e area contem a hora e o ponto de
+      captura.
+    abreviatura: ROPE
+    camada: silver
+    chave: [OPERACAO_COD]
+    seed: seeds/operacoes.csv
+    campos:
+      OPERACAO_COD:            {tipo: string, nulo: false, descricao: "Codigo legivel: nome + ano, sem acento, termos separados por _. Ex.: PERSEU_2024."}
+      OPERACAO_NOME:           {tipo: string, nulo: false, descricao: "Designacao por extenso. Ex.: Operacao Perseu."}
+      OPERACAO_TIPO_COD:       {tipo: string, nulo: false, dominio: tipo_operacao, descricao: Exercicio de adestramento ou operacao real.}
+      INICIO_DATA:             {tipo: timestamp, nulo: false, descricao: Inicio da janela da operacao.}
+      FIM_DATA:                {tipo: timestamp, nulo: true, descricao: "Fim da janela. Vazio enquanto a operacao esta em curso."}
+      AREA_WKT:                {tipo: string, nulo: true, descricao: "Area de operacoes, em WKT. Criterio de atribuicao por contexto para arquivo sem identificacao propria."}
+      UNIDADE_RESP_COD:        {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade que comanda a operacao. No estudo, a brigada."}
+
+  # ---------------------------------------------------------------------------
+  REF_UNIDADE:
+    descricao: >-
+      Hierarquia de organizacoes militares. Tabela de consulta: converte o que
+      vem escrito na origem no codigo da unidade.
+    abreviatura: RUNI
+    camada: silver
+    chave: [UNIDADE_COD]
+    seed: seeds/unidades.csv
+    campos:
+      UNIDADE_COD:   {tipo: string, nulo: false, descricao: Codigo da unidade.}
+      UNIDADE_NOME:  {tipo: string, nulo: false, descricao: Designacao por extenso.}
+      UNIDADE_SIGLA: {tipo: string, nulo: false, descricao: "Designacao abreviada, formada segundo o MD33-M-02."}
+      ESCALAO_COD:   {tipo: string, nulo: false, dominio: escalao, descricao: Escalao da unidade.}
+      SUPERIOR_COD:  {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade imediatamente superior. Vazio so no topo."}
+
+  # ---------------------------------------------------------------------------
+  REF_GAZETTEER:
+    descricao: >-
+      Indice de nomes geograficos. Tabela de consulta: converte referencia
+      textual em ponto. E o que permite uma mensagem de voz virar coordenada.
+    abreviatura: RGAZ
+    camada: silver
+    chave: [LOCAL_COD]
+    seed: seeds/gazetteer.csv
+    campos:
+      LOCAL_COD:        {tipo: string, nulo: false, descricao: Codigo do local.}
+      LOCAL_NOME:       {tipo: string, nulo: false, descricao: Nome do local.}
+      LOCAL_TIPO_COD:   {tipo: string, nulo: false, dominio: tipo_local, descricao: Natureza da referencia.}
+      REFERENCIA_TXT:   {tipo: string, nulo: false, descricao: "Forma textual usada para casar com a origem. Ex.: 'BR-154 km 43'."}
+      GEOMETRIA_WKT:    {tipo: string, nulo: false, descricao: Ponto correspondente.}
+      PRECISAO_METRO:   {tipo: double, nulo: true, descricao: "Incerteza da referencia: um marco de rodovia e mais preciso que o nome de um povoado."}
+
+  # ---------------------------------------------------------------------------
+  REF_ABREVIATURA:
+    descricao: >-
+      Dicionario de abreviaturas do MD33-M-02. Tabela de consulta: converte o
+      que foi digitado na celula no termo canonico.
+
+      Entra na versao 3 porque o problema real do formulario decretado nao esta
+      no cabecalho — esse o EM fixa, e ninguem redigita cabecalho de planilha
+      pronta — e sim no PREENCHIMENTO: uma OM escreve Fuzil, outra escreve Fz.
+      E o dicionario mostra que o caso e pior do que variacao ortografica:
+
+          Fz   -> Fuzil       (a arma)
+          Fuz  -> Fuzileiro   (a pessoa)
+
+      A OM que escreve Fuz querendo dizer Fuzil comete erro semantico — material
+      vira pessoal. Uma coluna de texto livre engole isso em silencio. E o mesmo
+      fenomeno do Nr contra NR que motivou a regra das duas grafias, agora no
+      conteudo da celula em vez do nome da coluna.
+
+      Com o dicionario como tabela, a resolucao vira declarativa (transformacao
+      `abreviatura`) e o que NAO resolve fica mensuravel em vez de virar nulo
+      calado. Indicador que sai de graca: percentual de celulas resolvidas pelo
+      manual, percentual resolvidas por inferencia, percentual nao resolvidas.
+    abreviatura: RABV
+    camada: silver
+    chave: [ABREVIATURA_COD]
+    seed: ir_14_06/abreviaturas_md33.csv
+    # O CSV das abreviaturas foi extraido do MD33-M-02 por um script proprio e usa
+    # os nomes do manual; aqui fica a correspondencia com as colunas canonicas.
+    seed_colunas: {ABREVIATURA_COD: abreviatura, TERMO_NOME: termo,
+                   SINONIMO_TXT: sinonimos, ORIGEM_COD: origem}
+    campos:
+      ABREVIATURA_COD:  {tipo: string, nulo: false, descricao: "Abreviatura como o MD33-M-02 a grafa. Ex.: 'Vtr', 'Ef', 'Fz'."}
+      TERMO_NOME:       {tipo: string, nulo: false, descricao: "Termo por extenso. Ex.: 'Viatura', 'Efetivo', 'Fuzil'."}
+      SINONIMO_TXT:     {tipo: string, nulo: true, descricao: Outras grafias aceitas para o mesmo termo.}
+      ORIGEM_COD:       {tipo: string, nulo: true, descricao: "Procedencia da abreviatura: capitulo do MD33-M-02 ou proposta a catalogar."}
+
+  # ---------------------------------------------------------------------------
+  # GOLD — uma tabela por visao doutrinaria, reescrita inteira a partir da
+  # Silver pelo job gold_visoes.py (parametros em `visoes:`, no fim do arquivo).
+  # Nomes de coluna seguem o IR 14-06, como em todo o modelo; os VALORES das
+  # celulas usam as siglas do MD33-M-02 (visoes.siglas): e o que o militar le.
+  # ---------------------------------------------------------------------------
+  PITCIC:
+    descricao: >-
+      Produtos do Processo de Integracao Terreno, Condicoes Meteorologicas,
+      Inimigo e Consideracoes Civis (EB70-MC-10.336) que os dados permitem
+      montar, empilhados pelas fases: uma linha por ELEMENTO (lugar, limite,
+      localidade, via, obstaculo, evento da ameaca, atividade por lugar e
+      periodo), com FASE_NRO e ETAPA_COD dizendo a que fase e etapa pertence.
+      Os graos se misturam: filtrar por fase ou elemento antes de contar ou somar.
+      Colunas que nao se aplicam a etapa ficam vazias. Nao entram os produtos
+      que sao analise do estado-maior (modelos e linhas de acao da ameaca,
+      pontos de decisao, area de interesse), nem condicoes meteorologicas, que
+      nao tem fonte no estudo.
+    abreviatura: PITCIC
+    camada: gold
+    chave: [FASE_NRO, ETAPA_COD, ELEMENTO_TIPO_COD, ELEMENTO_NOME, INICIO_DATA]
+    campos:
+      FASE_NRO:      {tipo: int, nulo: false, descricao: "Fase do PITCIC: 1 ambiente operacional, 2 efeitos do ambiente, 3 avaliacao da ameaca, 4 linhas de acao da ameaca."}
+      ETAPA_COD:     {tipo: string, nulo: false, descricao: "Etapa dentro da fase, em sigla do MD33-M-02 quando existe: Crtr Sgf, Z Ac, Cnsd Civ, VA, Rest Mov, DiCoVAP, Atv."}
+      ELEMENTO_TIPO_COD: {tipo: string, nulo: false, descricao: "O que a linha e, em sigla: A Op, Loc, Lim, Rdv, E Prog, Obt, Incid, Amc, Atv, Avistamento."}
+      ELEMENTO_NOME: {tipo: string, nulo: true, descricao: "Nome do elemento: o lugar, a medida desenhada no mapa ou, na fase 4, lugar e periodo."}
+      ELEMENTO_DCRI: {tipo: string, nulo: true, descricao: "Descricao curta: tipo do lugar, observacao do obstaculo, trecho do relato. No informe do INTEL, o paragrafo 1."}
+      OPERACAO_COD:  {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao. Recorte de toda visao."}
+      GEOMETRIA_WKT: {tipo: string, nulo: true, descricao: "Onde, em Well-Known Text: ponto, linha (limite, eixo, rodovia) ou area."}
+      LOCAL_REFERENCIA_NOME: {tipo: string, nulo: true, descricao: "Lugar de referencia mais proximo (REF_GAZETTEER): e por ele que o oficial de inteligencia casa o evento com as RIPI do calco."}
+      LOCAL_REFERENCIA_TIPO_COD: {tipo: string, nulo: true, descricao: "Tipo do lugar de referencia, em sigla: Ponto notavel, Loc, Rdv km."}
+      LOCAL_DISTANCIA_METRO: {tipo: double, nulo: true, descricao: "Distancia do evento ao lugar de referencia."}
+      INICIO_DATA:   {tipo: timestamp, nulo: true, descricao: "Hora do evento, ou a primeira do grupo."}
+      FIM_DATA:      {tipo: timestamp, nulo: true, descricao: "Ultima hora do grupo, ou fim da operacao."}
+      UNIDADE_COD:   {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade que reportou, ou que desenhou a medida."}
+      TIPO_TXT:      {tipo: string, nulo: true, descricao: "Tipo do evento, ou os tipos do grupo, em sigla: Avistamento Ini, Bomb Ini, Incid, Obt."}
+      EVENTO_QNT:    {tipo: int, nulo: true, descricao: "Eventos por tras da linha. Na fase 3, o proprio evento mais os que o corroboram."}
+      FONTE_QNT:     {tipo: int, nulo: true, descricao: "Fontes (sistemas de origem) diferentes. Na fase 3 e a CORROBORACAO: quantas fontes independentes relatam a ameaca no mesmo lugar e hora (parametros em visoes.PITCIC)."}
+      MODALIDADE_TXT: {tipo: string, nulo: true, descricao: "Formas em que os dados chegaram (JSON, TEXTO, IMAGEM, PLANILHA, PDF, AUDIO): o cruzamento de tipos diferentes que a tese demonstra."}
+      FONTE_CONFIABILIDADE_COD: {tipo: string, nulo: true, dominio: confiabilidade, descricao: "Confiabilidade da fonte, quando o documento a traz (informe do INTEL)."}
+      INFO_CREDIBILIDADE_COD: {tipo: string, nulo: true, dominio: credibilidade, descricao: "Credibilidade da informacao, quando o documento a traz."}
+      ARMA_QNT:      {tipo: int, nulo: true, descricao: "Quantidade de armas inimigas lida do Relatorio de Bombardeio ('2/Ob/Me' -> 2)."}
+      ARMA_TIPO_COD: {tipo: string, nulo: true, descricao: "Tipo da arma COMO FOI LIDO (Mrt, Can, Fgt, Ob). Nao e traduzido: o gerador escreve Ob para obus, e no manual Ob e Obras."}
+      ARMA_CALIBRE_COD: {tipo: string, nulo: true, descricao: "Calibre como foi lido: L, Me, P."}
+      EXTRACAO_MODELO_NOME: {tipo: string, nulo: true, descricao: "Cadeia de IA por tras do dado, quando houve: o aviso para conferir."}
+      EVENTO_IDT:    {tipo: "array<string>", nulo: true, descricao: "Eventos da Silver por tras da linha: o caminho de volta ate o arquivo bruto."}
+      ATUALIZACAO_DATA: {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
+
+
+# =============================================================================
+# FONTES — o de/para
+# =============================================================================
+# Cada bloco diz, para um sistema, como cada campo dele chega ao canonico.
+#
+# Transformacoes disponiveis (o codigo delas vive no job, nao aqui):
+#   direto             copia o valor
+#   json               extrai pelo caminho indicado do payload JSON, que fica
+#                      preservado em RECEPCAO_BRUTA.CONTEUDO_JSON_TXT
+#   celula             le uma celula da planilha pelo cabecalho decretado, a
+#                      partir de EXTRACAO.SAIDA_TXT (a leitura direta e uma
+#                      extracao sem inferencia)
+#   ts_iso / ts_br     texto -> data
+#   ponto_de_latlon    par de numeros -> ponto
+#   geojson_para_wkt   GeoJSON -> WKT
+#   dms_para_ponto     grau-minuto-segundo em texto -> ponto
+#   decametrica_para_ponto  coordenada metrica militar -> ponto
+#   gazetteer          nome de lugar -> ponto, consultando REF_GAZETTEER
+#   abreviatura        abreviatura digitada -> termo, consultando REF_ABREVIATURA
+#   dominio            valor da origem -> valor canonico, pelos sinonimos
+#   referencia         valor da origem -> codigo de uma tabela de consulta
+#   contexto_operacao  hora e ponto de captura -> OPERACAO_COD, pela janela e
+#                      AREA_WKT de REF_OPERACAO (fallback para arquivo sem identificacao)
+#   constante          grava um valor fixo
+#   derivado           calculado por regra declarada no campo de destino
+#   split_escala       'B2' -> confiabilidade B e credibilidade 2 (um campo, dois destinos)
+#   sobra              tudo que o formulario nao previa -> uma coluna JSON
+#
+# SIDECAR: nenhum arquivo se descreve bem. TODA midia em landing/ — xlsx, PDF,
+# imagem, audio — vem com um JSON ao lado (mesmo nome, extensao .json) com a
+# proveniencia: operacao, unidade remetente, hora, geo e — para audio — a rede
+# radio. O sidecar entra em RECEPCAO_BRUTA como qualquer registro estruturado;
+# o binario entra em ARQUIVO; os dois se ligam por ARQUIVO_IDT. O bloco da fonte
+# declara o sidecar em `sidecar:` e mapeia os campos dele como mapearia um JSON.
+# O CONTEUDO do arquivo (celulas, colunas) vem do binario por EXTRACAO — leitura
+# direta ou OCR, sempre registrada — e o sidecar so carrega o que e ABOUT o
+# arquivo.
+# =============================================================================
+
+fontes:
+
+  # --- C2_A: JSON com geometria nativa. Sem IA. -------------------------------
+  # Absorve o `gps` e o `obstaculo` da fonte SIM removida — e ganha com isso:
+  # geometria nativa em vez de par de numeros solto, e fracao resolvida contra
+  # REF_UNIDADE em vez de sigla de batalhao em texto livre.
+  #
+  # O payload cai primeiro em RECEPCAO_BRUTA (1 linha por registro, JSON cru
+  # inteiro); as transformacoes `json` abaixo leem de la, nao da landing/. O
+  # campo `_recepcao` grava o elo de linhagem em EVENTO.RECEPCAO_IDT.
+  C2_A:
+    modalidade: JSON
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    entidades:
+
+      posicao:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
+        campos:
+          id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
+          hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
+          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        observacao: "sigla, como o C2_A exporta ('2o Pel Fuz/1a Cia Fuz/511o Btl Inf Mtz'); casa com REF_UNIDADE.UNIDADE_SIGLA"}
+          coordenadas: {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt}
+          precisao_m:  {campo: PRECISAO_METRO, transformacao: direto,
+                        observacao: "erro estimado do GPS, em metros, como o aparelho reporta"}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        compoe_com: [ano],
+                        observacao: "a chave natural do C2_A vem em DOIS campos — `operacao` ('Perseu') e `ano` ('2024') — e o codigo canonico e a juncao dos dois: PERSEU_2024. `compoe_com` diz quais campos entram na juncao, nesta ordem."}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma, nao quando o fato ocorreu"}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
+          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: POSICAO}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: MOV_MANOBRA}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GPS}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+
+      # Medida de Coordenacao e Controle: ponto, linha, poligono ou desenho a
+      # mao livre. E aqui que o antigo `obstaculo` passa a viver, e melhora —
+      # obstaculo e feicao grafica no mapa, nao ponto.
+      mcc:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
+        campos:
+          id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
+          hora:        {campo: OCORRENCIA_DATA, transformacao: ts_iso}
+          fracao:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        observacao: "sigla; casa com REF_UNIDADE.UNIDADE_SIGLA"}
+          geometria:   {campo: GEOMETRIA_WKT, transformacao: geojson_para_wkt,
+                        observacao: "ponto, LINESTRING ou POLYGON; o desenho a mao livre e uma LINESTRING de muitos vertices"}
+          especie:     {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
+                        observacao: "'campo de minas' -> OBSTACULO; 'linha de fase' -> MCC. A especie decide o tipo E a funcao (regra de _funcao)."}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        compoe_com: [ano],
+                        observacao: "chave natural em dois campos; ver o bloco posicao"}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma, nao quando o fato ocorreu"}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_A}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: JSON}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: derivado,
+                        regra: "PROTECAO quando TIPO_COD = OBSTACULO; MOV_MANOBRA quando TIPO_COD = MCC"}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+        # O que so o mapa tem vai para a extensao — so nesta receita: a irma
+        # `posicao` nao tem atributo proprio, por isso a tabela e declarada aqui, e
+        # nao no bloco da fonte.
+        tabela_extensao: MEDIDA_COORDENACAO
+        extensao:
+          especie_medida: {campo: MEDIDA_ESPECIE_COD, transformacao: dominio, dominio: especie_medida, de: especie,
+                           observacao: "o mesmo campo `especie` que decide o TIPO_COD, agora guardado como a especie"}
+          nome:           {campo: MEDIDA_NOME, transformacao: direto}
+          observacao:     {campo: OBSERVACAO, transformacao: direto}
+
+  # --- C2_B: texto livre e incidente com foto. --------------------------------
+  # Absorve o `relt_intel` e o `seg_area` da fonte SIM. O seg_area era duplicata
+  # literal do incidente daqui, so que empobrecida — sem foto e sem prioridade.
+  #
+  # O C2_B exporta JSON: cada relato e cada incidente e um registro que cai
+  # primeiro em RECEPCAO_BRUTA. O incidente, alem disso, referencia um arquivo
+  # de imagem — que gera uma linha em ARQUIVO. E o caso das duas formas de
+  # Bronze na mesma fonte: o registro na RECEPCAO_BRUTA, a foto no ARQUIVO. O
+  # registro JSON do incidente FAZ o papel de sidecar da foto: carrega a
+  # operacao, a unidade e a hora que a imagem sozinha nao carrega de forma
+  # confiavel. A operacao e campo nativo do JSON (no faz de conta, o gerador a
+  # inclui — o C2_B nao a tinha).
+  C2_B:
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    entidades:
+
+      relato:
+        conteudo: payload
+        # O que o documento E. Sem isto, um modelo de linguagem que le o texto nao
+        # tem como saber o que esta lendo, e escolhe o valor cujo NOME parece mais
+        # com o assunto — foi o que levou 143 de 300 relatos a SITUACAO_UNIDADE.
+        documento: >-
+          Texto curto digitado no campo por um militar, dentro do aplicativo de C2,
+          descrevendo o que ele esta vendo ou fazendo naquele momento. Nao usa
+          codigos: e linguagem comum, as vezes abreviada. Quem relatou, quando e de
+          onde ja estao em outros campos do registro — o texto traz APENAS a situacao.
+        # Um observador relata estas quatro coisas, e so estas. Sem esta lista, o
+        # pedido oferece os nove tipos do dominio e convida ao erro.
+        tipos_possiveis: [POSICAO, AVISTAMENTO, AVISTAMENTO_INIMIGO, INCIDENTE]          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
+        modalidade: TEXTO
+        campos:
+          id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
+          data:        {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss", fuso: "-03:00"}
+          relator:     {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        busca: contido,
+                        observacao: "'<posto> <funcao> <fracao> - <IDENTIDADE_MIL>': a sigla vem no MEIO do texto, entre o posto e a identidade. Tres siglas casam por conteudo (pelotao, companhia e batalhao, porque a sigla do pelotao termina com a das duas) — vale a MAIS LONGA, que e a mais especifica."}
+          localizacao: {campo: GEOMETRIA_WKT, transformacao: dms_para_ponto,
+                        observacao: "'Sem localizacao' vira vazio, e nao erro: relato sem coordenada e caso legitimo."}
+          situacao:    {campo: RELATO_TXT, transformacao: direto}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "campo nativo do JSON do C2_B (no faz de conta, o gerador o inclui)"}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a interpretacao do modelo de linguagem sobre ESTE relato. Sem ela nao ha como responder de onde veio o tipo ou a prioridade do evento — sao os unicos campos aqui que ninguem escreveu, foram inferidos."}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+          # Os quatro abaixo NAO chegam no registro: sao inferidos por um modelo
+          # de linguagem que le `situacao`. `por: llm` e o que diz isso — e e o
+          # que faz a tarefa de extracao montar o pedido com estes campos e com
+          # os valores que cada dominio admite. A conversao `dominio` continua
+          # valendo por cima: valor que o modelo invente nao casa e vira NULO,
+          # em vez de entrar como se fosse bom.
+          TIPO_COD:                 {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, por: llm}
+          PRIORIDADE_COD:           {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm}
+          FONTE_CONFIABILIDADE_COD: {campo: FONTE_CONFIABILIDADE_COD, transformacao: dominio, dominio: confiabilidade, por: llm}
+          INFO_CREDIBILIDADE_COD:   {campo: INFO_CREDIBILIDADE_COD, transformacao: dominio, dominio: credibilidade, por: llm}
+        # Estes NAO vem da origem: sao inferidos pelo modelo de linguagem a
+        # partir de RELATO_TXT. Cada inferencia gera uma linha em EXTRACAO.
+        # A confiabilidade entrou aqui porque o antigo relt_intel a trazia
+        # pronta ('A1'); num relato livre de verdade ela e juizo do analista,
+        # e portanto inferida.
+        extraidos_por_llm: [TIPO_COD, PRIORIDADE_COD,
+                            FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD]
+        # FUNCAO_COMBATE_COD saiu desta lista: classificar funcao de combate e
+        # DOUTRINA, nao leitura de texto — pedir isso a um modelo de linguagem e
+        # indefensavel. Ela deriva do TIPO_COD por uma tabela de referencia, que
+        # esta pendente (ver a decisao do glossario). Ate la fica nula, e a
+        # lacuna aparece no dado em vez de ser preenchida por palpite.
+
+      incidente:
+        conteudo: payload          # o registro estruturado ja traz os campos com nome — uma linha da Bronze e uma observacao
+        modalidade: IMAGEM
+        sidecar: "o proprio registro JSON do incidente acompanha a foto (mesmo nome, .json)"
+        campos:
+          id:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto}
+          data_hora:   {campo: OCORRENCIA_DATA, transformacao: ts_br, formato: "dd/MM/yyyy HH:mm:ss", fuso: "-03:00"}
+          descricao:   {campo: RELATO_TXT, transformacao: direto, observacao: "texto curto do incidente, como o operador digitou"}
+          prioridade:  {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade}
+          c_op:        {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE}
+          operacao:    {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                        observacao: "do sidecar; confere contra ARQUIVO.OPERACAO_COD (o palpite da pasta)"}
+          foto:        {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _geometria:  {campo: GEOMETRIA_WKT, transformacao: referencia,
+                        referencia: ARQUIVO.CAPTURA_GEOMETRIA_WKT,
+                        observacao: "vem do metadado da foto, nao do que o operador digitou"}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA,
+                        observacao: "o registro JSON do incidente (o sidecar); a foto em si vai para ARQUIVO pelo campo foto"}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: C2_B}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: IMAGEM}
+          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: INCIDENTE}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: PROTECAO}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GPS}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+
+  # --- RELPER: o formulario decretado pelo EM da brigada. ---------------------
+  # Absorve o `pessoal` e o `material` da fonte SIM, e traz a sexta modalidade.
+  #
+  # Duas entidades para a MESMA remessa, porque as duas acontecem no campo:
+  # a OM que tem o arquivo devolve o xlsx; a que nao tem imprime, preenche a
+  # mao, assina e digitaliza. Mesmo formulario, duas modalidades, e a segunda
+  # atravessa OCR antes de chegar aos mesmos numeros.
+  #
+  # O xlsx chega com um sidecar .json (quem remeteu, qual operacao, data e
+  # turno da remessa) — o que e ABOUT o arquivo. As celulas da tabela, que sao
+  # o CONTEUDO, continuam vindo do binario por `celula`.
+  RELPER:
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    extensao: SITUACAO_UNIDADE
+    cadencia: "duas remessas por dia, fixadas pelo EM da brigada"
+    granularidade: >-
+      Uma linha da planilha por subunidade. Um arquivo produz N eventos e N
+      linhas de SITUACAO_UNIDADE, todos apontando para o mesmo ARQUIVO_IDT e o
+      mesmo RECEPCAO_IDT (o sidecar).
+    entidades:
+
+      situacao:
+        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
+        modalidade: PLANILHA
+        sidecar:
+          operacao:      {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO,
+                          observacao: "confere contra ARQUIVO.OPERACAO_COD (a pasta em landing/)"}
+          om_remetente:  {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                          observacao: "a OM que remeteu o arquivo (sigla). Nao tem coluna propria: entra na regra de _registro. A unidade de CADA LINHA vem da celula 'fracao'."}
+          data_hora:     {campo: OCORRENCIA_DATA, transformacao: ts_iso}
+          turno:         {campo: TURNO_COD, transformacao: dominio, dominio: turno_relatorio}
+        campos:
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                        regra: "sidecar (OM remetente + data + turno) + celula (unidade da linha)"}
+          Fração:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        busca: comeca_por, contexto: om_remetente,
+                        observacao: "celula preenchida a mao, em varias grafias para a mesma unidade: '1a Cia', '1a Cia Fuz', '1ª Cia Fuz', '1 Cia Fuz', '1a Cia Fuz/511'. Duas coisas resolvem: comparar sem acento e sem a letra do ordinal ('1a'='1ª'='1'), e aceitar o inicio da sigla. Sozinho isso seria AMBIGUO — '1a Cia' existe em todo batalhao —, e por isso entra o `contexto`: a OM que remeteu o arquivo, que vem do sidecar. O que ainda nao casar e reportado, nao descartado."}
+          _arquivo:    {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o arquivo entrou na plataforma. Nao vem do documento: o formulario diz quando a situacao foi apurada, nao quando a remessa chegou."}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a leitura que produziu as celulas desta linha (openpyxl, sem IA)"}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: RELPER}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PLANILHA}
+          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: SITUACAO_UNIDADE}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: LOGISTICA}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
+                        observacao: "resolve para N: o formulario e remetido ao repositorio, nao produzido dentro de um sistema de C2"}
+        # As colunas decretadas pelo EM, que vao para a extensao.
+        # `celula` le pelo cabecalho fixado no formulario.
+        extensao:
+          Ef Prev:      {campo: EF_PREVISTO_QNT, transformacao: celula}
+          Ef Pres:      {campo: EF_PRESENTE_QNT, transformacao: celula}
+          Baixas Cmb:   {campo: BAIXA_COMBATE_QNT, transformacao: celula}
+          Baixas N Cmb: {campo: BAIXA_NAO_COMBATE_QNT, transformacao: celula}
+          Evacuados:    {campo: EVACUADO_QNT, transformacao: celula}
+          Vtr Op:       {campo: VTR_OPERACIONAL_QNT, transformacao: celula}
+          Vtr Total:    {campo: VTR_TOTAL_QNT, transformacao: celula}
+          Comb Pctl:    {campo: COMBUSTIVEL_PCTL, transformacao: celula, grafias: ['Comb %'],
+                         observacao: "a revisao do formulario renomeou esta coluna para 'Comb %'. As duas grafias sao a MESMA medida, entao entram no mesmo campo canonico — o que muda entre as versoes e o rotulo, nao o significado. Ja 'Agua L', que a mesma revisao acrescentou, e medida nova: nao tem campo e fica na sobra."}
+          Sup Cl I:     {campo: SUP_CL_I_DIAS, transformacao: celula}
+          Sup Cl III:   {campo: SUP_CL_III_DIAS, transformacao: celula}
+          Sup Cl V:     {campo: SUP_CL_V_DIAS, transformacao: celula}
+          Sup Cl VIII:  {campo: SUP_CL_VIII_DIAS, transformacao: celula}
+          Nec Prio:     {campo: NECESSIDADE_TXT, transformacao: abreviatura,
+                         referencia: REF_ABREVIATURA,
+                         observacao: "'Fz' -> Fuzil (a arma), 'Fuz' -> Fuzileiro (a pessoa). A OM que troca uma pela outra comete erro semantico, nao ortografico: material vira pessoal. Coluna de texto livre engoliria isso em silencio."}
+          _versao:      {campo: FORMULARIO_VERSAO_COD, transformacao: derivado,
+                         regra: "V1 quando a planilha traz TODOS os cabecalhos decretados acima; V2 quando falta algum (a revisao do formulario renomeou colunas). Coluna a mais nao muda a versao: vai para _sobra."}
+          _sobra:       {campo: ATRIBUTO_EXTRA_TXT, transformacao: sobra,
+                         observacao: "toda coluna que o formulario nao previa, com o nome que a OM deu"}
+
+      # Mesma remessa, impressa e digitalizada. Cruza duas modalidades numa
+      # fonte so, e e o caso mais realista que existe: a OM que nao tem o
+      # arquivo imprime, preenche, assina e fotografa.
+      situacao_digitalizada:
+        conteudo: extracao_grade    # os campos vem do binario lido (EXTRACAO), numa GRADE que precisa ser aberta
+        modalidade: PDF
+        herda: situacao
+        # O rotulo lido pelo OCR nao nomeia a coluna ('Erev' por 'Ef Prev', dois
+        # rotulos numa celula): as colunas recebem os nomes decretados na ORDEM do
+        # formulario, que e a ordem dos campos da irma.
+        cabecalho: posicao
+        # A remessa que tambem chegou em planilha fica so com a planilha.
+        cede_a: situacao
+        campos:
+          Fração:      {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                        busca: mais_parecido, limite: 2, contexto: om_remetente,
+                        observacao: "celula escrita a mao e lida por OCR, que troca o ordinal 'o' por zero ('10 Pel', '510 GAC') e trunca ('.../51o Esqd Ca'). A estrutura das unidades e conhecida: dentro da OM remetente, vale a sigla MAIS PARECIDA com o que foi lido (distancia de edicao contra o inicio da sigla), com ate `limite` letras de diferenca; acima disso, ou empatado, fica vazio. Medido em 13/09: 145 de 145 linhas com unidade (73 com a busca da planilha) e, nas remessas gemeas, 22 de 23 iguais a planilha irma — a que falhou ficou vazia, nao errada."}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a leitura do Docling, que reconstroi a grade (INFERENCIA_INDIC = S). O mesmo PDF tem tambem a leitura do tesseract, que e texto corrido e nao entra aqui."}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
+        # a unidade nao passa por modelo de linguagem: a lista fechada de REF_UNIDADE resolve
+        extraidos_por_llm: []
+        observacao: >-
+          Herda tudo da irma — sidecar, colunas, abreviaturas — e muda so o
+          caminho do CONTEUDO: a irma por leitura direta (openpyxl, sem IA), esta
+          pela grade que o Docling reconstroi do papel escaneado. So entram as OMs
+          que remetem apenas PDF; as 7 remessas que chegam nos dois formatos ficam
+          com a planilha e servem de medida: 95,7% dos numeros do escaneado caem na
+          celula certa (ACHADOS.md, 13/09).
+
+  # --- FOGOS: Relatorio de Bombardeio (Anexo I do EB60-ME-12.301). PDF, OCR + LLM.
+  # Absorve o `paf` da fonte SIM, que era duplicata empobrecida disto.
+  #
+  # O documento e gerado FIEL ao Anexo I: cabecalho (Rcb por / Do / Hora / Nr)
+  # e as tres partes — 1a Informes de Observadores e Analise de Crateras
+  # (colunas A a L), 2a Outras Fontes (M a R), 3a Execucao do Tiro (S a V).
+  # So a 1a parte vira evento: cada linha e um informe de observador sobre
+  # bombardeio INIMIGO, que e o que o relatorio existe para registrar. A 2a e a
+  # 3a partes ficam no PDF e em EXTRACAO.SAIDA_TXT, mapeaveis depois (ver
+  # "PARA AUMENTAR O ESCOPO").
+  #
+  # A avaliacao 'B2' NAO existe no Anexo I: saiu daqui e mora na fonte INTEL,
+  # que e o documento que a carrega de fato.
+  #
+  # O PDF chega com sidecar .json (operacao, quem produziu, hora); as linhas
+  # continuam vindo por OCR. O Anexo I e escaneado desde a origem — o S-2
+  # preenche o formulario impresso e digitaliza — e por isso forca o OCR.
+  FOGOS:
+    modalidade: PDF
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    entidades:
+      relatorio_bombardeio:
+        conteudo: extracao_grade    # a grade que o Docling reconstruiu (EXTRACAO); cada linha da 1a parte e um informe
+        modalidade: PDF
+        # O Docling devolve ate tres tabelas (1a, 2a e 3a partes). So a 1a parte, de
+        # onze colunas, vira evento: as outras tem menos colunas e nao sao abertas.
+        cabecalho: posicao
+        # A 1a parte do Anexo I, na ordem. O rotulo so serve para ACHAR a linha de
+        # cabecalho, que o OCR le com as palavras fora de ordem ('Bombardeada (5) Area F').
+        colunas:
+          col_A: "Informe de Hora"
+          col_B: "Localizacao do Observador"
+          col_C: "Lancamento do Som ou Cratera"
+          col_D: "Hora Ativ De"
+          col_E: "As"
+          col_F: "Area Bombardeada"
+          col_G: "Qnt e Tipo de Armamento Ini"
+          col_H: "Classificacao do Tiro Ini"
+          col_I: "Qnt e Tipo de Municao Ini"
+          col_J: "Clarao-Som segundos"
+          col_L: "Efeito dos Fogos Ini"
+        sidecar:
+          operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
+          origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                      observacao: "quem produziu o relatorio: o S-2 do GAC (cabecalho 'Do:')"}
+          nr:        {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                      observacao: "numero do relatorio ('RB Nr 01'). Nao tem coluna propria: entra na regra de _registro."}
+        campos:
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado, celulas: [col_A, col_F],
+                        regra: "sidecar (operacao, origem, Nr do relatorio) + col_A + col_F da linha: quem observou, quando e ONDE. So col_A nao basta — no RB Nr 24 o mesmo observador informou dois bombardeios no mesmo minuto, em lugares diferentes (13/09).",
+                        observacao: "col_A e 'Informe de / Hora' (nota 1 do Anexo I): codinome do observador + grupo data-hora, ex. 'TROVAO 1 / 210900 NOV 16'"}
+          col_A:       {campo: OCORRENCIA_DATA, transformacao: gdh, fuso: "-03:00",
+                        observacao: "o grupo data-hora da col_A ('250539 NOV 24'), em hora de Brasilia. O OCR ora poe o codinome antes, ora depois; so vale quando a celula tem EXATAMENTE UM grupo — sem nenhum, ou com dois (o da linha vizinha junto), fica vazio."}
+          col_F:       {campo: GEOMETRIA_WKT, transformacao: decametrica_para_ponto,
+                        observacao: "'Area Bombardeada' (nota 5), ex. '06700-13150': e ONDE o fato ocorreu. O Norte perde o digito dos milhares de km, e a area da operacao (REF_OPERACAO) desempata. Medido em 13/09: nos 11 bombardeios do gabarito, o ponto caiu a 1,3-6,1 m do fato. A col_B e a posicao do OBSERVADOR (nota 2), nao do evento — fica em EXTRACAO.SAIDA_TXT, sem coluna canonica."}
+          _relato:     {campo: RELATO_TXT, transformacao: derivado, celulas: [col_G, col_H, col_I, col_J, col_L],
+                        regra: "colunas G a L da linha, concatenadas",
+                        observacao: "armamento inimigo (ex. '2/Ob/Me' = 2 obuses medios, nota 6), classificacao do tiro (Ntz, Dest, Itd..., nota 7), municao (nota 8), tempo clarao-som em segundos, efeito dos fogos (nota 9)"}
+          _arquivo:    {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a grade do Docling (INFERENCIA_INDIC = S). O mesmo PDF tem tambem a leitura do tesseract, que e texto corrido e nao entra aqui."}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: FOGOS}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: FOGOS}
+          _tipo:       {campo: TIPO_COD, transformacao: constante, valor: BOMBARDEIO_INIMIGO}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
+        # nenhum campo passa por modelo de linguagem nesta versao: a hora sai do grupo
+        # data-hora, e a prioridade fica vazia — o efeito dos fogos esta no RELATO_TXT
+        extraidos_por_llm: []
+        observacao: >-
+          Uma linha da 1a parte, um evento: o informe de um observador sobre fogos
+          INIMIGOS. Tudo sai da grade do Docling por posicao, sem inferencia alem da
+          leitura: a hora pelo grupo data-hora da col_A, o lugar pela col_F convertida
+          da forma decametrica. A prioridade, que o manual deixa ao julgamento de quem
+          recebe, nao e inferida: o efeito dos fogos segue no texto do evento para o
+          estado-maior avaliar.
+
+  # --- INTEL: Informe de inteligencia. PDF assinado e digitalizado, OCR + LLM. --
+  # E o documento que carrega a avaliacao de fonte e informacao ('B2'): a letra
+  # e a confiabilidade da fonte, o algarismo a credibilidade da informacao.
+  # Chega assinado, por isso e PDF. Cabecalho fixo (Nr, grupo data-hora, origem,
+  # assunto, avaliacao) e corpo em texto livre — a segunda fonte em que o modelo
+  # de linguagem le prosa, desta vez saida de OCR, e nao do JSON do C2_B.
+  # O contraste com o C2_B e proposital: la a confiabilidade e INFERIDA do
+  # relato; aqui e LIDA do cabecalho, porque o analista ja a atribuiu.
+  INTEL:
+    modalidade: PDF
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    entidades:
+      informe:
+        # Cadeia de dois modelos, como a voz: o tesseract le a pagina escaneada e
+        # devolve texto; o modelo de linguagem le esse texto e devolve os campos
+        # NOMEADOS (tarefa `informe`, prompt intel-v1). Nao ha grade a abrir: o
+        # informe e prosa, e o que o de/para le e a resposta do modelo.
+        conteudo: extracao_campos
+        modalidade: PDF
+        # O que o documento E — entra no pedido ao modelo.
+        documento: >-
+          O informe tem cabecalho (Nr, Data-hora em grupo data-hora, De, Para, Assunto, avaliacao da fonte
+          e da informacao como letra e algarismo, ex. B2) e corpo em paragrafos numerados. O paragrafo 1 diz
+          QUANDO e ONDE o fato aconteceu.
+        tipos_possiveis: [AVISTAMENTO, AVISTAMENTO_INIMIGO, BOMBARDEIO_INIMIGO, INCIDENTE]
+        sidecar:
+          operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
+          origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                      observacao: "secao de inteligencia que expediu o informe: E-2 da brigada ou S-2 da OM"}
+        campos:
+          nr:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: "numero do informe, lido do cabecalho pelo modelo"}
+          avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
+                        transformacao: split_escala,
+                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2. O OCR le 'A2' como 'AZ' e o modelo copia: a posicao fora da escala vira vazio."}
+          texto_lido:  {campo: RELATO_TXT, transformacao: direto,
+                        observacao: "corpo do informe como o OCR o leu. Vem da extracao que o modelo LEU (EXTRACAO_ORIGEM_IDT), nao da resposta do modelo, que nao repete o texto."}
+          referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
+                             referencia: REF_GAZETTEER,
+                             observacao: "o lugar citado no paragrafo 1, copiado como esta escrito ('Ponte sobre o Corrego Aroeira') -> ponto. O modelo extrai o nome; a tabela resolve. Sem lugar citado, vazio."}
+          ocorrencia:  {campo: OCORRENCIA_DATA, transformacao: ts_iso, fuso: UTC,
+                        observacao: "dia e hora do paragrafo 1. LIDA COMO UTC por um deslize do gerador: gerar_intel.py escreve a hora do corpo em UTC (e o mes em ingles, 'DEC'), enquanto o cabecalho usa -03. Se o gerador for corrigido e os dados regerados, tirar `fuso: UTC`."}
+          TIPO_COD:       {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, por: llm}
+          PRIORIDADE_COD: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm}
+          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a interpretacao do modelo de linguagem, que aponta para o OCR em EXTRACAO_ORIGEM_IDT. Dois elos, dois modelos."}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: INTEL}
+          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
+                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
+          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: INTELIGENCIA}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
+                        observacao: "resolve para N: documento avulso, nao produzido dentro de sistema de C2"}
+        extraidos_por_llm: [REGISTRO_ORIGEM_COD, FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD,
+                            GEOMETRIA_WKT, OCORRENCIA_DATA, TIPO_COD, PRIORIDADE_COD]
+
+  # --- VOZ: audio de radio. A cadeia mais longa: wav -> texto -> dado. --------
+  # O .wav nao se descreve. Vem com um SIDECAR .json do gravador de radio (voice
+  # logger): o gravador nao transcreve, mas SEMPRE carimba a hora da
+  # transmissao, a estacao de origem (a unidade dona do radio, como cadastrada
+  # no gravador) e — num exercicio — a operacao. Tres campos, de proposito: e o
+  # minimo que da contexto ao audio. O sidecar entra em RECEPCAO_BRUTA; o .wav,
+  # em ARQUIVO; a operacao sai do sidecar, o conteudo sai da transcricao + LLM.
+  # A fala e normal, em portugues claro, com os codinomes no lugar dos termos
+  # sensiveis: "cavalo passando proximo a ponte do corrego Aroeira".
+  VOZ:
+    modalidade: AUDIO
+    bronze: RECEPCAO_BRUTA
+    destino: EVENTO
+    entidades:
+      transcricao:
+        conteudo: extracao_campos   # a extracao ja devolve campos NOMEADOS: o modelo de linguagem leu a transcricao e os montou
+        modalidade: AUDIO
+        sidecar:
+          operacao:         {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
+          hora_transmissao: {campo: [OCORRENCIA_DATA, CHEGADA_DATA], transformacao: ts_iso,
+                             observacao: "um campo, dois destinos: a mensagem de radio relata o que esta acontecendo AGORA, entao a hora da transmissao (relogio do gravador) vale como hora do fato e como chegada"}
+          estacao:          {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
+                             observacao: "unidade dona do radio, pela sigla, como o gravador a cadastra"}
+        campos:
+          texto:    {campo: RELATO_TXT, transformacao: direto,
+                     observacao: "saida do reconhecimento de fala. Os codinomes sao palavras raras: o transcritor recebe a lista de codinomes e lugares como vocabulario inicial (initial_prompt), e essa lista e versionada em EXTRACAO.PROMPT_VERSAO_COD como qualquer prompt."}
+          codinome: {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
+                     observacao: "'cavalo' casa com o sinonimo de AVISTAMENTO_INIMIGO"}
+          referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
+                             referencia: REF_GAZETTEER,
+                             observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}
+          prioridade: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm,
+                       observacao: "a palavra-codigo do fim da mensagem ('chuva' -> PRIORITARIO), copiada pelo modelo (voz-v2, 14/09). Sai COM ERRO e fica assim de proposito: o transcritor nunca escreve 'orvalho' e o modelo, sem a palavra, as vezes inventa outra. O evento traz a marca de IA para o militar conferir. Ver ACHADOS.md."}
+          audio:      {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
+          _registro:   {campo: REGISTRO_ORIGEM_COD, transformacao: derivado,
+                        observacao: "radio nao numera mensagem: o que identifica uma transmissao e o sidecar inteiro (operacao, hora, estacao). Sem isto o EVENTO_IDT ficava nulo, o MERGE nunca casava e cada rodada duplicaria a voz (corrigido em 13/09)."}
+          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
+                        observacao: "a interpretacao do modelo de linguagem, que por sua vez aponta para a transcricao em EXTRACAO_ORIGEM_IDT. Dois elos, dois modelos."}
+          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
+          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: VOZ}
+          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: AUDIO}
+          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
+          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
+                        observacao: "resolve para N. Radio e MEIO de transmissao de C2, nao sistema de informacao que registre o processo de estado-maior — mesma razao pela qual o documento avulso tambem nao conta."}
+        extraidos_por_llm: [PRIORIDADE_COD, FUNCAO_COMBATE_COD]
+
+
+# =============================================================================
+# VISOES — a Gold
+# =============================================================================
+# Cada visao e uma tabela declarada em `entidades` (camada gold) e reescrita
+# inteira pelo job gold_visoes.py a partir da Silver. Aqui ficam os parametros
+# que mudam o resultado, para estarem a vista e nao escondidos no codigo.
+# =============================================================================
+
+visoes:
+
+  fuso: America/Sao_Paulo      # dia e periodo sao os do horario local da operacao
+
+  # Valores exibidos na Gold -> sigla do MD33-M-02, conferida no PDF (ver
+  # ir_14_06/abreviaturas.csv). Sem sigla no manual, fica por extenso. LF e MCC
+  # nao entram: no manual sao Linha de Fogo e Centro de Controle da Missao.
+  siglas:
+    # etapas do PITCIC
+    CARACTERISTICAS: Crtr Sgf
+    ZONA_ACAO: Z Aç
+    CONSIDERACOES_CIVIS: Cnsd Civ
+    VIAS_ACESSO: VA
+    RESTRICOES_MOVIMENTO: Rest Mov
+    DICOVAP: DiCoVAP             # sigla do proprio EB70-MC-10.336, sem verbete no MD33-M-02
+    ATIVIDADE: Atv
+    # elementos
+    AREA_OPERACAO: A Op
+    LUGAR: Loc
+    LOCALIDADE: Loc
+    LIMITE: Lim
+    RODOVIA: Rdv
+    EIXO_PROGRESSAO: E Prog
+    OBSTACULO: Obt
+    INCIDENTE: Incid
+    AMEACA: Amç
+    AVISTAMENTO: Avistamento
+    # tipos de evento
+    AVISTAMENTO_INIMIGO: Avistamento Ini
+    BOMBARDEIO_INIMIGO: Bomb Ini
+    MISSAO_TIRO: Mis Tir
+    POSICAO: Pos
+    MCC: Medida de coordenação e controle
+    SITUACAO_UNIDADE: Sit U
+    # especies de medida desenhada no mapa
+    LINHA_FASE: Linha de fase
+    LINHA_PARTIDA: LP
+    PONTO_CONTROLE: PCt
+    ZONA_REUNIAO: Z Reu
+    OBJETIVO: Obj
+    BARREIRA: Bar
+    FOSSO_ANTICARRO: Fosso AC
+    CAMPO_MINAS: C Min
+    CRATERA: Crat
+    # tipos de lugar de referencia
+    PONTO_NOTAVEL: Ponto notável
+    RODOVIA_KM: Rdv km
+    QUADRICULA: Quadrícula
+    # periodos do dia
+    MADRUGADA: Madrugada
+    MANHA: Manhã
+    TARDE: Tarde
+    NOITE: Noite
+
+  PITCIC:
+    tabela: PITCIC
+    le: [silver.EVENTO, silver.MEDIDA_COORDENACAO, silver.REF_GAZETTEER, silver.REF_OPERACAO]
+    ameaca_tipos: [AVISTAMENTO_INIMIGO, BOMBARDEIO_INIMIGO]
+    # lugares que servem de referencia para dizer onde foi (a quadricula e grossa demais)
+    lugar_referencia_tipos: [PONTO_NOTAVEL, LOCALIDADE, RODOVIA_KM]
+    corroboracao:
+      raio_metro: 2000
+      janela_segundos: 3600
+      observacao: >-
+        Duas fontes DIFERENTES relatando a ameaca a ate 2 km e 60 min uma da outra
+        contam como o mesmo fato. Decisao do usuario (14/09); mudar aqui muda a
+        coluna FONTE_QNT da fase 3.
+    localidade_raio_metro: 1000   # consideracoes civis: eventos a ate 1 km da localidade
+    # Incidente que restringe o movimento, por palavra do relato (regra fixa, sem IA).
+    # 'via' so como palavra inteira, para nao pegar 'viatura'.
+    restricao_movimento_palavras: ["\\bvia\\b", pista, estrada, obstru, atolad, interromp, capacidade reduzida]
+    periodos:                     # fase 4: atividade agrupada por lugar e periodo do dia
+      - {nome: MADRUGADA, ate_hora: 6}
+      - {nome: MANHA, ate_hora: 12}
+      - {nome: TARDE, ate_hora: 18}
+      - {nome: NOITE, ate_hora: 24}
+
+
+# =============================================================================
+# PARA AUMENTAR O ESCOPO
+# =============================================================================
+# O recorte atual gera dois documentos em PDF: o Relatorio de Bombardeio
+# (FOGOS, tabular) e o informe de inteligencia (INTEL, prosa). Os demais anexos
+# do manual de artilharia (Folha de Trabalho do S-2, Lista de Alvos, Arquivo
+# Historico, Lista de Armas Inimigas) provam a mesma coisa do ponto de vista
+# das teses — documento tabular que exige OCR — e por isso nao sao gerados. O
+# mesmo vale para a 2a e a 3a partes do proprio Anexo I: estao no PDF, nao no
+# de/para.
+#
+# Se for preciso incluir um deles:
+#   1. acrescentar um bloco em `fontes`, no molde de FOGOS acima;
+#   2. acrescentar o gerador correspondente em scripts/geradores/.
+# Nenhum job e alterado, nenhuma tabela e recriada.
+#
+# Mesma regra para uma fonte com atributos proprios: alem do bloco em `fontes`,
+# uma entidade de extensao no molde de SITUACAO_UNIDADE. So justifica-se quando
+# o esquema da fonte for fixado por norma — se for variavel, o lugar dele e uma
+# coluna semiestruturada, como ATRIBUTO_EXTRA_TXT.
+#
+# Nenhuma tabela Bronze nova por fonte: JSON entra em RECEPCAO_BRUTA, binario em
+# ARQUIVO. Uma fonte estruturada nova (ex.: um C2_C que exporte XML) so
+# acrescenta um bloco em `fontes` e, se a forma nao for JSON, um valor no
+# dominio `modalidade`.
+#
+# Fonte com arquivo (qualquer modalidade): alem do bloco em `fontes`, declarar o
+# `sidecar:` — o JSON de proveniencia que acompanha o arquivo. Vale para xlsx,
+# PDF, imagem e audio: um mecanismo so. Sem sidecar, a operacao e a unidade so
+# podem ser atribuidas por contexto (hora + area), com perda de certeza.
+# REF_OPERACAO nao muda: uma operacao a mais e uma linha na seed operacoes.csv.
+# =============================================================================

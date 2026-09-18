@@ -4,7 +4,14 @@ USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
         openjdk-17-jdk-headless \
         curl \
+        tesseract-ocr \
+        tesseract-ocr-por \
+        poppler-utils \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# tesseract-ocr-por: o modelo de portugues. Sem ele o OCR le como se fosse ingles
+# e erra acentuacao e palavras inteiras.
+# poppler-utils: traz o pdftoppm, que rasteriza a pagina do PDF em imagem — o
+# tesseract le imagem, nao PDF.
 
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
@@ -45,3 +52,24 @@ RUN PYSPARK_JARS=$(python3 -c "import pyspark, os; print(os.path.join(os.path.di
         https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
     && curl -fsSL -o ${PYSPARK_JARS}/openlineage-spark_2.12-${OPENLINEAGE_VERSION}.jar \
         https://repo1.maven.org/maven2/io/openlineage/openlineage-spark_2.12/${OPENLINEAGE_VERSION}/openlineage-spark_2.12-${OPENLINEAGE_VERSION}.jar
+
+# Extracao por leitura direta (DAG extracao_planilha): abre .xlsx dentro do Airflow.
+RUN pip install --no-cache-dir "openpyxl==3.1.5"
+
+# Extracao por OCR (DAG extracao_ocr): pdf2image chama o pdftoppm, pytesseract
+# chama o tesseract, pypdf conta as paginas.
+RUN pip install --no-cache-dir "pytesseract==0.3.13" "pdf2image==1.17.0" "pypdf==5.1.0" "pillow==11.0.0"
+
+# Transcricao de voz (DAG extracao_voz). CPU: o CTranslate2 por tras do
+# faster-whisper roda quantizado em int8, sem GPU.
+RUN pip install --no-cache-dir "faster-whisper==1.1.0"
+# O modelo baixa na CONSTRUCAO da imagem, nao na primeira execucao: assim a DAG
+# nao depende de rede para rodar e o resultado nao muda por troca de versao.
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('medium', device='cpu', compute_type='int8')"
+
+# O `collate-sqlfluff`, dependencia do openmetadata-ingestion, exige click<8.4.
+# Alguma das instalacoes acima sobe o click para 8.5 e, quando isso acontece,
+# TODA tarefa do OpenMetadata falha com "SourceConnectionException: CheckAccess"
+# — mensagem que parece problema de conexao com o Trino e nao e: quebra antes,
+# ao carregar as bibliotecas. Esta linha vem por ULTIMO de proposito.
+RUN pip install --no-cache-dir "click<8.4.0"

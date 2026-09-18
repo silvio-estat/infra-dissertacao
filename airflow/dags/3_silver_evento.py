@@ -1,0 +1,276 @@
+"""
+DAG canonico_silver — aplica o de/para do modelo canonico e escreve a Silver.
+
+    conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato ──► c2b_incidente
+                       │                                                    │
+                       │   intel_informe ◄── voz_transcricao ◄── relper_digitalizada ◄── relper_situacao
+                       │        │
+                       │        └──► fogos_bombardeio
+                       └─► nada_a_fazer
+
+Cada tarefa processa UMA receita do YAML (um bloco dentro de `fontes:`). Elas
+correm em serie porque o Spark tem um worker so.
+
+O que uma tarefa faz, em uma frase: le a Bronze, resolve cada campo pela regra
+declarada em canonico/modelo_canonico.yaml e grava em EVENTO — e, quando a
+receita tem extensao, tambem na tabela dela.
+
+Nao ha regra de negocio aqui nem no job: elas estao todas no YAML. Integrar uma
+fonte nova e acrescentar um bloco la e uma tarefa aqui.
+"""
+from __future__ import annotations
+
+import os
+from datetime import datetime, timedelta
+
+from airflow import DAG
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import BranchPythonOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+
+from helpers.lineage_emitter import linhagem
+
+# Duas pendencias, somadas:
+#   1. registro da Bronze que ainda nao virou evento. Todo evento guarda o
+#      RECEPCAO_IDT de onde nasceu, entao a conta e uma juncao so;
+#   2. evento que nasceu ANTES da interpretacao do seu registro. O relato do C2_B
+#      vira evento sem tipo e sem prioridade, e so ganha os dois quando o modelo
+#      de linguagem responde; o MERGE da Silver atualiza a linha que ja existe.
+# O filtro da primeira lista o que esta DAG SABE transformar hoje: as demais
+# fontes entram quando suas receitas existirem, e ate la nao contam como pendencia.
+PENDENTES_SQL = """
+    SELECT
+      (SELECT count(*)
+       FROM iceberg.bronze.recepcao_bruta r
+       LEFT JOIN iceberg.silver.evento e ON e.recepcao_idt = r.recepcao_idt
+       WHERE e.recepcao_idt IS NULL
+         AND (r.sistema_origem_cod IN ('C2_A', 'C2_B')
+              OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PLANILHA')
+              -- RELPER escaneado: so com a grade do Docling, e so a remessa que nao chegou em planilha
+              OR (r.sistema_origem_cod = 'RELPER' AND r.modalidade_cod = 'PDF'
+                  AND EXISTS (SELECT 1 FROM iceberg.bronze.extracao i
+                              WHERE i.arquivo_idt = r.arquivo_idt AND i.ferramenta_nome LIKE 'docling%'
+                                AND i.status_cod = 'OK')
+                  AND NOT EXISTS (SELECT 1 FROM iceberg.bronze.recepcao_bruta r2
+                                  WHERE r2.sistema_origem_cod = 'RELPER' AND r2.modalidade_cod = 'PLANILHA'
+                                    AND r2.conteudo_json_txt = r.conteudo_json_txt))
+              -- FOGOS: so com a grade do Docling
+              OR (r.sistema_origem_cod = 'FOGOS' AND EXISTS (
+                    SELECT 1 FROM iceberg.bronze.extracao i
+                    WHERE i.arquivo_idt = r.arquivo_idt AND i.ferramenta_nome LIKE 'docling%'
+                      AND i.status_cod = 'OK'))
+              -- voz e informe so viram evento DEPOIS que o modelo de linguagem leu
+              OR (r.sistema_origem_cod IN ('VOZ', 'INTEL') AND EXISTS (
+                    SELECT 1 FROM iceberg.bronze.extracao i
+                    WHERE i.arquivo_idt = r.arquivo_idt AND i.extracao_origem_idt IS NOT NULL
+                      AND i.status_cod = 'OK'))))
+      +
+      (SELECT count(*)
+       FROM iceberg.silver.evento e
+       JOIN iceberg.bronze.extracao i ON i.recepcao_idt = e.recepcao_idt AND i.status_cod = 'OK'
+       WHERE e.extracao_idt IS NULL)
+"""
+
+CONF_SPARK = {
+    "spark.cores.max": "1",
+    # O spark-defaults.conf da imagem limita o executor a 1 GB, e o driver do
+    # SparkSubmitOperator roda dentro do Airflow, que nem le esse arquivo. Um
+    # MERGE que ATUALIZA (reprocessar dado que ja esta na Silver) reescreve a
+    # tabela e nao cabe em 1 GB — o executor morre com codigo 134. O worker
+    # oferece 20 GB; 4 basta.
+    "spark.executor.memory": "4g",
+    "spark.driver.memory": "2g",
+    "spark.executor.cores": "1",
+    "spark.sql.extensions": "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+    "spark.sql.catalog.lakehouse": "org.apache.iceberg.spark.SparkCatalog",
+    "spark.sql.catalog.lakehouse.type": "hive",
+    "spark.sql.catalog.lakehouse.uri": "thrift://hive-metastore:9083",
+    # ATENCAO: o driver do SparkSubmitOperator roda DENTRO do Airflow, que nao
+    # tem o spark-defaults.conf da imagem do Spark. Tudo o que aquele arquivo
+    # ajusta precisa ser repetido aqui, ou o job roda com outra configuracao —
+    # sem io-impl e com 200 particoes, o leitor vetorizado do Iceberg estoura a
+    # memoria FORA do heap e o executor morre sem excecao Java (codigo 134).
+    "spark.sql.catalog.lakehouse.io-impl": "org.apache.iceberg.hadoop.HadoopFileIO",
+    "spark.sql.shuffle.partitions": "4",
+    "spark.default.parallelism": "4",
+    "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
+    "spark.sql.catalog.lakehouse.warehouse": "s3a://lakehouse/warehouse",
+    "spark.hadoop.fs.s3a.endpoint": "http://minio:9000",
+    "spark.hadoop.fs.s3a.path.style.access": "true",
+    "spark.hadoop.fs.s3a.access.key": os.environ.get("MINIO_ROOT_USER", ""),
+    "spark.hadoop.fs.s3a.secret.key": os.environ.get("MINIO_ROOT_PASSWORD", ""),
+    "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+    "spark.hadoop.fs.s3a.aws.credentials.provider":
+        "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+}
+
+
+def conferir_pendentes() -> str:
+    import trino
+
+    cur = trino.dbapi.connect(host="trino", port=8090, user="airflow", http_scheme="http").cursor()
+    cur.execute(PENDENTES_SQL)
+    pendentes = cur.fetchone()[0]
+    print(f"pendencias (registro sem evento + evento sem interpretacao): {pendentes}")
+    return "c2a_posicao" if pendentes else "nada_a_fazer"
+
+
+def transformar(nome: str, fonte: str, receita: str, callbacks: list) -> SparkSubmitOperator:
+    """Uma tarefa por receita. Muda so a fonte, a receita e a linhagem declarada."""
+    return SparkSubmitOperator(
+        task_id=nome,
+        application="/opt/spark-jobs/canonico_para_silver.py",
+        application_args=["--fonte", fonte, "--tipo", receita],
+        conn_id="spark_default",
+        name=f"canonico_silver_{nome}",
+        env_vars={"MODELO_CANONICO": "/opt/canonico/modelo_canonico.yaml"},
+        conf=CONF_SPARK,
+        verbose=False,
+        on_success_callback=callbacks,
+    )
+
+
+with DAG(
+    dag_id="3_silver_evento",
+    description="Bronze -> EVENTO + SITUACAO_UNIDADE pelo de/para do modelo canonico",
+    schedule=None,
+    start_date=datetime(2026, 9, 1),
+    catchup=False,
+    max_active_runs=1,
+    default_args={"owner": "dlh", "retries": 0, "retry_delay": timedelta(minutes=2)},
+    tags=["silver", "canonico"],
+) as dag:
+
+    conferir = BranchPythonOperator(task_id="conferir_pendentes", python_callable=conferir_pendentes)
+    nada_a_fazer = EmptyOperator(task_id="nada_a_fazer")
+
+    # C2_A chega como JSON ja estruturado: o registro bruto e a unica entrada.
+    posicao = transformar("c2a_posicao", "C2_A", "posicao", [
+        linhagem(le=["bronze.recepcao_bruta"], escreve=["silver.evento"], colunas={
+            "geometria_wkt":          [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "operacao_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "recepcao_idt":           [("bronze.recepcao_bruta", "recepcao_idt")],
+        }),
+    ])
+    mcc = transformar("c2a_mcc", "C2_A", "mcc", [
+        linhagem(le=["bronze.recepcao_bruta"], escreve=["silver.evento", "silver.medida_coordenacao"], colunas={
+            "geometria_wkt":      [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "tipo_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "funcao_combate_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "medida_especie_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "medida_nome":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+
+    # C2_B chega em duas modalidades. No relato, o texto livre e o campo, e tipo e
+    # prioridade vem da interpretacao do modelo de linguagem, gravada em EXTRACAO
+    # pela DAG 2_bronze_extracao. No incidente, a coordenada vem do EXIF da FOTO —
+    # fonte independente do que foi digitado.
+    relato = transformar("c2b_relato", "C2_B", "relato", [
+        linhagem(le=["bronze.recepcao_bruta", "bronze.extracao"], escreve=["silver.evento"], colunas={
+            "relato_txt":             [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "geometria_wkt":          [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "tipo_cod":               [("bronze.extracao", "saida_txt")],
+            "prioridade_cod":         [("bronze.extracao", "saida_txt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+        }),
+    ])
+    incidente = transformar("c2b_incidente", "C2_B", "incidente", [
+        linhagem(le=["bronze.recepcao_bruta", "bronze.arquivo"], escreve=["silver.evento"], colunas={
+            "geometria_wkt":  [("bronze.arquivo", "captura_geometria_wkt")],
+            "arquivo_idt":    [("bronze.arquivo", "arquivo_idt")],
+            "relato_txt":     [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "prioridade_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+
+    # RELPER chega como planilha: os numeros so existem depois da extracao, e por
+    # isso a linhagem tem tres entradas. Escreve em duas tabelas.
+    bronze_do_arquivo = ["bronze.extracao", "bronze.arquivo", "bronze.recepcao_bruta"]
+    relper = transformar("relper_situacao", "RELPER", "situacao", [
+        linhagem(le=bronze_do_arquivo, escreve=["silver.evento"], colunas={
+            "unidade_reportante_cod": [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "operacao_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+        }),
+        linhagem(le=bronze_do_arquivo, escreve=["silver.situacao_unidade"], colunas={
+            "ef_presente_qnt":     [("bronze.extracao", "saida_txt")],
+            "vtr_operacional_qnt": [("bronze.extracao", "saida_txt")],
+            "necessidade_txt":     [("bronze.extracao", "saida_txt")],
+            "atributo_extra_txt":  [("bronze.extracao", "saida_txt")],
+            "turno_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+
+    # O RELPER escaneado das OMs que so remetem PDF: mesma receita da planilha, com
+    # a grade vinda do Docling. A remessa que chegou tambem em planilha fica com ela.
+    relper_pdf = transformar("relper_digitalizada", "RELPER", "situacao_digitalizada", [
+        linhagem(le=bronze_do_arquivo, escreve=["silver.evento"], colunas={
+            "unidade_reportante_cod": [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "operacao_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+        }),
+        linhagem(le=bronze_do_arquivo, escreve=["silver.situacao_unidade"], colunas={
+            "ef_presente_qnt":     [("bronze.extracao", "saida_txt")],
+            "vtr_operacional_qnt": [("bronze.extracao", "saida_txt")],
+            "necessidade_txt":     [("bronze.extracao", "saida_txt")],
+            "atributo_extra_txt":  [("bronze.extracao", "saida_txt")],
+            "turno_cod":           [("bronze.recepcao_bruta", "conteudo_json_txt")],
+        }),
+    ])
+
+    # VOZ e INTEL chegam por uma cadeia de DOIS modelos: um le o binario (whisper,
+    # tesseract) e devolve texto; o modelo de linguagem le esse texto e devolve os
+    # campos. As tres tabelas da Bronze entram na linhagem.
+    bronze_da_cadeia = ["bronze.extracao", "bronze.arquivo", "bronze.recepcao_bruta"]
+    voz = transformar("voz_transcricao", "VOZ", "transcricao", [
+        linhagem(le=bronze_da_cadeia, escreve=["silver.evento"], colunas={
+            "tipo_cod":               [("bronze.extracao", "saida_txt")],
+            "geometria_wkt":          [("bronze.extracao", "saida_txt")],
+            "relato_txt":             [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":        [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "registro_origem_cod":    [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+        }),
+    ])
+    intel = transformar("intel_informe", "INTEL", "informe", [
+        linhagem(le=bronze_da_cadeia, escreve=["silver.evento"], colunas={
+            "registro_origem_cod":      [("bronze.extracao", "saida_txt")],
+            "tipo_cod":                 [("bronze.extracao", "saida_txt")],
+            "prioridade_cod":           [("bronze.extracao", "saida_txt")],
+            "ocorrencia_data":          [("bronze.extracao", "saida_txt")],
+            "geometria_wkt":            [("bronze.extracao", "saida_txt")],
+            "fonte_confiabilidade_cod": [("bronze.extracao", "saida_txt")],
+            "info_credibilidade_cod":   [("bronze.extracao", "saida_txt")],
+            "relato_txt":               [("bronze.extracao", "saida_txt")],
+            "unidade_reportante_cod":   [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "extracao_idt":             [("bronze.extracao", "extracao_idt")],
+            "arquivo_idt":              [("bronze.arquivo", "arquivo_idt")],
+        }),
+    ])
+
+    # FOGOS: a 1a parte do Relatorio de Bombardeio, um evento por informe de observador,
+    # na grade que o Docling reconstruiu. O lugar sai da coluna F, convertida da forma
+    # decametrica e ancorada na area da operacao — por isso REF_OPERACAO entra na linhagem.
+    fogos = transformar("fogos_bombardeio", "FOGOS", "relatorio_bombardeio", [
+        linhagem(le=bronze_do_arquivo + ["silver.ref_operacao"], escreve=["silver.evento"], colunas={
+            "geometria_wkt":          [("bronze.extracao", "saida_txt"), ("silver.ref_operacao", "area_wkt")],
+            "ocorrencia_data":        [("bronze.extracao", "saida_txt")],
+            "registro_origem_cod":    [("bronze.extracao", "saida_txt"), ("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "relato_txt":             [("bronze.extracao", "saida_txt")],
+            "unidade_reportante_cod": [("bronze.recepcao_bruta", "conteudo_json_txt")],
+            "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
+            "extracao_idt":           [("bronze.extracao", "extracao_idt")],
+        }),
+    ])
+
+    conferir >> [posicao, nada_a_fazer]
+    posicao >> mcc >> relato >> incidente >> relper >> relper_pdf >> voz >> intel >> fogos

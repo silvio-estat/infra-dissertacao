@@ -1,0 +1,30 @@
+transport:
+  type: http
+  url: http://openmetadata:8585
+  endpoint: /api/v1/openlineage/lineage
+  auth:
+    type: api_key
+    apiKey: SUBSTITUA_PELO_OM_INGESTION_BOT_JWT
+facets:
+  spark:
+    disabled:
+      - spark_unknown
+
+# ---------------------------------------------------------------------------
+# Copie este arquivo para openlineage.yml e substitua o apiKey pelo token do
+# ingestion-bot. O token e proprio de cada instalacao e muda a cada reset do
+# OpenMetadata (docker compose down -v). Para obte-lo:
+#
+#   TOKEN=$(curl -s -X POST http://localhost:8585/api/v1/users/login \
+#     -H 'Content-Type: application/json' \
+#     -d "{\"email\":\"admin@open-metadata.org\",\"password\":\"$(printf admin | base64)\"}" \
+#     | python3 -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+#   BOT=$(curl -s -H "Authorization: Bearer $TOKEN" \
+#     http://localhost:8585/api/v1/bots/name/ingestion-bot \
+#     | python3 -c "import sys,json;print(json.load(sys.stdin)['botUser']['id'])")
+#   curl -s -H "Authorization: Bearer $TOKEN" \
+#     "http://localhost:8585/api/v1/users/auth-mechanism/$BOT" \
+#     | python3 -c "import sys,json;print(json.load(sys.stdin)['config']['JWTToken'])"
+#
+# O mesmo valor vai para OM_INGESTION_BOT_JWT no .env.
+# ---------------------------------------------------------------------------
