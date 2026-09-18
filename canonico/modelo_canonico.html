@@ -1,5 +1,5 @@
 <title>Modelo Canônico ARQ_TEMAC</title>
-<meta name="description" content="Como seis fontes heterogêneas convergem na tabela EVENTO e como a linhagem liga cada número ao registro bruto que o originou.">
+<meta name="description" content="Como seis fontes heterogêneas convergem na tabela EVENTO, como a linhagem liga cada número ao registro bruto que o originou, e como se mede o que não chegou.">
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
 
@@ -469,7 +469,7 @@
       destino — e uma <strong>operação</strong> que amarra tudo. Esta página mostra o percurso que
       todo dado faz, o que permite cruzar fontes tão diferentes, e como, a partir de qualquer
       número na camada final, se volta ao registro bruto que o gerou.</p>
-    <p class="meta">versão 3 · atualizado em 2026-09-11 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
+    <p class="meta">versão 3 · atualizado em 2026-09-18 · fonte: <code>canonico/modelo_canonico.yaml</code></p>
   </header>
 
   <section>
@@ -504,7 +504,7 @@
       camada tem um trabalho e só um.</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Fluxo de dados das seis fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze.">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das seis fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze. O arquivo que não pode ser catalogado vai da pasta landing para a tabela REJEICAO e não segue adiante; a tabela INGESTAO registra, a cada execução, a conferência entre o que havia na pasta e o que a Bronze conhece.">
 flowchart TD
   subgraph FONTES["FONTES · sistemas de origem"]
     C2A["C2_A<br/>JSON com geometria"]
@@ -528,12 +528,16 @@ flowchart TD
     RCPB["RECEPCAO_BRUTA<br/>o registro estruturado de TODO evento:<br/>o JSON do C2, ou o sidecar .json do arquivo.<br/>payload cru inteiro, hash, operacao"]
     ARQ["ARQUIVO<br/>manifesto do binario (xlsx, pdf, foto, audio):<br/>URI, hash, MIME, operacao (da pasta)"]
     EXT["EXTRACAO<br/>1 linha por leitura de um binario:<br/>ferramenta+versao, houve IA? (S/N),<br/>modelo e prompt quando houve"]
+    REJ["REJEICAO<br/>o arquivo que chegou e NAO abre:<br/>motivo, mensagem do erro, tamanho.<br/>nao entra: fica registrado que existiu"]
+    INGE["INGESTAO<br/>1 linha por execucao, com a CONFERENCIA:<br/>quantos objetos havia em landing/ e onde<br/>cada um foi parar — inclusive os que<br/>nao geram linha (duplicata byte a byte)"]
   end
 
   LAND -->|"JSON nativo do C2, ou o sidecar .json<br/>que acompanha todo arquivo"| RCPB
   LAND -->|"o binario: xlsx, pdf, foto, audio"| ARQ
   ARQ -->|"toda leitura do binario:<br/>celula / texto do PDF (direta)<br/>OCR / transcricao / LLM (IA)"| EXT
   RCPB -.->|"o sidecar aponta para seu binario (ARQUIVO_IDT)"| ARQ
+  LAND -->|"o que nao pode ser catalogado:<br/>JSON truncado, fora da convencao de pasta"| REJ
+  LAND -.->|"conta e confere: cada objeto tem destino?"| INGE
 
   MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio · gazetteer<br/>abreviatura · split_escala · sobra · contexto_operacao"}}
 
@@ -713,13 +717,32 @@ erDiagram
     int VTR_OPERACIONAL_QNT
     string ATRIBUTO_EXTRA_TXT
   }
+  REJEICAO {
+    string REJEICAO_IDT PK
+    string ORIGEM_URI_TXT
+    string MOTIVO_COD
+    string DETALHE_TXT
+    bigint ARQUIVO_TAMANHO_QNT
+  }
+  INGESTAO {
+    string INGESTAO_IDT PK
+    bigint ARQUIVO_VISTO_QNT
+    bigint ARQUIVO_COM_REGISTRO_QNT
+    bigint DUPLICADO_QNT
+    bigint SEM_DESTINO_QNT
+    timestamp EXECUCAO_DATA
+  }
 </pre>
-      <figcaption>Prancha 2 — as nove tabelas e suas ligações por chave. O losango cheio marca o
+      <figcaption>Prancha 2 — as tabelas do percurso e suas ligações por chave. O losango cheio marca o
         lado &ldquo;um&rdquo; da relação; o pé-de-galinha marca o lado &ldquo;muitos&rdquo;.
         <code>OPERACAO_COD</code> aparece nas três tabelas brutas e em <code>EVENTO</code>: é a
         coluna que atravessa tudo. Todo <code>EVENTO</code> tem um <code>RECEPCAO_IDT</code> (o
         JSON ou o sidecar — daí o traço cheio); tem também <code>ARQUIVO_IDT</code> quando há um
-        binário por trás, que é quase sempre.</figcaption>
+        binário por trás, que é quase sempre. <code>REJEICAO</code> e <code>INGESTAO</code> aparecem
+        <strong>sem ligação nenhuma</strong>, e é isso que elas têm a dizer: a primeira registra o
+        arquivo que não chegou a virar linha em lugar algum; a segunda conta objetos que estão fora
+        do repositório. Nenhuma das duas tem chave que a ligue ao resto — porque o assunto delas
+        não é o dado, é o que aconteceu com ele.</figcaption>
       <details>
         <summary>Código-fonte Mermaid</summary>
         <pre><code class="src-view"></code></pre>
@@ -734,6 +757,94 @@ erDiagram
       a brigada, no topo). <code>REF_OPERACAO</code> aparece porque <code>OPERACAO_COD</code> é
       chave estrangeira de verdade em três tabelas: é o contexto que não se resolve e some, fica
       gravado.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">O avesso</span> O que <em>não</em> chegou</h2>
+
+    <p>Tudo até aqui descreve o dado que entrou. Mas quem lê a camada Gold tem uma pergunta que
+      nenhuma dessas tabelas responde: <strong>falta alguma coisa?</strong> Para um estado-maior
+      isso não é detalhe de engenharia — uma subunidade que não reporta há dois turnos pode estar
+      sem comunicação, deslocando ou em contato.</p>
+
+    <p>O problema é que <strong>ausência não se vê no dado</strong>. Um número que não chegou não
+      deixa linha, não deixa arquivo, não deixa rastro. Ele só se torna visível quando existe uma
+      <strong>expectativa declarada</strong> contra a qual comparar — e o modelo declara duas:</p>
+
+    <ul>
+      <li>a <strong>cadência</strong> do RELPER — <em>duas remessas por dia, fixadas pelo EM da
+        brigada</em> —, que diz <em>quando</em> cada OM deveria reportar;</li>
+      <li>a <strong>ordem de batalha</strong> em <code>REF_UNIDADE</code>, que diz <em>quem</em>
+        existe e quantas subunidades cada OM tem.</li>
+    </ul>
+
+    <p>O produto das duas é a lista do que <em>deveria</em> ter chegado. Subtraindo o que chegou,
+      o que sobra é a lacuna — e ela vem com nome: não &ldquo;falta informação&rdquo;, e sim
+      <em>falta o RELPER da 2ª Cia Fuz/511º BI, turno da tarde de 27 de novembro</em>. É a
+      diferença entre um alarme e uma ordem executável.</p>
+
+    <h3>Cinco espécies de problema, em <code>gold.PROBLEMA_DADOS</code></h3>
+
+    <table class="mini">
+      <tr><th>Espécie</th><th>O que aconteceu</th><th>Como se identifica</th></tr>
+      <tr><td><code>CHEGOU_QUEBRADO</code></td><td>o arquivo chegou e não abre</td><td>endereço do arquivo</td></tr>
+      <tr><td><code>SEM_SIDECAR</code></td><td>o binário veio sem o <code>.json</code> que o descreve</td><td>endereço do arquivo</td></tr>
+      <tr><td><code>SIDECAR_SEM_ARQUIVO</code></td><td>o <code>.json</code> chegou e o binário não</td><td>endereço do arquivo</td></tr>
+      <tr><td><code>NAO_CHEGOU</code></td><td>a OM não remeteu um turno previsto pela cadência</td><td><strong>unidade, dia e turno</strong></td></tr>
+      <tr><td><code>INCOMPLETO_NO_ARQUIVO</code></td><td>a remessa chegou faltando subunidade</td><td><strong>unidade, dia e turno</strong></td></tr>
+    </table>
+
+    <p>Repare na coluna da direita: as três primeiras se identificam por <em>arquivo</em>, porque
+      existe um; as duas últimas, por <em>coordenada</em> — quem, quando, qual turno —, porque não
+      há arquivo nenhum a nomear. É por isso que <code>OBJETO_IDT</code> fica vazio nelas: não há
+      registro para onde apontar, e essa ausência de ponteiro é justamente a razão de a linha
+      existir.</p>
+
+    <h3>A conferência da porta: comparar com o mundo de fora</h3>
+
+    <p>Todas as verificações acima comparam o repositório <em>consigo mesmo</em>. Há um ponto cego
+      nisso: um arquivo que nunca chegou a ser lido não deixa linha nenhuma — logo, não há o que
+      consultar, e nenhuma delas o nota. É o silêncio mais perigoso dos quatro.</p>
+
+    <p>Por isso a tabela <code>INGESTAO</code> faz a conta ao contrário: parte da lista de objetos
+      que estão em <code>landing/</code> e pergunta onde cada um foi parar. Três destinos são
+      legítimos:</p>
+
+    <table class="mini">
+      <tr><th>Destino</th><th>O que significa</th></tr>
+      <tr><td>virou linha</td><td>o endereço está em <code>ARQUIVO</code>, <code>RECEPCAO_BRUTA</code> ou <code>REJEICAO</code></td></tr>
+      <tr><td>duplicata</td><td>endereço novo, mas <em>todo</em> o conteúdo que ele produz já está na Bronze — a deduplicação por <em>hash</em> funcionando</td></tr>
+      <tr><td>recusado</td><td>está em <code>REJEICAO</code>, com o motivo e a mensagem do erro</td></tr>
+    </table>
+
+    <p>O que não se encaixa em nenhum dos três é contado em <code>SEM_DESTINO_QNT</code>, e deve
+      ser sempre zero: é o arquivo que sumiu entre a porta e a Bronze. Na execução de 18 de
+      setembro de 2026, sobre o corpus sintético completo:</p>
+
+    <div class="trace">1413 objetos em landing/  =  1409 com registro  +  4 duplicatas  +  0 sem destino</div>
+
+    <p>As quatro duplicatas são exatamente os reenvios que o gerador planta de propósito — três
+      fotografias e um lote de posições, reenviados byte a byte com outro nome. E aqui há um ganho
+      lateral: <strong>o reenvio idêntico não gera linha alguma</strong>, por desenho, de modo que
+      até então ele era invisível. A contagem por execução é o único lugar em que ele aparece.</p>
+
+    <p>Note ainda a regra da duplicata: um lote só conta como reenvio se <em>todos</em> os seus
+      registros já forem conhecidos. Se metade for nova, não é reenvio — é algo que se perdeu, e
+      ele cai em <code>SEM_DESTINO</code>.</p>
+
+    <h3>O limite, que vale declarar</h3>
+
+    <p>O que <strong>não</strong> tem expectativa declarada continua invisível. Um relato
+      episódico de contato que nunca foi transmitido não viola cadência nem ordem de batalha, e
+      não deixa arquivo: nenhuma tabela pode registrá-lo, porque nada no repositório sabe que ele
+      deveria existir. A corroboração entre fontes dá indício — se uma fonte relata bombardeio
+      numa região e nenhuma unidade daquela região mudou de situação, algo está faltando —, mas
+      indício não é registro.</p>
+
+    <p>Vale a distinção entre as duas ferramentas que tratam disso, porque elas parecem a mesma e
+      não são: o <strong>teste de qualidade</strong> é o alarme (passou ou falhou, com histórico ao
+      longo do tempo); a <strong>visão</strong> é o relatório (o quê, de quem, quando). O SQL de
+      detecção é o mesmo e mora nos dois lugares de propósito.</p>
   </section>
 
   <section>
@@ -1129,7 +1240,7 @@ ponteiros de linhagem:
   </section>
 
   <footer>
-    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 11 de
+    <p>Esta página é uma leitura de <code>canonico/modelo_canonico.yaml</code> (versão 3, 18 de
       setembro de 2026). Em caso de divergência, o YAML é a fonte de verdade — os diagramas
       seguem ele, não o contrário.</p>
     <p>Sistemas de origem identificados por código genérico (<code>C2_A</code>,
