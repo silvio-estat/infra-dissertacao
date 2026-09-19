@@ -60,7 +60,7 @@ x-airflow-common: &airflow-common
     - airflow_plugins:/opt/airflow/plugins
     - ./spark/jobs:/opt/spark-jobs
     - ./canonico:/opt/canonico:ro
-    - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
+    - ./infra/openlineage:/opt/openlineage:ro
   depends_on:
     postgres:
       condition: service_healthy
@@ -193,7 +193,7 @@ services:
     volumes:
       - ./spark/jobs:/opt/spark-jobs
       - ./canonico:/opt/canonico:ro
-      - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
+      - ./infra/openlineage:/opt/openlineage:ro
     depends_on:
       hive-metastore:
         condition: service_healthy
@@ -219,7 +219,7 @@ services:
     volumes:
       - ./spark/jobs:/opt/spark-jobs
       - ./canonico:/opt/canonico:ro
-      - ./infra/openlineage/openlineage.yml:/opt/openlineage/openlineage.yml:ro
+      - ./infra/openlineage:/opt/openlineage:ro
     depends_on:
       - spark-master
     networks:
