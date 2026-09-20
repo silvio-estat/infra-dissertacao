@@ -36,6 +36,9 @@ CLAUDE.md
 claude.md
 CLAUDE.local.md
 .mcp.json
+.codex/
+agents.md
+AGENTS.md
 
 # Informações locais — não versionar
 outras_info/
