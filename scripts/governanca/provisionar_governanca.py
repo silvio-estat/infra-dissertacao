@@ -100,6 +100,21 @@ class ErroOpenMetadata(RuntimeError):
     """Falha ao conversar com a API do OpenMetadata."""
 
 
+def ja_existe(erro: "ErroOpenMetadata") -> bool:
+    """O termo ja estava la.
+
+    O PUT de /api/v1/glossaryTerms nao e upsert: com o termo ja criado, o
+    OpenMetadata responde HTTP 400 'already exists'. Rodar o script de novo — o
+    que a preparacao do ambiente faz — enchia a tela de FALHA sem nada estar
+    errado. Aqui isso vira 'ja existia', que e o que e.
+
+    O preco de nao ser upsert: termo existente NAO e atualizado. Se o CSV de
+    origem mudar, apague o termo (ou o glossario) antes de publicar de novo.
+    """
+    texto = str(erro)
+    return "HTTP 400" in texto and "already exists" in texto
+
+
 def _token() -> str:
     token = os.environ.get("OM_INGESTION_BOT_JWT", "").strip()
     if not token:
@@ -192,7 +207,10 @@ def provisionar_glossarios(dry_run: bool) -> None:
                 requisitar("PUT", "/api/v1/glossaryTerms", corpo_termo)
                 print(f"  termo: {nome}")
             except ErroOpenMetadata as erro:
-                print(f"  FALHA no termo {nome}: {erro}", file=sys.stderr)
+                if ja_existe(erro):
+                    print(f"  termo: {nome} (ja existia)")
+                else:
+                    print(f"  FALHA no termo {nome}: {erro}", file=sys.stderr)
 
 
 GLOSSARIO_MD33 = {
@@ -253,7 +271,7 @@ def provisionar_abreviaturas_md33(dry_run: bool) -> None:
     requisitar("PUT", "/api/v1/glossaries", GLOSSARIO_MD33)
     print(f"  glossario publicado: {GLOSSARIO_MD33['name']}")
 
-    gravados = falhas = 0
+    gravados = falhas = existentes = 0
     for i, (chave, regs) in enumerate(sorted(agrupado.items()), 1):
         significados = [r["termo_completo"] or r["termo"] for r in regs]
         if len(significados) == 1:
@@ -282,13 +300,16 @@ def provisionar_abreviaturas_md33(dry_run: bool) -> None:
             requisitar("PUT", "/api/v1/glossaryTerms", corpo)
             gravados += 1
         except ErroOpenMetadata as erro:
-            falhas += 1
-            if falhas <= 5:
-                print(f"  FALHA em {chave}: {erro}", file=sys.stderr)
+            if ja_existe(erro):
+                existentes += 1
+            else:
+                falhas += 1
+                if falhas <= 5:
+                    print(f"  FALHA em {chave}: {erro}", file=sys.stderr)
         if i % 250 == 0:
             print(f"  ... {i}/{len(agrupado)}")
 
-    print(f"  {gravados} termos publicados, {falhas} falha(s).")
+    print(f"  {gravados} termos publicados, {existentes} ja existiam, {falhas} falha(s).")
 
 
 def listar_tabelas(servico: str) -> list[dict]:
