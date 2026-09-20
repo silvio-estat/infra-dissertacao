@@ -106,6 +106,24 @@ vídeo. Como servidor na máquina, o Ollama usa a GPU e as DAGs falam com ele po
 
 ## Primeira subida, passo a passo
 
+### Atalho: `play.sh`
+
+Os passos 1 e 4 abaixo estão automatizados. O script confere os pré-requisitos, copia os dois
+arquivos de configuração, baixa o modelo do Ollama, cria o ambiente Python dos geradores e gera o
+corpus sintético — pulando o que já estiver pronto, de modo que rodá-lo de novo é seguro:
+
+```bash
+bash play.sh              # prepara tudo
+bash play.sh --conferir   # só diz o que falta, sem alterar nada
+bash play.sh --escala 0.1 # corpus reduzido, para conferir o caminho depressa
+```
+
+Depois dele, siga do passo 2. Os passos 2, 3, 5 e 6 continuam manuais.
+
+**Por que existe:** os dados sintéticos (254 MB) e os modelos de IA (alguns GB) não ficam no
+repositório — binário grande nunca sai do histórico do Git e não comprime entre versões. O
+repositório guarda quem sabe *produzi-los*; o `play.sh` os chama na ordem certa.
+
 ### 1. Configuração
 
 ```bash
@@ -151,7 +169,8 @@ done
 
 ### 4. Gerar os dados sintéticos e enviar para o MinIO
 
-Os geradores rodam na máquina, fora do Docker, com um ambiente Python próprio:
+Os geradores rodam na máquina, fora do Docker, com um ambiente Python próprio. **As três primeiras
+linhas o `play.sh` já fez**; a quarta precisa do MinIO no ar, por isso fica aqui:
 
 ```bash
 python3 -m venv venv-geradores
