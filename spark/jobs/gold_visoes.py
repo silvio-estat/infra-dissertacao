@@ -3,12 +3,15 @@ gold_visoes.py — Le a Silver e reescreve uma visao da Gold.
 
     python3 gold_visoes.py --visao pitcic
     python3 gold_visoes.py --visao pitcic --mostrar-sql
+    python3 gold_visoes.py --visao ppcot --mostrar-sql
+    python3 gold_visoes.py --visao coc --mostrar-sql
+    python3 gold_visoes.py --visao amc --mostrar-sql
 
 Cada visao e UMA tabela, declarada em `entidades` do modelo canonico (camada gold)
 e criada pelo --ddl do canonico_para_silver.py, como todas. Dentro dela, os
-elementos do processo doutrinario ficam empilhados pelas fases: a coluna FASE_NRO diz
-a fase, ETAPA_COD a etapa. Os parametros que mudam o resultado (raio da corroboracao,
-siglas do MD33-M-02) estao em `visoes:` do modelo, e nao aqui.
+elementos de cada produto ficam empilhados em uma estrutura propria. Os parametros
+que mudam o resultado (raio da corroboracao, janela do COC, siglas do MD33-M-02)
+estao em `visoes:` do modelo, e nao aqui.
 
 A tabela e reescrita inteira a cada execucao (INSERT OVERWRITE). A Gold e funcao
 da Silver: rodar de novo nunca duplica, e a versao anterior fica no historico do
@@ -387,7 +390,447 @@ def montar_problema_dados(modelo):
     return apoio, "\nUNION ALL\n".join(f"({b})" for b in blocos)
 
 
-VISOES = {"pitcic": montar_pitcic, "problema_dados": montar_problema_dados}
+# =============================================================================
+# PPCOT — insumos para o exame de situacao do comandante
+# =============================================================================
+
+def montar_ppcot(modelo):
+    """Reune os dados existentes e indica onde eles podem ajudar no PPCOT."""
+    v, sg = modelo["visoes"]["PPCOT"], modelo["visoes"]["siglas"]
+    colunas = [(c, _TIPOS[s["tipo"]]) for c, s in modelo["entidades"][v["tabela"]]["campos"].items()]
+    # Etapa, fator e tipo de insumo saem por `siglas`, como no PITCIC: sigla do
+    # MD33-M-02 quando o manual tem verbete, por extenso quando nao tem.
+    medidas = ", ".join(_texto(x) for x in v["medidas_planejamento"])
+    campos_situacao = ", ".join(
+        f"s.{nome}" for nome in modelo["entidades"]["SITUACAO_UNIDADE"]["campos"]
+        if nome != "EVENTO_IDT")
+    c = lambda nome: _texto(sg.get(nome, nome))
+
+    apoio = [
+        ("pp_posicao", f"""
+            SELECT * FROM (
+                SELECT e.*, u.UNIDADE_NOME,
+                       row_number() OVER (
+                           PARTITION BY e.OPERACAO_COD, e.UNIDADE_REPORTANTE_COD
+                           ORDER BY e.OCORRENCIA_DATA DESC, e.EVENTO_IDT DESC) AS ORDEM
+                FROM {SILVER}.EVENTO e
+                LEFT JOIN {SILVER}.REF_UNIDADE u
+                  ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
+                WHERE e.TIPO_COD = 'POSICAO')
+            WHERE ORDEM = 1"""),
+        ("pp_situacao", f"""
+            SELECT * FROM (
+                SELECT e.*, {campos_situacao}, u.UNIDADE_NOME,
+                       row_number() OVER (
+                           PARTITION BY e.OPERACAO_COD, e.UNIDADE_REPORTANTE_COD
+                           ORDER BY e.OCORRENCIA_DATA DESC, e.EVENTO_IDT DESC) AS ORDEM
+                FROM {SILVER}.EVENTO e
+                JOIN {SILVER}.SITUACAO_UNIDADE s ON s.EVENTO_IDT = e.EVENTO_IDT
+                LEFT JOIN {SILVER}.REF_UNIDADE u
+                  ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD)
+            WHERE ORDEM = 1"""),
+        ("pp_medida", f"""
+            SELECT e.*, m.MEDIDA_ESPECIE_COD, m.MEDIDA_NOME, m.OBSERVACAO
+            FROM {SILVER}.EVENTO e
+            JOIN {SILVER}.MEDIDA_COORDENACAO m ON m.EVENTO_IDT = e.EVENTO_IDT
+            WHERE m.MEDIDA_ESPECIE_COD IN ({medidas})"""),
+    ]
+
+    blocos = [
+        # Fase 1: o cadastro da operacao delimita o problema recebido.
+        _bloco(colunas, f"SELECT * FROM {SILVER}.REF_OPERACAO",
+               FASE_NRO="1", ETAPA_COD=c("ANALISE_MISSAO"),
+               FATOR_DECISAO_COD=c("MISSAO"), INSUMO_TIPO_COD=c("AREA_OPERACAO"),
+               INSUMO_NOME="OPERACAO_NOME",
+               INSUMO_DCRI="concat('Área de responsabilidade da operação ', OPERACAO_NOME)",
+               CONTRIBUICAO_TXT=_texto("Delimita a missão recebida, a área de responsabilidade e a unidade responsável."),
+               OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="AREA_WKT",
+               INICIO_DATA="INICIO_DATA", FIM_DATA="FIM_DATA", UNIDADE_COD="UNIDADE_RESP_COD"),
+        _bloco(colunas, f"SELECT * FROM {SILVER}.REF_OPERACAO",
+               FASE_NRO="1", ETAPA_COD=c("ANALISE_MISSAO"),
+               FATOR_DECISAO_COD=c("TEMPO"), INSUMO_TIPO_COD=c("JANELA_OPERACAO"),
+               INSUMO_NOME="OPERACAO_NOME",
+               INSUMO_DCRI="concat('De ', date_format(INICIO_DATA, 'dd/MM/yyyy HH:mm'), ' a ', "
+                            "date_format(FIM_DATA, 'dd/MM/yyyy HH:mm'))",
+               CONTRIBUICAO_TXT=_texto("Explicita o tempo disponivel e o intervalo a considerar no planejamento."),
+               OPERACAO_COD="OPERACAO_COD", INICIO_DATA="INICIO_DATA", FIM_DATA="FIM_DATA",
+               UNIDADE_COD="UNIDADE_RESP_COD"),
+
+        # Fase 2: o PITCIC entrega terreno e consideracoes civis ja integrados.
+        _bloco(colunas, f"""
+            SELECT p.*,
+                   CASE WHEN p.ETAPA_COD = {c('CONSIDERACOES_CIVIS')}
+                          OR p.ELEMENTO_TIPO_COD = {c('AVISTAMENTO')}
+                        THEN {c('CONSIDERACOES_CIVIS')} ELSE {c('TERRENO')} END AS FATOR
+            FROM {GOLD}.PITCIC p
+            WHERE p.FASE_NRO IN (1, 2) AND p.ELEMENTO_TIPO_COD <> {c('AREA_OPERACAO')}""",
+               FASE_NRO="2", ETAPA_COD=c("SITUACAO_COMPREENSAO"),
+               FATOR_DECISAO_COD="FATOR", INSUMO_TIPO_COD="ELEMENTO_TIPO_COD",
+               INSUMO_NOME="ELEMENTO_NOME", INSUMO_DCRI="coalesce(ELEMENTO_DCRI, TIPO_TXT)",
+               CONTRIBUICAO_TXT=(f"CASE WHEN FATOR = {c('CONSIDERACOES_CIVIS')} THEN "
+                                        f"{_texto('Apoia a compreensão das considerações civis e de seus reflexos na operação.')} "
+                                        f"ELSE {_texto('Apoia a análise do terreno, das vias de acesso e das restrições ao movimento.')} END"),
+               OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="GEOMETRIA_WKT",
+               INICIO_DATA="INICIO_DATA", FIM_DATA="FIM_DATA", UNIDADE_COD="UNIDADE_COD",
+               EVENTO_QNT="EVENTO_QNT", FONTE_QNT="FONTE_QNT",
+               MODALIDADE_TXT="MODALIDADE_TXT", EVENTO_IDT="EVENTO_IDT"),
+
+        # A avaliacao da ameaca do PITCIC entra como insumo do fator Inimigo.
+        _bloco(colunas, f"SELECT * FROM {GOLD}.PITCIC WHERE FASE_NRO = 3",
+               FASE_NRO="2", ETAPA_COD=c("SITUACAO_COMPREENSAO"),
+               FATOR_DECISAO_COD=c("INIMIGO"), INSUMO_TIPO_COD="ELEMENTO_TIPO_COD",
+               INSUMO_NOME="coalesce(LOCAL_REFERENCIA_NOME, ELEMENTO_NOME)",
+               INSUMO_DCRI="coalesce(ELEMENTO_DCRI, TIPO_TXT)",
+               CONTRIBUICAO_TXT=_texto("Apoia a compreensão das atividades, capacidades e localização da ameaça."),
+               OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="GEOMETRIA_WKT",
+               INICIO_DATA="INICIO_DATA", FIM_DATA="FIM_DATA", UNIDADE_COD="UNIDADE_COD",
+               EVENTO_QNT="EVENTO_QNT", FONTE_QNT="FONTE_QNT",
+               MODALIDADE_TXT="MODALIDADE_TXT", EVENTO_IDT="EVENTO_IDT"),
+
+        # Posicao e RELPER mais recentes descrevem os meios disponiveis.
+        _bloco(colunas, "SELECT * FROM pp_posicao",
+               FASE_NRO="2", ETAPA_COD=c("SITUACAO_COMPREENSAO"),
+               FATOR_DECISAO_COD=c("MEIOS"), INSUMO_TIPO_COD=c("POSICAO"),
+               INSUMO_NOME="coalesce(UNIDADE_NOME, UNIDADE_REPORTANTE_COD)",
+               INSUMO_DCRI=_texto("Última posição conhecida da fração."),
+               CONTRIBUICAO_TXT=_texto("Atualiza o dispositivo das forças amigas empregado na composição dos meios."),
+               OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="GEOMETRIA_WKT",
+               INICIO_DATA="OCORRENCIA_DATA", UNIDADE_COD="UNIDADE_REPORTANTE_COD",
+               EVENTO_QNT="1", FONTE_QNT="1", MODALIDADE_TXT="MODALIDADE_ORIGEM_COD",
+               EVENTO_IDT="array(EVENTO_IDT)"),
+        _bloco(colunas, """
+            SELECT *, concat(
+                'Ef ', coalesce(CAST(EF_PRESENTE_QNT AS STRING), '?'), '/',
+                coalesce(CAST(EF_PREVISTO_QNT AS STRING), '?'),
+                '; Vtr ', coalesce(CAST(VTR_OPERACIONAL_QNT AS STRING), '?'), '/',
+                coalesce(CAST(VTR_TOTAL_QNT AS STRING), '?'),
+                '; combustível ', coalesce(CAST(COMBUSTIVEL_PCTL AS STRING), '?'), '%') AS RESUMO
+            FROM pp_situacao""",
+               FASE_NRO="2", ETAPA_COD=c("SITUACAO_COMPREENSAO"),
+               FATOR_DECISAO_COD=c("MEIOS"), INSUMO_TIPO_COD=c("SITUACAO_UNIDADE"),
+               INSUMO_NOME="coalesce(UNIDADE_NOME, UNIDADE_REPORTANTE_COD)", INSUMO_DCRI="RESUMO",
+               CONTRIBUICAO_TXT=_texto("Atualiza pessoal, viaturas e sustentação logística disponíveis para cumprir a missão."),
+               OPERACAO_COD="OPERACAO_COD", INICIO_DATA="OCORRENCIA_DATA",
+               UNIDADE_COD="UNIDADE_REPORTANTE_COD", EVENTO_QNT="1", FONTE_QNT="1",
+               MODALIDADE_TXT="MODALIDADE_ORIGEM_COD", EVENTO_IDT="array(EVENTO_IDT)"),
+
+        # Fase 3: produtos graficos do planejamento e padroes observados da ameaca.
+        # A medida desenhada no mapa nao e fator de ENTRADA da decisao: e produto
+        # dela. Por isso MANOBRA, fora do MITeMeTeC (decisao do usuario, 20/09).
+        _bloco(colunas, "SELECT * FROM pp_medida",
+               FASE_NRO="3", ETAPA_COD=c("LINHAS_ACAO_CONFRONTO"),
+               FATOR_DECISAO_COD=c("MANOBRA"),
+               INSUMO_TIPO_COD=_sigla("MEDIDA_ESPECIE_COD", sg),
+               INSUMO_NOME="MEDIDA_NOME", INSUMO_DCRI="OBSERVACAO",
+               CONTRIBUICAO_TXT=_texto("Integra o calco e apoia a montagem e a sincronização das linhas de ação."),
+               OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="GEOMETRIA_WKT",
+               INICIO_DATA="OCORRENCIA_DATA", UNIDADE_COD="UNIDADE_REPORTANTE_COD",
+               EVENTO_QNT="1", FONTE_QNT="1", MODALIDADE_TXT="MODALIDADE_ORIGEM_COD",
+               EVENTO_IDT="array(EVENTO_IDT)"),
+        _bloco(colunas, f"SELECT * FROM {GOLD}.PITCIC WHERE FASE_NRO = 4",
+               FASE_NRO="3", ETAPA_COD=c("LINHAS_ACAO_CONFRONTO"),
+               FATOR_DECISAO_COD=c("INIMIGO"), INSUMO_TIPO_COD="ELEMENTO_TIPO_COD",
+               INSUMO_NOME="ELEMENTO_NOME", INSUMO_DCRI="TIPO_TXT",
+               CONTRIBUICAO_TXT=_texto("Resume padrões de atividade da ameaça para confrontar as linhas de ação propostas."),
+               OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="GEOMETRIA_WKT",
+               INICIO_DATA="INICIO_DATA", FIM_DATA="FIM_DATA", EVENTO_QNT="EVENTO_QNT",
+               FONTE_QNT="FONTE_QNT", MODALIDADE_TXT="MODALIDADE_TXT", EVENTO_IDT="EVENTO_IDT"),
+    ]
+    return apoio, "\nUNION ALL\n".join(f"({b})" for b in blocos)
+
+
+# =============================================================================
+# COC — cenario operacional comum
+# =============================================================================
+
+def montar_coc(modelo):
+    """Produz o retrato corrente usando o ultimo evento da operacao como relogio."""
+    v, sg = modelo["visoes"]["COC"], modelo["visoes"]["siglas"]
+    colunas = [(c, _TIPOS[s["tipo"]]) for c, s in modelo["entidades"][v["tabela"]]["campos"].items()]
+    janela = int(v["janela_fato_horas"])
+    tipos = ", ".join(_texto(x) for x in v["fatos_recentes_tipos"])
+    campos_situacao = ", ".join(
+        f"s.{nome}" for nome in modelo["entidades"]["SITUACAO_UNIDADE"]["campos"]
+        if nome != "EVENTO_IDT")
+    idade = "round((unix_timestamp(REFERENCIA_DATA) - unix_timestamp(OCORRENCIA_DATA)) / 60.0, 1)"
+
+    apoio = [
+        ("coc_referencia", f"""
+            SELECT OPERACAO_COD, max(OCORRENCIA_DATA) AS REFERENCIA_DATA
+            FROM {SILVER}.EVENTO GROUP BY OPERACAO_COD"""),
+        ("coc_posicao", f"""
+            SELECT * FROM (
+                SELECT e.*, u.UNIDADE_NOME, r.REFERENCIA_DATA,
+                       row_number() OVER (
+                           PARTITION BY e.OPERACAO_COD, e.UNIDADE_REPORTANTE_COD
+                           ORDER BY e.OCORRENCIA_DATA DESC, e.EVENTO_IDT DESC) AS ORDEM
+                FROM {SILVER}.EVENTO e
+                JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD
+                LEFT JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
+                WHERE e.TIPO_COD = 'POSICAO')
+            WHERE ORDEM = 1"""),
+        ("coc_situacao", f"""
+            SELECT * FROM (
+                SELECT e.*, {campos_situacao}, u.UNIDADE_NOME, r.REFERENCIA_DATA,
+                       row_number() OVER (
+                           PARTITION BY e.OPERACAO_COD, e.UNIDADE_REPORTANTE_COD
+                           ORDER BY e.OCORRENCIA_DATA DESC, e.EVENTO_IDT DESC) AS ORDEM
+                FROM {SILVER}.EVENTO e
+                JOIN {SILVER}.SITUACAO_UNIDADE s ON s.EVENTO_IDT = e.EVENTO_IDT
+                JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD
+                LEFT JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD)
+            WHERE ORDEM = 1"""),
+        ("coc_medida", f"""
+            SELECT e.*, m.MEDIDA_ESPECIE_COD, m.MEDIDA_NOME, m.OBSERVACAO, r.REFERENCIA_DATA
+            FROM {SILVER}.EVENTO e
+            JOIN {SILVER}.MEDIDA_COORDENACAO m ON m.EVENTO_IDT = e.EVENTO_IDT
+            JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD"""),
+        # Eventos corroborados aparecem uma vez: o conjunto ordenado de EVENTO_IDT
+        # e a chave do fato, independentemente de qual fonte foi a linha principal.
+        # O terceiro criterio de ordem existe para o desempate: os dois lados de um
+        # par corroborado tem o MESMO FONTE_QNT e podem ter a mesma INICIO_DATA —
+        # sem ele, qual das duas linhas sobrevive muda de execucao para execucao, e
+        # a Gold deixa de ser funcao da Silver. EVENTO_IDT[0] difere sempre, porque
+        # cada lado se poe na frente do proprio array.
+        ("coc_ameaca", f"""
+            SELECT * FROM (
+                SELECT x.*, row_number() OVER (
+                    PARTITION BY OPERACAO_COD, CHAVE
+                    ORDER BY FONTE_QNT DESC, INICIO_DATA DESC, EVENTO_IDT[0]) AS ORDEM
+                FROM (
+                    SELECT p.*, r.REFERENCIA_DATA,
+                           array_join(array_sort(p.EVENTO_IDT), '|') AS CHAVE
+                    FROM {GOLD}.PITCIC p
+                    JOIN coc_referencia r ON r.OPERACAO_COD = p.OPERACAO_COD
+                    WHERE p.FASE_NRO = 3
+                      AND p.INICIO_DATA >= r.REFERENCIA_DATA - INTERVAL {janela} HOURS) x)
+            WHERE ORDEM = 1"""),
+        ("coc_fato", f"""
+            SELECT e.*, u.UNIDADE_NOME, r.REFERENCIA_DATA
+            FROM {SILVER}.EVENTO e
+            JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD
+            LEFT JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
+            WHERE e.TIPO_COD IN ({tipos})
+              AND e.OCORRENCIA_DATA >= r.REFERENCIA_DATA - INTERVAL {janela} HOURS"""),
+    ]
+
+    blocos = [
+        _bloco(colunas, "SELECT * FROM coc_posicao",
+               REGISTRO_IDT="EVENTO_IDT", QUADRO_TIPO_COD=_texto("POSICAO_FORCA"),
+               ELEMENTO_NOME="coalesce(UNIDADE_NOME, UNIDADE_REPORTANTE_COD)",
+               ELEMENTO_DCRI=_texto("Última posição conhecida da força."),
+               OPERACAO_COD="OPERACAO_COD", UNIDADE_COD="UNIDADE_REPORTANTE_COD", TIPO_COD=_sigla("TIPO_COD", sg),
+               OCORRENCIA_DATA="OCORRENCIA_DATA", REFERENCIA_DATA="REFERENCIA_DATA",
+               IDADE_MINUTO_QNT=idade, GEOMETRIA_WKT="GEOMETRIA_WKT", PRIORIDADE_COD="PRIORIDADE_COD",
+               FONTE_QNT="1", MODALIDADE_TXT="MODALIDADE_ORIGEM_COD",
+               EXTRACAO_MODELO_NOME="EXTRACAO_MODELO_NOME", EVENTO_IDT="array(EVENTO_IDT)"),
+        _bloco(colunas, """
+            SELECT *, concat(
+                'Ef ', coalesce(CAST(EF_PRESENTE_QNT AS STRING), '?'), '/',
+                coalesce(CAST(EF_PREVISTO_QNT AS STRING), '?'),
+                '; Vtr ', coalesce(CAST(VTR_OPERACIONAL_QNT AS STRING), '?'), '/',
+                coalesce(CAST(VTR_TOTAL_QNT AS STRING), '?')) AS RESUMO
+            FROM coc_situacao""",
+               REGISTRO_IDT="EVENTO_IDT", QUADRO_TIPO_COD=_texto("SITUACAO_FORCA"),
+               ELEMENTO_NOME="coalesce(UNIDADE_NOME, UNIDADE_REPORTANTE_COD)", ELEMENTO_DCRI="RESUMO",
+               OPERACAO_COD="OPERACAO_COD", UNIDADE_COD="UNIDADE_REPORTANTE_COD", TIPO_COD=_sigla("TIPO_COD", sg),
+               OCORRENCIA_DATA="OCORRENCIA_DATA", REFERENCIA_DATA="REFERENCIA_DATA",
+               IDADE_MINUTO_QNT=idade,
+               EF_DISPONIBILIDADE_PCTL="CASE WHEN EF_PREVISTO_QNT > 0 THEN round(100.0 * EF_PRESENTE_QNT / EF_PREVISTO_QNT, 2) END",
+               VTR_DISPONIBILIDADE_PCTL="CASE WHEN VTR_TOTAL_QNT > 0 THEN round(100.0 * VTR_OPERACIONAL_QNT / VTR_TOTAL_QNT, 2) END",
+               COMBUSTIVEL_PCTL="COMBUSTIVEL_PCTL",
+               SUPRIMENTO_MINIMO_DIAS="least(SUP_CL_I_DIAS, SUP_CL_III_DIAS, SUP_CL_V_DIAS, SUP_CL_VIII_DIAS)",
+               NECESSIDADE_TXT="NECESSIDADE_TXT", FONTE_QNT="1",
+               MODALIDADE_TXT="MODALIDADE_ORIGEM_COD", EXTRACAO_MODELO_NOME="EXTRACAO_MODELO_NOME",
+               EVENTO_IDT="array(EVENTO_IDT)"),
+        _bloco(colunas, "SELECT * FROM coc_ameaca",
+               REGISTRO_IDT="sha2(CHAVE, 256)", QUADRO_TIPO_COD=_texto("AMEACA"),
+               ELEMENTO_NOME="coalesce(LOCAL_REFERENCIA_NOME, ELEMENTO_NOME)", ELEMENTO_DCRI="ELEMENTO_DCRI",
+               OPERACAO_COD="OPERACAO_COD", UNIDADE_COD="UNIDADE_COD", TIPO_COD="TIPO_TXT",
+               OCORRENCIA_DATA="INICIO_DATA", REFERENCIA_DATA="REFERENCIA_DATA",
+               IDADE_MINUTO_QNT="round((unix_timestamp(REFERENCIA_DATA) - unix_timestamp(INICIO_DATA)) / 60.0, 1)",
+               GEOMETRIA_WKT="GEOMETRIA_WKT", FONTE_QNT="FONTE_QNT", MODALIDADE_TXT="MODALIDADE_TXT",
+               EXTRACAO_MODELO_NOME="EXTRACAO_MODELO_NOME", EVENTO_IDT="EVENTO_IDT"),
+        _bloco(colunas, "SELECT * FROM coc_fato",
+               REGISTRO_IDT="EVENTO_IDT", QUADRO_TIPO_COD=_texto("OCORRENCIA"),
+               ELEMENTO_NOME="coalesce(UNIDADE_NOME, UNIDADE_REPORTANTE_COD)", ELEMENTO_DCRI=_DESCRICAO,
+               OPERACAO_COD="OPERACAO_COD", UNIDADE_COD="UNIDADE_REPORTANTE_COD", TIPO_COD=_sigla("TIPO_COD", sg),
+               OCORRENCIA_DATA="OCORRENCIA_DATA", REFERENCIA_DATA="REFERENCIA_DATA",
+               IDADE_MINUTO_QNT=idade, GEOMETRIA_WKT="GEOMETRIA_WKT", PRIORIDADE_COD="PRIORIDADE_COD",
+               FONTE_QNT="1", MODALIDADE_TXT="MODALIDADE_ORIGEM_COD",
+               EXTRACAO_MODELO_NOME="EXTRACAO_MODELO_NOME", EVENTO_IDT="array(EVENTO_IDT)"),
+        _bloco(colunas, "SELECT * FROM coc_medida",
+               REGISTRO_IDT="EVENTO_IDT",
+               QUADRO_TIPO_COD="CASE WHEN TIPO_COD = 'OBSTACULO' THEN 'OBSTACULO' ELSE 'MEDIDA_COORDENACAO' END",
+               ELEMENTO_NOME="coalesce(MEDIDA_NOME, MEDIDA_ESPECIE_COD)", ELEMENTO_DCRI="OBSERVACAO",
+               OPERACAO_COD="OPERACAO_COD", UNIDADE_COD="UNIDADE_REPORTANTE_COD",
+               TIPO_COD=_sigla("MEDIDA_ESPECIE_COD", sg), OCORRENCIA_DATA="OCORRENCIA_DATA",
+               REFERENCIA_DATA="REFERENCIA_DATA", IDADE_MINUTO_QNT=idade, GEOMETRIA_WKT="GEOMETRIA_WKT",
+               PRIORIDADE_COD="PRIORIDADE_COD", FONTE_QNT="1", MODALIDADE_TXT="MODALIDADE_ORIGEM_COD",
+               EXTRACAO_MODELO_NOME="EXTRACAO_MODELO_NOME", EVENTO_IDT="array(EVENTO_IDT)"),
+    ]
+    return apoio, "\nUNION ALL\n".join(f"({b})" for b in blocos)
+
+
+# =============================================================================
+# AMC — avaliacao e monitoramento da conducao
+# =============================================================================
+
+def montar_amc(modelo):
+    """Mede evolucao observada sem inventar metas ou julgamento de sucesso."""
+    v, sg = modelo["visoes"]["AMC"], modelo["visoes"]["siglas"]
+    colunas = [(c, _TIPOS[s["tipo"]]) for c, s in modelo["entidades"][v["tabela"]]["campos"].items()]
+    # O que e ameaca esta declarado UMA vez, em visoes.PITCIC: repetir a lista aqui
+    # deixava as duas livres para divergir, e o AMC passaria a descartar ameaca em
+    # silencio. Le-se de la e converte-se para sigla, que e como a Gold as grava.
+    tipos_ameaca_gold = ", ".join(
+        _texto(sg.get(x, x)) for x in modelo["visoes"]["PITCIC"]["ameaca_tipos"])
+    tipos_incidente = ", ".join(_texto(x) for x in v["tipos_incidente"])
+    nomes = {
+        "EF_DISPONIBILIDADE": "Disponibilidade de efetivo",
+        "VTR_DISPONIBILIDADE": "Disponibilidade de viaturas",
+        "COMBUSTIVEL": "Nível de combustível",
+        "SUP_CL_I": "Autonomia de suprimento Classe I",
+        "SUP_CL_III": "Autonomia de suprimento Classe III",
+        "SUP_CL_V": "Autonomia de suprimento Classe V",
+        "SUP_CL_VIII": "Autonomia de suprimento Classe VIII",
+        # Acumuladas desde o inicio da operacao: e assim que o formulario do RELPER
+        # as reporta. Logo VALOR_NRO e o total ate aqui e nunca cai; quem responde
+        # "quantas baixas neste turno" e VARIACAO_NRO. O nome precisa dizer isso,
+        # senao o numero e lido como se fosse do turno.
+        "BAIXA_COMBATE": "Baixas em combate (acumuladas)",
+        "BAIXA_NAO_COMBATE": "Baixas não relacionadas ao combate (acumuladas)",
+        "EVACUADO": "Efetivo evacuado no momento do relatório",
+        "AMEACA_RELATADA": "Atividades distintas da ameaça relatadas no dia",
+        "INCIDENTE_RELATADO": "Relatos de incidente no dia",
+    }
+    nome_sql = "CASE INDICADOR_COD " + " ".join(
+        f"WHEN {_texto(k)} THEN {_texto(n)}" for k, n in nomes.items()) + " END"
+    tendencia = ("CASE WHEN VALOR_ANTERIOR_NRO IS NULL THEN 'SEM_BASE' "
+                  "WHEN abs(VALOR_NRO - VALOR_ANTERIOR_NRO) < 0.000001 THEN 'ESTAVEL' "
+                  "WHEN VALOR_NRO > VALOR_ANTERIOR_NRO THEN 'AUMENTO' ELSE 'REDUCAO' END")
+
+    apoio = [
+        # Uma linha larga do RELPER vira dez series comparaveis no tempo.
+        ("amc_forca_base", f"""
+            SELECT e.OPERACAO_COD, e.UNIDADE_REPORTANTE_COD AS UNIDADE_COD,
+                   e.OCORRENCIA_DATA AS PERIODO_DATA, e.SISTEMA_ORIGEM_COD,
+                   e.EVENTO_IDT, x.INDICADOR_COD, x.VALOR_NRO, x.UNIDADE_MEDIDA_COD
+            FROM {SILVER}.EVENTO e
+            JOIN {SILVER}.SITUACAO_UNIDADE s ON s.EVENTO_IDT = e.EVENTO_IDT
+            LATERAL VIEW stack(10,
+                'EF_DISPONIBILIDADE', CASE WHEN s.EF_PREVISTO_QNT > 0 THEN CAST(round(100.0 * s.EF_PRESENTE_QNT / s.EF_PREVISTO_QNT, 2) AS DOUBLE) END, 'PCTL',
+                'VTR_DISPONIBILIDADE', CASE WHEN s.VTR_TOTAL_QNT > 0 THEN CAST(round(100.0 * s.VTR_OPERACIONAL_QNT / s.VTR_TOTAL_QNT, 2) AS DOUBLE) END, 'PCTL',
+                'COMBUSTIVEL', CAST(s.COMBUSTIVEL_PCTL AS DOUBLE), 'PCTL',
+                'SUP_CL_I', CAST(s.SUP_CL_I_DIAS AS DOUBLE), 'DIAS',
+                'SUP_CL_III', CAST(s.SUP_CL_III_DIAS AS DOUBLE), 'DIAS',
+                'SUP_CL_V', CAST(s.SUP_CL_V_DIAS AS DOUBLE), 'DIAS',
+                'SUP_CL_VIII', CAST(s.SUP_CL_VIII_DIAS AS DOUBLE), 'DIAS',
+                'BAIXA_COMBATE', CAST(s.BAIXA_COMBATE_QNT AS DOUBLE), 'QNT',
+                'BAIXA_NAO_COMBATE', CAST(s.BAIXA_NAO_COMBATE_QNT AS DOUBLE), 'QNT',
+                'EVACUADO', CAST(s.EVACUADO_QNT AS DOUBLE), 'QNT'
+            ) x AS INDICADOR_COD, VALOR_NRO, UNIDADE_MEDIDA_COD"""),
+        ("amc_forca", """
+            SELECT *,
+                   lag(VALOR_NRO) OVER (
+                       PARTITION BY OPERACAO_COD, UNIDADE_COD, INDICADOR_COD
+                       ORDER BY PERIODO_DATA, EVENTO_IDT) AS VALOR_ANTERIOR_NRO,
+                   max(PERIODO_DATA) OVER (
+                       PARTITION BY OPERACAO_COD, UNIDADE_COD, INDICADOR_COD) AS ULTIMO_PERIODO
+            FROM amc_forca_base
+            WHERE VALOR_NRO IS NOT NULL"""),
+        # Mesma deduplicacao espacial/temporal materializada pelo PITCIC: um grupo
+        # corroborado e uma atividade, ainda que varias fontes a tenham relatado.
+        # EVENTO_IDT[0] desempata, pelo mesmo motivo explicado em coc_ameaca.
+        ("amc_ameaca", f"""
+            SELECT * FROM (
+                SELECT x.*, row_number() OVER (
+                    PARTITION BY OPERACAO_COD, CHAVE
+                    ORDER BY FONTE_QNT DESC, INICIO_DATA DESC, EVENTO_IDT[0]) AS ORDEM
+                FROM (
+                    SELECT p.*, array_join(array_sort(p.EVENTO_IDT), '|') AS CHAVE
+                    FROM {GOLD}.PITCIC p
+                    WHERE p.FASE_NRO = 3 AND p.TIPO_TXT IN ({tipos_ameaca_gold})) x)
+            WHERE ORDEM = 1"""),
+        ("amc_ocorrencia", f"""
+            SELECT sha2(CHAVE, 256) AS REGISTRO_IDT, OPERACAO_COD,
+                   INICIO_DATA AS PERIODO_DATA, 'AMEACA_RELATADA' AS INDICADOR_COD,
+                   EVENTO_IDT
+            FROM amc_ameaca
+            UNION ALL
+            SELECT EVENTO_IDT AS REGISTRO_IDT, OPERACAO_COD,
+                   OCORRENCIA_DATA AS PERIODO_DATA, 'INCIDENTE_RELATADO' AS INDICADOR_COD,
+                   array(EVENTO_IDT) AS EVENTO_IDT
+            FROM {SILVER}.EVENTO WHERE TIPO_COD IN ({tipos_incidente})"""),
+        ("amc_ocorrencia_evento", """
+            SELECT o.REGISTRO_IDT, o.OPERACAO_COD, o.PERIODO_DATA,
+                   o.INDICADOR_COD, x.ID_EVENTO
+            FROM amc_ocorrencia o
+            LATERAL VIEW explode(o.EVENTO_IDT) x AS ID_EVENTO"""),
+        # Dias sem ocorrencia aparecem com zero; sem isso, uma reducao a zero
+        # desapareceria da serie em vez de ser observada.
+        ("amc_dia", f"""
+            SELECT OPERACAO_COD,
+                   explode(sequence(min(to_date(OCORRENCIA_DATA)),
+                                    max(to_date(OCORRENCIA_DATA)), interval 1 day)) AS DIA
+            FROM {SILVER}.EVENTO GROUP BY OPERACAO_COD"""),
+        ("amc_tipo", """
+            SELECT * FROM VALUES ('AMEACA_RELATADA'), ('INCIDENTE_RELATADO')
+            AS t(INDICADOR_COD)"""),
+        ("amc_atividade_dia", f"""
+            SELECT d.OPERACAO_COD, CAST(d.DIA AS TIMESTAMP) AS PERIODO_DATA,
+                   t.INDICADOR_COD,
+                   CAST(count(DISTINCT o.REGISTRO_IDT) AS DOUBLE) AS VALOR_NRO,
+                   CAST(count(DISTINCT o.ID_EVENTO) AS INT) AS EVENTO_QNT,
+                   CAST(count(DISTINCT e.SISTEMA_ORIGEM_COD) AS INT) AS FONTE_QNT,
+                   collect_set(o.ID_EVENTO) AS EVENTO_IDT
+            FROM amc_dia d CROSS JOIN amc_tipo t
+            LEFT JOIN amc_ocorrencia_evento o
+              ON o.OPERACAO_COD = d.OPERACAO_COD
+             AND to_date(o.PERIODO_DATA) = d.DIA
+             AND o.INDICADOR_COD = t.INDICADOR_COD
+            LEFT JOIN {SILVER}.EVENTO e ON e.EVENTO_IDT = o.ID_EVENTO
+            GROUP BY d.OPERACAO_COD, d.DIA, t.INDICADOR_COD"""),
+        ("amc_atividade", """
+            SELECT *,
+                   lag(VALOR_NRO) OVER (
+                       PARTITION BY OPERACAO_COD, INDICADOR_COD ORDER BY PERIODO_DATA) AS VALOR_ANTERIOR_NRO,
+                   max(PERIODO_DATA) OVER (
+                       PARTITION BY OPERACAO_COD, INDICADOR_COD) AS ULTIMO_PERIODO
+            FROM amc_atividade_dia"""),
+    ]
+
+    blocos = [
+        _bloco(colunas, "SELECT * FROM amc_forca",
+               INDICADOR_COD="INDICADOR_COD", INDICADOR_NOME=nome_sql,
+               ESCOPO_COD=_texto("FORCA_AMIGA"), NATUREZA_COD=_texto("QUANTITATIVO_OBJETIVO"),
+               OPERACAO_COD="OPERACAO_COD", UNIDADE_COD="UNIDADE_COD", PERIODO_DATA="PERIODO_DATA",
+               ATUAL_INDIC="CASE WHEN PERIODO_DATA = ULTIMO_PERIODO THEN 'S' ELSE 'N' END",
+               VALOR_NRO="VALOR_NRO", UNIDADE_MEDIDA_COD="UNIDADE_MEDIDA_COD",
+               VALOR_ANTERIOR_NRO="VALOR_ANTERIOR_NRO",
+               VARIACAO_NRO="round(VALOR_NRO - VALOR_ANTERIOR_NRO, 2)", TENDENCIA_COD=tendencia,
+               EVENTO_QNT="1", FONTE_QNT="1", EVENTO_IDT="array(EVENTO_IDT)"),
+        _bloco(colunas, "SELECT * FROM amc_atividade",
+               INDICADOR_COD="INDICADOR_COD", INDICADOR_NOME=nome_sql,
+               ESCOPO_COD="CASE WHEN INDICADOR_COD = 'AMEACA_RELATADA' THEN 'AMEACA' ELSE 'AMBIENTE_OPERACIONAL' END",
+               NATUREZA_COD=_texto("QUANTITATIVO_OBJETIVO"), OPERACAO_COD="OPERACAO_COD",
+               PERIODO_DATA="PERIODO_DATA",
+               ATUAL_INDIC="CASE WHEN PERIODO_DATA = ULTIMO_PERIODO THEN 'S' ELSE 'N' END",
+               VALOR_NRO="VALOR_NRO", UNIDADE_MEDIDA_COD=_texto("QNT"),
+               VALOR_ANTERIOR_NRO="VALOR_ANTERIOR_NRO",
+               VARIACAO_NRO="round(VALOR_NRO - VALOR_ANTERIOR_NRO, 2)", TENDENCIA_COD=tendencia,
+               EVENTO_QNT="EVENTO_QNT", FONTE_QNT="FONTE_QNT", EVENTO_IDT="EVENTO_IDT"),
+    ]
+    return apoio, "\nUNION ALL\n".join(f"({b})" for b in blocos)
+
+
+VISOES = {
+    "pitcic": montar_pitcic,
+    "problema_dados": montar_problema_dados,
+    "ppcot": montar_ppcot,
+    "coc": montar_coc,
+    "amc": montar_amc,
+}
 
 
 # =============================================================================

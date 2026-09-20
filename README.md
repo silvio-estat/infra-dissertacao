@@ -53,8 +53,8 @@ scripts/geradores/   →  MinIO  s3://lakehouse/landing/perseu_2024/<fonte>/
                              REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER, ...
                           │
    DAG 4_gold_visoes      ▼
-                     GOLD    PITCIC                          uma tabela por visão, pelas fases do processo
-                             (COC, PPCOT e Avaliação em construção)
+                     GOLD    PITCIC + PROBLEMA_DADOS         uma tabela por visão, pelas fases do processo
+                             + PPCOT + COC + AMC
 
    DAG 5_governanca  →  OpenMetadata: catálogo, perfil, amostra, qualidade e linhagem
 ```
@@ -244,7 +244,7 @@ Credenciais de desenvolvimento local: `.env.example`.
 | `1_ingestao` | cataloga o que chegou em `landing/` em `RECEPCAO_BRUTA` e `ARQUIVO` |
 | `2_bronze_extracao` | lê o conteúdo: planilha → OCR → tabela (Docling) → voz → texto → relato → informe |
 | `3_silver_evento` | uma tarefa por receita do YAML; escreve `EVENTO`, `SITUACAO_UNIDADE` e `MEDIDA_COORDENACAO` |
-| `4_gold_visoes` | uma tarefa por visão; reescreve a tabela inteira a partir da Silver (hoje: `pitcic`). Nomes de coluna pelo IR 14-06; valores das células com as siglas do MD33-M-02 |
+| `4_gold_visoes` | cinco tarefas em série: `pitcic` → `problema_dados` → `ppcot` → `coc` → `amc`; cada uma reescreve sua tabela inteira. Nomes de coluna pelo IR 14-06; valores das células com as siglas do MD33-M-02 |
 | `5_governanca` | OpenMetadata: metadados → perfil → qualidade → amostra |
 | `trino_lakehouse_metadata` | cataloga as tabelas no OpenMetadata; rodar sempre que criar tabela nova |
 | `dag_iceberg_maintenance` | manutenção das tabelas Iceberg: expira snapshot velho, apaga arquivo órfão, reagrupa manifestos, compacta arquivos pequenos. Diária às 02:00; a lista de tabelas sai do modelo canônico |

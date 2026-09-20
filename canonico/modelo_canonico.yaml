@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-15
+  atualizado_em: 2026-09-20
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -197,6 +197,38 @@ metadados:
     radio do mesmo fato caiam 2h20 a 2h45 um do outro. `ts_br` passa a aceitar
     `fuso`, e as duas receitas do C2_B declaram "-03:00". Os eventos antigos foram
     apagados antes do reprocessamento, porque a hora entra no EVENTO_IDT.
+  nota_2026_09_20: >-
+    Concluidas as tres visoes Gold que faltavam. PPCOT organiza somente os
+    insumos disponiveis que podem ajudar no exame de situacao: missao, situacao,
+    fatores de decisao e possibilidades do inimigo. A fase e apenas uma forma
+    de organizar onde cada dado pode ser empregado; a tabela nao pretende
+    representar nem fechar todo o ciclo do PPCOT. COC forma o retrato
+    compartilhado mais recente de posicoes,
+    situacao das unidades, ameacas, ocorrencias e medidas no terreno; para que o
+    corpus sintetico historico continue reproduzivel, sua referencia temporal e
+    o evento mais recente de cada operacao, e nao o relogio da execucao. AMC
+    expoe doze series observadas, com valor anterior, variacao e tendencia, mas
+    nao atribui meta, desempenho ou eficacia: esses julgamentos dependem do
+    plano aprovado, que ainda nao faz parte do modelo. As escolhas seguem o
+    EB70-MC-10.211, sobretudo as secoes 4.3.3, 5.4.3 e 5.4.4.
+
+    Revisao do mesmo dia, depois de reler as tres: (a) o desempate do grupo
+    corroborado no COC e no AMC ganhou um terceiro criterio, EVENTO_IDT[0] — os
+    dois lados de um par tem o mesmo FONTE_QNT e podem ter a mesma hora, e sem ele
+    qual linha sobrevive mudava de execucao para execucao; (b) COC.TIPO_COD e
+    PPCOT.ETAPA_COD/FATOR_DECISAO_COD/INSUMO_TIPO_COD passaram a sair todos por
+    `visoes.siglas`, que ate entao valia so para o PITCIC: a regra da camada Gold
+    e termo de doutrina em sigla (ou por extenso, quando o manual nao tem verbete)
+    e vocabulario proprio da visao em codigo cru (QUADRO_TIPO_COD,
+    PROBLEMA_TIPO_COD, INDICADOR_COD); (c) as medidas de planejamento no PPCOT
+    saem sob o fator Manobra, criado fora do MITeMeTeC; (d) o AMC deixou de
+    repetir a lista de tipos de ameaca, que so existe em visoes.PITCIC.
+
+    Sobre `chave` na camada Gold: ela declara o GRAO pretendido da tabela e nao e
+    imposta — o Iceberg nao tem chave primaria e o --ddl so faz CREATE TABLE. No
+    PITCIC e no PPCOT ela nao chega a ser unica, porque as linhas da fase 3 nao
+    tem ELEMENTO_NOME/INSUMO_NOME; quando um identificador estavel importa de
+    verdade, o padrao e uma coluna explicita, como o REGISTRO_IDT do COC.
 
 
 # =============================================================================
@@ -1091,6 +1123,126 @@ entidades:
       ATUALIZACAO_DATA:
         {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
 
+  # ---------------------------------------------------------------------------
+  PPCOT:
+    descricao: >-
+      Dados disponiveis no estudo que podem ajudar o Processo de Planejamento e
+      Conducao das Operacoes Terrestres. Cada linha vem de um fato, cadastro ou
+      medida ja existente e e organizada pela fase do exame de situacao em que
+      pode ser empregada (EB70-MC-10.211, item 4.3.3) e pelos fatores da decisao
+      MITeMeTeC. A classificacao indica a utilidade do dado; nao representa a
+      execucao completa do PPCOT nem exige que todas as fases tenham linhas.
+    abreviatura: PPCOT
+    camada: gold
+    chave: [FASE_NRO, ETAPA_COD, FATOR_DECISAO_COD, INSUMO_TIPO_COD, INSUMO_NOME, INICIO_DATA]
+    campos:
+      FASE_NRO:         {tipo: int, nulo: false, descricao: "Fase do exame de situacao em que o dado pode ajudar: 1 analise da missao, 2 situacao e compreensao, 3 possibilidades do inimigo, linhas de acao e confronto. E uma classificacao de uso, nao o registro de que a fase foi executada."}
+      ETAPA_COD:        {tipo: string, nulo: false, descricao: "Fase em que o dado pode ajudar, no valor exibido de `visoes.siglas`: Analise da missao, Situacao e compreensao ou Linhas de acao e confronto. Por extenso porque o MD33-M-02 nao tem verbete para elas."}
+      FATOR_DECISAO_COD: {tipo: string, nulo: false, descricao: "Fator da decisao apoiado pelo insumo, no valor exibido de `visoes.siglas`: Mis, Ini, Ter, Meios, Tp, Cnsd Civ — e Manobra. Manobra fica FORA do MITeMeTeC de proposito: a medida desenhada no mapa (linha de fase, objetivo, zona de reuniao) e produto da decisao, e nao fator de entrada dela; forca-la a um dos seis distorceria o modelo."}
+      INSUMO_TIPO_COD:  {tipo: string, nulo: false, descricao: "Natureza do insumo, no valor exibido de `visoes.siglas`: A Op, Pos, Sit U, Loc, Obt, Obj, Z Reu, Janela da operacao, entre outras."}
+      INSUMO_NOME:      {tipo: string, nulo: true, descricao: "Nome pelo qual o elemento e reconhecido no planejamento."}
+      INSUMO_DCRI:      {tipo: string, nulo: true, descricao: "Descricao curta do fato ou da condicao observada."}
+      CONTRIBUICAO_TXT: {tipo: string, nulo: false, descricao: "Como aquele dado pode ser empregado no planejamento. E um metadado explicativo da visao, nao um novo fato operacional."}
+      OPERACAO_COD:     {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao a que o insumo pertence."}
+      GEOMETRIA_WKT:    {tipo: string, nulo: true, descricao: "Localizacao ou forma geografica do insumo, quando existe."}
+      INICIO_DATA:      {tipo: timestamp, nulo: true, descricao: "Inicio da validade, instante do fato ou primeira observacao do grupo."}
+      FIM_DATA:         {tipo: timestamp, nulo: true, descricao: "Fim da validade ou ultima observacao do grupo."}
+      UNIDADE_COD:      {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade a que o insumo se refere."}
+      EVENTO_QNT:       {tipo: int, nulo: true, descricao: "Quantidade de eventos da Silver reunidos no insumo."}
+      FONTE_QNT:        {tipo: int, nulo: true, descricao: "Quantidade de fontes independentes que sustentam o insumo."}
+      MODALIDADE_TXT:   {tipo: string, nulo: true, descricao: "Modalidades dos dados que sustentam o insumo."}
+      EVENTO_IDT:       {tipo: "array<string>", nulo: true, descricao: "Eventos da Silver que sustentam a linha e preservam o caminho ate a origem."}
+      ATUALIZACAO_DATA: {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
+
+  # ---------------------------------------------------------------------------
+  COC:
+    descricao: >-
+      Cenario Operacional Comum do estudo. Reune, em uma unica tabela, o
+      retrato compartilhado mais recente das forcas amigas, das ameacas, das
+      ocorrencias e das medidas de coordenacao. O manual EB70-MC-10.211 usa a
+      expressao "cenario operativo comum" e o aponta como base do monitoramento
+      continuo (item 5.4.3); neste trabalho, o produto recebe a sigla COC.
+
+      Para posicao e situacao da unidade, conserva-se o registro mais recente.
+      Fatos episodicos entram somente dentro da janela declarada em visoes.COC.
+      Medidas de coordenacao permanecem no quadro porque o dado atual nao traz
+      inicio e fim de vigencia. A idade de cada item deixa essa limitacao
+      visivel para quem consulta.
+    abreviatura: COC
+    camada: gold
+    chave: [REGISTRO_IDT]
+    campos:
+      REGISTRO_IDT:     {tipo: string, nulo: false, descricao: "Identificador estavel da linha do COC; usa o evento quando ha um e uma chave derivada quando varios eventos formam a mesma ameaca."}
+      QUADRO_TIPO_COD:  {tipo: string, nulo: false, descricao: "Parte do quadro: POSICAO_FORCA, SITUACAO_FORCA, AMEACA, OCORRENCIA, OBSTACULO ou MEDIDA_COORDENACAO. Fica no codigo cru, e nao em sigla, porque e vocabulario DESTA visao — o eixo que separa seus blocos, como PROBLEMA_TIPO_COD em PROBLEMA_DADOS. Sigla e para termo de doutrina, que vem do dado."}
+      ELEMENTO_NOME:    {tipo: string, nulo: true, descricao: "Unidade, medida ou referencia pela qual o elemento e reconhecido."}
+      ELEMENTO_DCRI:    {tipo: string, nulo: true, descricao: "Resumo legivel da situacao mostrada na linha."}
+      OPERACAO_COD:     {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao do quadro."}
+      UNIDADE_COD:      {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade relacionada ao elemento."}
+      TIPO_COD:         {tipo: string, nulo: true, descricao: "Tipo do evento ou especie da medida de coordenacao, no valor exibido de `visoes.siglas` (Pos, Avistamento Ini, Incid, Obj, Lim...), como no TIPO_TXT do PITCIC. Nao e o codigo cru do dominio tipo_evento: quem filtra esta coluna usa a sigla."}
+      OCORRENCIA_DATA:  {tipo: timestamp, nulo: true, descricao: "Instante do fato ou da ultima atualizacao do elemento."}
+      REFERENCIA_DATA:  {tipo: timestamp, nulo: false, descricao: "Instante mais recente observado na operacao, usado como relogio do quadro."}
+      IDADE_MINUTO_QNT: {tipo: double, nulo: true, descricao: "Minutos entre a ocorrencia e o instante de referencia; permite ao usuario reconhecer informacao envelhecida."}
+      GEOMETRIA_WKT:    {tipo: string, nulo: true, descricao: "Posicao ou forma geografica mostrada no quadro."}
+      PRIORIDADE_COD:   {tipo: string, nulo: true, dominio: prioridade, descricao: "Prioridade declarada na origem, quando existe."}
+      EF_DISPONIBILIDADE_PCTL: {tipo: double, nulo: true, descricao: "Efetivo presente como percentual do previsto, nas linhas de situacao da forca."}
+      VTR_DISPONIBILIDADE_PCTL: {tipo: double, nulo: true, descricao: "Viaturas operacionais como percentual do total, nas linhas de situacao da forca."}
+      COMBUSTIVEL_PCTL: {tipo: double, nulo: true, descricao: "Nivel de combustivel informado pela unidade."}
+      SUPRIMENTO_MINIMO_DIAS: {tipo: double, nulo: true, descricao: "Menor autonomia entre as classes I, III, V e VIII; resume a restricao logistica mais proxima."}
+      NECESSIDADE_TXT:  {tipo: string, nulo: true, descricao: "Necessidade prioritaria declarada pela unidade."}
+      FONTE_QNT:        {tipo: int, nulo: true, descricao: "Quantidade de fontes independentes que sustentam o elemento."}
+      MODALIDADE_TXT:   {tipo: string, nulo: true, descricao: "Modalidades que sustentam o elemento."}
+      EXTRACAO_MODELO_NOME: {tipo: string, nulo: true, descricao: "Modelo de inferencia por tras do dado, quando houve; funciona como aviso de conferencia."}
+      EVENTO_IDT:       {tipo: "array<string>", nulo: true, descricao: "Eventos da Silver que sustentam a linha."}
+      ATUALIZACAO_DATA: {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
+
+  # ---------------------------------------------------------------------------
+  AMC:
+    descricao: >-
+      Produto de Avaliacao e Monitoramento da Conducao proposto neste estudo,
+      alinhado ao monitoramento e a avaliacao continua do Capitulo V do
+      EB70-MC-10.211. Organiza indicadores quantitativos observaveis ao longo do
+      tempo: disponibilidade de pessoal e viaturas, niveis logisticos, baixas,
+      evacuados, atividade da ameaca e incidentes relatados.
+
+      Cada linha traz o valor, o valor anterior e a tendencia puramente
+      descritiva (aumento, reducao ou estabilidade).
+
+      Duas series sao ACUMULADAS desde o inicio da operacao, porque e assim que o
+      formulario do RELPER as reporta: baixas em combate e baixas nao relacionadas
+      ao combate. Nelas VALOR_NRO e o total ate aquele turno e nunca cai — quem
+      responde "quantas baixas neste turno" e VARIACAO_NRO, e TENDENCIA_COD so
+      alterna entre ESTAVEL e AUMENTO. O nome do indicador diz "(acumuladas)".
+      Pelo mesmo motivo, as series nao sao independentes entre si: EF_PRESENTE_QNT
+      ja desconta baixas e evacuados, entao a disponibilidade de efetivo e as
+      baixas medem o mesmo movimento por dois lados.
+
+      A tabela nao classifica o resultado como medida de eficacia ou de desempenho
+      e nao produz semaforo:
+      segundo o manual, essa classificacao e as metas sao especificas de cada
+      plano. O modelo atual ainda nao armazena EFD, efeitos, acoes planejadas ou
+      metas aprovadas; inventa-los produziria uma avaliacao sem referencia.
+    abreviatura: AMC
+    camada: gold
+    chave: [INDICADOR_COD, OPERACAO_COD, UNIDADE_COD, PERIODO_DATA]
+    campos:
+      INDICADOR_COD:    {tipo: string, nulo: false, descricao: "Codigo estavel do indicador observado."}
+      INDICADOR_NOME:   {tipo: string, nulo: false, descricao: "Nome legivel do indicador."}
+      ESCOPO_COD:       {tipo: string, nulo: false, descricao: "Objeto acompanhado: FORCA_AMIGA, AMEACA ou AMBIENTE_OPERACIONAL."}
+      NATUREZA_COD:     {tipo: string, nulo: false, descricao: "Natureza da informacao conforme o manual; nesta versao, QUANTITATIVO_OBJETIVO."}
+      OPERACAO_COD:     {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao avaliada."}
+      UNIDADE_COD:      {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade observada; vazio nos indicadores do conjunto da operacao."}
+      PERIODO_DATA:     {tipo: timestamp, nulo: false, descricao: "Instante da observacao ou inicio do dia agregado."}
+      ATUAL_INDIC:      {tipo: string, nulo: false, valores: [S, N], descricao: "S para o valor mais recente daquele indicador e unidade; N para a serie historica."}
+      VALOR_NRO:        {tipo: double, nulo: true, descricao: "Valor observado, sem comparacao com meta nao declarada. Nas duas series de baixas e o total acumulado desde o inicio da operacao, e nao o do turno: ver a descricao da tabela."}
+      UNIDADE_MEDIDA_COD: {tipo: string, nulo: false, descricao: "Unidade do valor: PCTL, DIAS ou QNT."}
+      VALOR_ANTERIOR_NRO: {tipo: double, nulo: true, descricao: "Observacao imediatamente anterior da mesma serie."}
+      VARIACAO_NRO:     {tipo: double, nulo: true, descricao: "Diferenca entre o valor atual e o anterior, na propria unidade de medida."}
+      TENDENCIA_COD:    {tipo: string, nulo: false, descricao: "Movimento observado: AUMENTO, REDUCAO, ESTAVEL ou SEM_BASE. Nao diz, sozinho, se o resultado e bom ou ruim."}
+      EVENTO_QNT:       {tipo: int, nulo: true, descricao: "Quantidade de eventos reunidos na observacao."}
+      FONTE_QNT:        {tipo: int, nulo: true, descricao: "Quantidade de fontes diferentes presentes na observacao."}
+      EVENTO_IDT:       {tipo: "array<string>", nulo: true, descricao: "Eventos da Silver que sustentam o indicador."}
+      ATUALIZACAO_DATA: {tipo: timestamp, nulo: false, descricao: "Quando a visao foi gerada."}
+
 
 # =============================================================================
 # FONTES — o de/para
@@ -1661,6 +1813,21 @@ visoes:
     MANHA: Manhã
     TARDE: Tarde
     NOITE: Noite
+    # fatores da decisao usados pela visao PPCOT (MITeMeTeC). Meios e Manobra nao
+    # tem verbete no MD33-M-02: pela regra acima, ficam por extenso.
+    MISSAO: Mis
+    INIMIGO: Ini
+    TERRENO: Ter
+    TEMPO: Tp
+    MEIOS: Meios
+    MANOBRA: Manobra
+    # etapas do exame de situacao e insumos proprios do PPCOT. Nenhum tem verbete
+    # no manual; por extenso, e nao no codigo cru, para a coluna nao misturar
+    # convencoes com as etapas do PITCIC, que sao sigla.
+    ANALISE_MISSAO: Análise da missão
+    SITUACAO_COMPREENSAO: Situação e compreensão
+    LINHAS_ACAO_CONFRONTO: Linhas de ação e confronto
+    JANELA_OPERACAO: Janela da operação
 
   PROBLEMA_DADOS:
     tabela: PROBLEMA_DADOS
@@ -1705,6 +1872,35 @@ visoes:
       - {nome: MANHA, ate_hora: 12}
       - {nome: TARDE, ate_hora: 18}
       - {nome: NOITE, ate_hora: 24}
+
+  PPCOT:
+    tabela: PPCOT
+    le: [gold.PITCIC, silver.EVENTO, silver.SITUACAO_UNIDADE,
+         silver.MEDIDA_COORDENACAO, silver.REF_OPERACAO, silver.REF_UNIDADE]
+    resumo: [FASE_NRO, ETAPA_COD, FATOR_DECISAO_COD]
+    # Feicoes que representam produtos do planejamento e apoiam o estudo das
+    # linhas de acao. Limites e eixos ja entram pela analise do terreno/PITCIC.
+    medidas_planejamento: [LINHA_FASE, LINHA_PARTIDA, PONTO_CONTROLE,
+                           ZONA_REUNIAO, OBJETIVO]
+
+  COC:
+    tabela: COC
+    le: [gold.PITCIC, silver.EVENTO, silver.SITUACAO_UNIDADE,
+         silver.MEDIDA_COORDENACAO, silver.REF_UNIDADE]
+    resumo: [QUADRO_TIPO_COD]
+    # O relogio e o ultimo evento observado na operacao, e nao o relogio do
+    # computador: assim o cenario sintetico de 2024 continua consultavel.
+    janela_fato_horas: 24
+    fatos_recentes_tipos: [AVISTAMENTO, INCIDENTE, MISSAO_TIRO]
+
+  AMC:
+    tabela: AMC
+    le: [gold.PITCIC, silver.EVENTO, silver.SITUACAO_UNIDADE]
+    resumo: [ESCOPO_COD, INDICADOR_COD, ATUAL_INDIC]
+    # O que conta como ameaca NAO se declara aqui: le-se de visoes.PITCIC.ameaca_tipos,
+    # que ja e a definicao unica. Duas listas iguais em lugares diferentes acabam
+    # divergindo, e o AMC passaria a descartar ameaca sem avisar.
+    tipos_incidente: [INCIDENTE]
 
 
 # =============================================================================
