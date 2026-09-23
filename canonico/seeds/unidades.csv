@@ -71,6 +71,7 @@ CAV51,51o Esquadrao de Cavalaria Mecanizado,51o Esqd Cav Mec,OM,BDA51
 CAV51P1,1o Pelotao de Cavalaria Mecanizado da 51o Esqd Cav Mec,1o Pel Cav Mec/51o Esqd Cav Mec,FR,CAV51
 CAV51P2,2o Pelotao de Cavalaria Mecanizado da 51o Esqd Cav Mec,2o Pel Cav Mec/51o Esqd Cav Mec,FR,CAV51
 CAV51P3,3o Pelotao de Cavalaria Mecanizado da 51o Esqd Cav Mec,3o Pel Cav Mec/51o Esqd Cav Mec,FR,CAV51
-CMD51,51a Companhia de Comando,51a Cia Cmdo,OM,BDA51
-CMD51PCOM,Pelotao de Comunicacoes da 51a Cia Cmdo,Pel Com/51a Cia Cmdo,FR,CMD51
-CMD51PCMD,Pelotao de Comando da 51a Cia Cmdo,Pel Cmdo/51a Cia Cmdo,FR,CMD51
+COM51,51a Companhia de Comunicacoes,51a Cia Com,OM,BDA51
+COM51PCAP,Pelotao de Comando e Apoio da 51a Cia Com,Pel C Ap/51a Cia Com,FR,COM51
+COM51PCOM,Pelotao de Comunicacoes da 51a Cia Com,Pel Com/51a Cia Com,FR,COM51
+COM51PC2,Pelotao de Comando e Controle da 51a Cia Com,Pel C2/51a Cia Com,FR,COM51

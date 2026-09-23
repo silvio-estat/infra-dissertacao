@@ -18,7 +18,9 @@ Cada arquivo sai com o sidecar .json: operacao, OM remetente, data-hora, turno.
 
 Defeitos plantados: turno_ausente (a OM nao remeteu), abreviatura_trocada
 ('Fuz' no lugar de 'Fz': material vira pessoal), pasta_errada (um arquivo
-pousou em landing/perseu_2023/, e o sidecar diz PERSEU_2024).
+pousou em landing/perseu_2023/, e o sidecar diz PERSEU_2024), grafia_ambigua (a
+fracao digitada e o comeco de mais de uma sigla da OM — 'Pel C' serve a 'Pel C Ap',
+'Pel Com' e 'Pel C2' — e nao ha como saber de quem e a linha).
 """
 
 from datetime import timedelta
@@ -170,7 +172,12 @@ def gerar(ctx: Contexto) -> dict:
                         nec = "Fuz"
                         ctx.registrar_defeito("RELPER", f"{om_cod} {dia} {turno} {u['UNIDADE_COD']}", "abreviatura_trocada",
                                               "'Fuz' (Fuzileiro) escrito no lugar de 'Fz' (Fuzil): material vira pessoal")
-                    linha = [_grafia_fracao(ctx, u)] + _valores(ctx, estados[u["UNIDADE_COD"]], versao, nec)
+                    grafia = _grafia_fracao(ctx, u)
+                    candidatas = [v for v in unidades if v["UNIDADE_SIGLA"].lower().startswith(grafia.lower())]
+                    if len(candidatas) > 1:
+                        ctx.registrar_defeito("RELPER", f"{om_cod} {dia} {turno} {u['UNIDADE_COD']}", "grafia_ambigua",
+                                              f"'{grafia}' e o comeco de {len(candidatas)} siglas da OM: a linha nao tem dono certo")
+                    linha = [grafia] + _valores(ctx, estados[u["UNIDADE_COD"]], versao, nec)
                     if extra:
                         linha.append(rng.choice(OBS))
                     linhas.append(linha)

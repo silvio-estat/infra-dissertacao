@@ -422,8 +422,12 @@ def _t_referencia(origem, regra, ctx, alvo=None):
 
     busca = regra.get("busca", "igual")
     if busca == "comeca_por":
-        # o que foi digitado e o COMECO do valor guardado: '1a Cia' -> '1a Cia Fuz/511o...'
-        return f"(SELECT max(r.{devolve}) {de} WHERE {guardado} LIKE concat({digitado}, '%'){estreita})"
+        # o que foi digitado e o COMECO do valor guardado: '1a Cia' -> '1a Cia Fuz/511o...'.
+        # So vale se houver UM candidato. 'Pel C' comeca 'Pel C Ap', 'Pel Com' e 'Pel C2':
+        # escolher um seria chutar em silencio (o max levava a linha para o Pel Com).
+        # Ambiguo fica NULO, e a falta aparece nos testes e em PROBLEMA_DADOS.
+        return (f"(SELECT CASE WHEN min(r.{devolve}) = max(r.{devolve}) THEN max(r.{devolve}) END "
+                f"{de} WHERE {guardado} LIKE concat({digitado}, '%'){estreita})")
     if busca == "contido":
         # o valor guardado aparece DENTRO do que foi digitado. Varios podem caber
         # (a sigla do pelotao termina com a da companhia, que termina com a do

@@ -86,7 +86,8 @@ def gerar_unidades():
         ("GAC51", "51o Grupo de Artilharia de Campanha", "51o GAC", "ARTILHARIA", "bia"),
         ("ENG51", "51a Companhia de Engenharia de Combate", "51a Cia Eng Cmb", "ENGENHARIA", "pel_direto"),
         ("CAV51", "51o Esquadrao de Cavalaria Mecanizado", "51o Esqd Cav Mec", "CAVALARIA", "pel_direto"),
-        ("CMD51", "51a Companhia de Comando", "51a Cia Cmdo", "COMANDO", "pel_cmdo"),
+        # Cia Com: MC 3.11-10 (2025), 2.2.2 — "normalmente subordinada a uma Bda Inf Mtz"
+        ("COM51", "51a Companhia de Comunicacoes", "51a Cia Com", "COMUNICACOES", "cia_com"),
     ]
     for cod, nome, sigla, tipo, forma in oms:
         add(cod, nome, sigla, "OM", "BDA51", tipo)
@@ -120,9 +121,11 @@ def gerar_unidades():
             for j in (1, 2, 3):
                 add(f"{cod}P{j}", f"{j}o {ext} da {sigla}", f"{j}o {rot}/{sigla}", "FR", cod, tipo)
 
-        elif forma == "pel_cmdo":
+        elif forma == "cia_com":
+            # MC 3.11-10, 2.2.2.2.1: Cmdo e EM + Pel C Ap + Pel Com + Pel C2
+            add(f"{cod}PCAP", f"Pelotao de Comando e Apoio da {sigla}", f"Pel C Ap/{sigla}", "FR", cod, "COMUNICACOES")
             add(f"{cod}PCOM", f"Pelotao de Comunicacoes da {sigla}", f"Pel Com/{sigla}", "FR", cod, "COMUNICACOES")
-            add(f"{cod}PCMD", f"Pelotao de Comando da {sigla}", f"Pel Cmdo/{sigla}", "FR", cod, "COMANDO")
+            add(f"{cod}PC2", f"Pelotao de Comando e Controle da {sigla}", f"Pel C2/{sigla}", "FR", cod, "COMUNICACOES")
 
     _escrever("unidades.csv", "REF_UNIDADE — hierarquia de organizacoes militares (FICTICIA)",
               ["UNIDADE_COD", "UNIDADE_NOME", "UNIDADE_SIGLA", "ESCALAO_COD", "SUPERIOR_COD"], u)
