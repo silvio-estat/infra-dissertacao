@@ -38,7 +38,10 @@ import numpy as np
 import yaml
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from gerar_seeds import AZIMUTE, KM_LAT, KM_LON, LAT0, LON0, _latlon
+from gerar_seeds import AZIMUTE, KM_LAT, KM_LON, LAT0, LON0, PC_BDA_KM, PC_BDA_PERP, _latlon
+
+# OM que nao recebe faixa propria: a Cia Com fica junto ao PC da Bda (MC 3.11-10, 2.1.2 i).
+OM_NO_PC_BDA = {"COM51"}
 
 RAIZ = Path(__file__).resolve().parents[2]
 DIR_CANONICO = RAIZ / "canonico"
@@ -377,11 +380,17 @@ class Contexto:
             u = self._por_cod[u["SUPERIOR_COD"]]
         return u["UNIDADE_COD"]
 
-    def _setores(self) -> dict[str, tuple[float, float]]:
-        """Cada OM recebe uma faixa de km ao longo do eixo: e o 'setor' dela na operacao."""
-        oms = self.por_escalao("OM")
+    def _setores(self) -> dict[str, tuple[float, float, float, float]]:
+        """Cada OM de manobra recebe uma faixa de km ao longo do eixo, o 'setor' dela na
+        operacao: (km inicial, km final, afastamento minimo, afastamento maximo do eixo).
+        A OM que fica no PC da Bda recebe so um pequeno retangulo em torno dele."""
+        oms = [om for om in self.por_escalao("OM") if om["UNIDADE_COD"] not in OM_NO_PC_BDA]
         largura = 110 / len(oms)
-        return {om["UNIDADE_COD"]: (5 + i * largura, 5 + (i + 1) * largura) for i, om in enumerate(oms)}
+        setores = {om["UNIDADE_COD"]: (5 + i * largura, 5 + (i + 1) * largura, -8.0, 8.0)
+                   for i, om in enumerate(oms)}
+        for cod in OM_NO_PC_BDA:
+            setores[cod] = (PC_BDA_KM - 3, PC_BDA_KM + 3, PC_BDA_PERP - 2, PC_BDA_PERP + 2)
+        return setores
 
     # --- lugares ----------------------------------------------------------
     def locais(self, om_cod: str | None = None, tipos: tuple[str, ...] | None = None) -> list[dict]:
@@ -389,8 +398,8 @@ class Contexto:
         if tipos:
             ls = [g for g in ls if g["LOCAL_TIPO_COD"] in tipos]
         if om_cod:
-            ini, fim = self.setores[om_cod]
-            ls = [g for g in ls if ini <= g["km"] <= fim and abs(g["perp"]) <= 12]
+            ini, fim, pmin, pmax = self.setores[om_cod]
+            ls = [g for g in ls if ini <= g["km"] <= fim and pmin - 4 <= g["perp"] <= pmax + 4]
         return ls
 
     # --- saida ------------------------------------------------------------

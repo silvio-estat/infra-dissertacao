@@ -19,6 +19,7 @@ BI511C3P3,3o Pelotao de Fuzileiros da 3a Cia Fuz/511o Btl Inf Mtz,3o Pel Fuz/3a 
 BI511CAP,Companhia de Comando e Apoio do 511o Btl Inf Mtz,Cia Cmdo Ap/511o Btl Inf Mtz,SU,BI511
 BI511CAPPM,Pelotao de Morteiros da Cia Cmdo Ap/511o Btl Inf Mtz,Pel Mrt/511o Btl Inf Mtz,FR,BI511CAP
 BI511CAPPA,Pelotao de Apoio da Cia Cmdo Ap/511o Btl Inf Mtz,Pel Ap/511o Btl Inf Mtz,FR,BI511CAP
+BI511CAPPCOM,Pelotao de Comunicacoes da Cia Cmdo Ap/511o Btl Inf Mtz,Pel Com/511o Btl Inf Mtz,FR,BI511CAP
 BI512,512o Batalhao de Infantaria Motorizado,512o Btl Inf Mtz,OM,BDA51
 BI512C1,1a Companhia de Fuzileiros do 512o Btl Inf Mtz,1a Cia Fuz/512o Btl Inf Mtz,SU,BI512
 BI512C1P1,1o Pelotao de Fuzileiros da 1a Cia Fuz/512o Btl Inf Mtz,1o Pel Fuz/1a Cia Fuz/512o Btl Inf Mtz,FR,BI512C1
@@ -35,6 +36,7 @@ BI512C3P3,3o Pelotao de Fuzileiros da 3a Cia Fuz/512o Btl Inf Mtz,3o Pel Fuz/3a 
 BI512CAP,Companhia de Comando e Apoio do 512o Btl Inf Mtz,Cia Cmdo Ap/512o Btl Inf Mtz,SU,BI512
 BI512CAPPM,Pelotao de Morteiros da Cia Cmdo Ap/512o Btl Inf Mtz,Pel Mrt/512o Btl Inf Mtz,FR,BI512CAP
 BI512CAPPA,Pelotao de Apoio da Cia Cmdo Ap/512o Btl Inf Mtz,Pel Ap/512o Btl Inf Mtz,FR,BI512CAP
+BI512CAPPCOM,Pelotao de Comunicacoes da Cia Cmdo Ap/512o Btl Inf Mtz,Pel Com/512o Btl Inf Mtz,FR,BI512CAP
 BI513,513o Batalhao de Infantaria Motorizado,513o Btl Inf Mtz,OM,BDA51
 BI513C1,1a Companhia de Fuzileiros do 513o Btl Inf Mtz,1a Cia Fuz/513o Btl Inf Mtz,SU,BI513
 BI513C1P1,1o Pelotao de Fuzileiros da 1a Cia Fuz/513o Btl Inf Mtz,1o Pel Fuz/1a Cia Fuz/513o Btl Inf Mtz,FR,BI513C1
@@ -51,6 +53,7 @@ BI513C3P3,3o Pelotao de Fuzileiros da 3a Cia Fuz/513o Btl Inf Mtz,3o Pel Fuz/3a 
 BI513CAP,Companhia de Comando e Apoio do 513o Btl Inf Mtz,Cia Cmdo Ap/513o Btl Inf Mtz,SU,BI513
 BI513CAPPM,Pelotao de Morteiros da Cia Cmdo Ap/513o Btl Inf Mtz,Pel Mrt/513o Btl Inf Mtz,FR,BI513CAP
 BI513CAPPA,Pelotao de Apoio da Cia Cmdo Ap/513o Btl Inf Mtz,Pel Ap/513o Btl Inf Mtz,FR,BI513CAP
+BI513CAPPCOM,Pelotao de Comunicacoes da Cia Cmdo Ap/513o Btl Inf Mtz,Pel Com/513o Btl Inf Mtz,FR,BI513CAP
 GAC51,51o Grupo de Artilharia de Campanha,51o GAC,OM,BDA51
 GAC51B1,1a Bateria de Obuses do 51o GAC,1a Bia O/51o GAC,SU,GAC51
 GAC51B1P1,1o Pelotao de Obuses da 1a Bia O/51o GAC,1o Pel O/1a Bia O/51o GAC,FR,GAC51B1
@@ -63,6 +66,7 @@ GAC51B3P1,1o Pelotao de Obuses da 3a Bia O/51o GAC,1o Pel O/3a Bia O/51o GAC,FR,
 GAC51B3P2,2o Pelotao de Obuses da 3a Bia O/51o GAC,2o Pel O/3a Bia O/51o GAC,FR,GAC51B3
 GAC51BC,Bateria de Comando do 51o GAC,Bia Cmdo/51o GAC,SU,GAC51
 GAC51BCPOBS,Pelotao de Observacao da Bia Cmdo/51o GAC,Pel Obs/51o GAC,FR,GAC51BC
+GAC51BCPCOM,Pelotao de Comunicacoes da Bia Cmdo/51o GAC,Pel Com/51o GAC,FR,GAC51BC
 ENG51,51a Companhia de Engenharia de Combate,51a Cia Eng Cmb,OM,BDA51
 ENG51P1,1o Pelotao de Engenharia de Combate da 51a Cia Eng Cmb,1o Pel Eng Cmb/51a Cia Eng Cmb,FR,ENG51
 ENG51P2,2o Pelotao de Engenharia de Combate da 51a Cia Eng Cmb,2o Pel Eng Cmb/51a Cia Eng Cmb,FR,ENG51

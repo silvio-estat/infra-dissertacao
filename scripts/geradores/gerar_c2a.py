@@ -66,8 +66,9 @@ def gerar_posicoes(ctx: Contexto) -> dict:
     passo = min(passo, 60)
     estado = {}
     for u in fracoes:
-        ini, fim = ctx.setores[ctx.om_de(u["UNIDADE_COD"])]
-        estado[u["UNIDADE_COD"]] = [rng.uniform(ini + 1, fim - 1), rng.uniform(-6, 6), ini, fim]
+        ini, fim, pmin, pmax = ctx.setores[ctx.om_de(u["UNIDADE_COD"])]
+        estado[u["UNIDADE_COD"]] = [rng.uniform(ini + 1, fim - 1), rng.uniform(pmin + 2, pmax - 2),
+                                    ini, fim, pmin, pmax]
     total, arquivos = 0, 0
     pasta = ctx.pasta("c2a", "posicao")
     for dia in ctx.operacao.dias:
@@ -79,7 +80,7 @@ def gerar_posicoes(ctx: Contexto) -> dict:
                     e = estado[u["UNIDADE_COD"]]
                     # passeio aleatorio ao longo do eixo (km) e ao lado dele; presa ao setor
                     e[0] = min(e[3] - 0.5, max(e[2] + 0.5, e[0] + rng.gauss(0, 0.35)))
-                    e[1] = min(8, max(-8, e[1] + rng.gauss(0, 0.15)))
+                    e[1] = min(e[5], max(e[4], e[1] + rng.gauss(0, 0.15)))
                     lat, lon = _latlon(e[0], e[1])
                     lat, lon = jitter(lat, lon, 0.02, rng)     # ruido do receptor
                     registros.append({
@@ -188,8 +189,8 @@ def gerar_mcc(ctx: Contexto) -> dict:
         especie = rng.choice(pares)[0]
         tipo_geo = next(g for e, g, _ in MCC_FUNDO if e == especie)
         om = rng.choice(oms)
-        ini, fim = ctx.setores[om["UNIDADE_COD"]]
-        km, perp = rng.uniform(ini, fim), rng.uniform(-6, 6)
+        ini, fim, pmin, pmax = ctx.setores[om["UNIDADE_COD"]]
+        km, perp = rng.uniform(ini, fim), rng.uniform(pmin + 2, pmax - 2)
         dia = rng.choice(ctx.operacao.dias)
         t = local(dia, rng.randint(5, 23), rng.randint(0, 59))
         nome = {"linha de fase": f"LF {rng.choice(NOMES_LF)}", "linha de partida": "LP",

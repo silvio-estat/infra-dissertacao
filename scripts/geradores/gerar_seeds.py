@@ -45,6 +45,11 @@ AZIMUTE = 68.0                   # rumo do eixo em graus (ENE), acompanhando o v
 KM_LAT = 1 / 110.574                                        # 1 km em graus de latitude
 KM_LON = 1 / (111.320 * math.cos(math.radians(LAT0)))       # 1 km em graus de longitude nesta latitude
 
+# Posto de comando da brigada: no centro do dispositivo e afastado do eixo. E onde fica a
+# Cia Com, que mobilia os centros de comunicacoes dos PC da Bda (MC 3.11-10, 2.1.2 i).
+# O ponto e arbitrado; o que importa e a Cia Com nao ter faixa propria como OM de manobra.
+PC_BDA_KM, PC_BDA_PERP = 60, -10
+
 
 def _latlon(km, perp=0.0):
     """Ponto a `km` ao longo do eixo da BR-154 e `perp` km ao lado dele (+ esquerda, - direita)."""
@@ -103,6 +108,8 @@ def gerar_unidades():
             add(su, f"Companhia de Comando e Apoio do {sigla}", f"Cia Cmdo Ap/{sigla}", "SU", cod, "APOIO")
             add(f"{su}PM", f"Pelotao de Morteiros da Cia Cmdo Ap/{sigla}", f"Pel Mrt/{sigla}", "FR", su, "APOIO")
             add(f"{su}PA", f"Pelotao de Apoio da Cia Cmdo Ap/{sigla}", f"Pel Ap/{sigla}", "FR", su, "APOIO")
+            # Pel Com orgânico da U (MC 3.11-10, cap. III): liga o batalhao a Cia Com da Bda
+            add(f"{su}PCOM", f"Pelotao de Comunicacoes da Cia Cmdo Ap/{sigla}", f"Pel Com/{sigla}", "FR", su, "COMUNICACOES")
 
         elif forma == "bia":
             for i in (1, 2, 3):
@@ -114,6 +121,7 @@ def gerar_unidades():
             su = f"{cod}BC"
             add(su, f"Bateria de Comando do {sigla}", f"Bia Cmdo/{sigla}", "SU", cod, "COMANDO")
             add(f"{su}POBS", f"Pelotao de Observacao da Bia Cmdo/{sigla}", f"Pel Obs/{sigla}", "FR", su, tipo)
+            add(f"{su}PCOM", f"Pelotao de Comunicacoes da Bia Cmdo/{sigla}", f"Pel Com/{sigla}", "FR", su, "COMUNICACOES")
 
         elif forma == "pel_direto":
             rot = "Pel Eng Cmb" if tipo == "ENGENHARIA" else "Pel Cav Mec"
@@ -175,6 +183,7 @@ def gerar_gazetteer():
         ("PN10", "Serra da Cagaita", 108, -8),
         ("PN11", "Represa da Copaiba", 39, 5),
         ("PN12", "Posto Mangaba", 12, 2),
+        ("PN13", "Fazenda Buriti", PC_BDA_KM, PC_BDA_PERP),   # onde se instala o PC da Bda
     ]
     for cod, nome, km, desloc in notaveis:
         g.append([cod, nome, "PONTO_NOTAVEL", nome, _ponto(*_latlon(km, desloc)), 400])
