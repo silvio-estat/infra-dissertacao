@@ -416,7 +416,7 @@ def montar_ppcot(modelo):
                 FROM {SILVER}.EVENTO e
                 LEFT JOIN {SILVER}.REF_UNIDADE u
                   ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
-                WHERE e.TIPO_COD = 'POSICAO')
+                WHERE e.TIPO_COD = 'POSICAO' AND e.UNIDADE_REPORTANTE_COD IS NOT NULL)
             WHERE ORDEM = 1"""),
         ("pp_situacao", f"""
             SELECT * FROM (
@@ -427,7 +427,8 @@ def montar_ppcot(modelo):
                 FROM {SILVER}.EVENTO e
                 JOIN {SILVER}.SITUACAO_UNIDADE s ON s.EVENTO_IDT = e.EVENTO_IDT
                 LEFT JOIN {SILVER}.REF_UNIDADE u
-                  ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD)
+                  ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
+                WHERE e.UNIDADE_REPORTANTE_COD IS NOT NULL)
             WHERE ORDEM = 1"""),
         ("pp_medida", f"""
             SELECT e.*, m.MEDIDA_ESPECIE_COD, m.MEDIDA_NOME, m.OBSERVACAO
@@ -567,7 +568,7 @@ def montar_coc(modelo):
                 FROM {SILVER}.EVENTO e
                 JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD
                 LEFT JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
-                WHERE e.TIPO_COD = 'POSICAO')
+                WHERE e.TIPO_COD = 'POSICAO' AND e.UNIDADE_REPORTANTE_COD IS NOT NULL)
             WHERE ORDEM = 1"""),
         ("coc_situacao", f"""
             SELECT * FROM (
@@ -578,13 +579,24 @@ def montar_coc(modelo):
                 FROM {SILVER}.EVENTO e
                 JOIN {SILVER}.SITUACAO_UNIDADE s ON s.EVENTO_IDT = e.EVENTO_IDT
                 JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD
-                LEFT JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD)
+                LEFT JOIN {SILVER}.REF_UNIDADE u ON u.UNIDADE_COD = e.UNIDADE_REPORTANTE_COD
+                WHERE e.UNIDADE_REPORTANTE_COD IS NOT NULL)
             WHERE ORDEM = 1"""),
+        # O dado nao traz vigencia da medida. Como na posicao e na situacao, fica
+        # a versao mais recente de cada uma (mesma especie, nome e unidade): a
+        # medida redesenhada substitui a anterior, e o quadro deixa de repetir
+        # o mesmo limite seis vezes.
         ("coc_medida", f"""
-            SELECT e.*, m.MEDIDA_ESPECIE_COD, m.MEDIDA_NOME, m.OBSERVACAO, r.REFERENCIA_DATA
-            FROM {SILVER}.EVENTO e
-            JOIN {SILVER}.MEDIDA_COORDENACAO m ON m.EVENTO_IDT = e.EVENTO_IDT
-            JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD"""),
+            SELECT * FROM (
+                SELECT e.*, m.MEDIDA_ESPECIE_COD, m.MEDIDA_NOME, m.OBSERVACAO, r.REFERENCIA_DATA,
+                       row_number() OVER (
+                           PARTITION BY e.OPERACAO_COD, e.UNIDADE_REPORTANTE_COD,
+                                        m.MEDIDA_ESPECIE_COD, m.MEDIDA_NOME
+                           ORDER BY e.OCORRENCIA_DATA DESC, e.EVENTO_IDT DESC) AS ORDEM
+                FROM {SILVER}.EVENTO e
+                JOIN {SILVER}.MEDIDA_COORDENACAO m ON m.EVENTO_IDT = e.EVENTO_IDT
+                JOIN coc_referencia r ON r.OPERACAO_COD = e.OPERACAO_COD)
+            WHERE ORDEM = 1"""),
         # Eventos corroborados aparecem uma vez: o conjunto ordenado de EVENTO_IDT
         # e a chave do fato, independentemente de qual fonte foi a linha principal.
         # O terceiro criterio de ordem existe para o desempate: os dois lados de um
@@ -729,7 +741,8 @@ def montar_amc(modelo):
                 'BAIXA_COMBATE', CAST(s.BAIXA_COMBATE_QNT AS DOUBLE), 'QNT',
                 'BAIXA_NAO_COMBATE', CAST(s.BAIXA_NAO_COMBATE_QNT AS DOUBLE), 'QNT',
                 'EVACUADO', CAST(s.EVACUADO_QNT AS DOUBLE), 'QNT'
-            ) x AS INDICADOR_COD, VALOR_NRO, UNIDADE_MEDIDA_COD"""),
+            ) x AS INDICADOR_COD, VALOR_NRO, UNIDADE_MEDIDA_COD
+            WHERE e.UNIDADE_REPORTANTE_COD IS NOT NULL"""),
         ("amc_forca", """
             SELECT *,
                    lag(VALOR_NRO) OVER (

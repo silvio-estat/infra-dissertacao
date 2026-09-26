@@ -1165,9 +1165,11 @@ entidades:
 
       Para posicao e situacao da unidade, conserva-se o registro mais recente.
       Fatos episodicos entram somente dentro da janela declarada em visoes.COC.
-      Medidas de coordenacao permanecem no quadro porque o dado atual nao traz
-      inicio e fim de vigencia. A idade de cada item deixa essa limitacao
-      visivel para quem consulta.
+      Medidas de coordenacao nao trazem inicio e fim de vigencia: como na
+      posicao, fica a versao mais recente de cada medida (mesma especie, nome e
+      unidade), e a redesenhada substitui a anterior. A idade de cada item deixa
+      a limitacao visivel para quem consulta. Linhas sem unidade reportante
+      (sigla ambigua recusada na Silver) ficam fora: PROBLEMA_DADOS as acusa.
     abreviatura: COC
     camada: gold
     chave: [REGISTRO_IDT]
@@ -1731,8 +1733,9 @@ fontes:
         campos:
           texto:    {campo: RELATO_TXT, transformacao: direto,
                      observacao: "saida do reconhecimento de fala. Os codinomes sao palavras raras: o transcritor recebe a lista de codinomes e lugares como vocabulario inicial (initial_prompt), e essa lista e versionada em EXTRACAO.PROMPT_VERSAO_COD como qualquer prompt."}
-          codinome: {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento,
-                     observacao: "'cavalo' casa com o sinonimo de AVISTAMENTO_INIMIGO"}
+          codinome: {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, procurar_em: texto,
+                     procurar_palavras: [tordilho, potro, cavalo, brasa, bigorna, martelo, tambor],
+                     observacao: "'cavalo' casa com o sinonimo de AVISTAMENTO_INIMIGO. Se o modelo de linguagem devolve codinome nulo, procura-se um dos codinomes de radio (procurar_palavras) na propria transcricao, como palavra inteira e aceitando plural (procurar_em, regra fixa sem IA). Motivo (26/09): em 12 audios o modelo deixou o codinome nulo com 'cavalos' ou 'tambor' escritos no texto — o pedido era copiar da lista, e o plural nao e copia exata. A regra recupera 4; os demais tinham o codinome estragado pelo transcritor ('Brasembr' por 'brasa em BR') e ficam nulos."}
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
                              referencia: REF_GAZETTEER,
                              observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}

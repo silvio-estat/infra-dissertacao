@@ -288,7 +288,25 @@ def _t_dominio(origem, regra, ctx, alvo=None):
         aceitos = {str(canonico)} | {str(s) for s in (definicao.get("sinonimos") or [])}
         lista = ", ".join("'" + a.lower().replace("'", "''") + "'" for a in sorted(aceitos))
         ramos.append(f"WHEN lower(trim({origem})) IN ({lista}) THEN '{canonico}'")
-    return "CASE " + " ".join(ramos) + " END"
+    casado = "CASE " + " ".join(ramos) + " END"
+    if not regra.get("procurar_em"):
+        return casado
+
+    # `procurar_em`: se o valor lido nao casou, procura uma das palavras de
+    # `procurar_palavras` dentro de outro campo, como palavra inteira (plural
+    # aceito). E regra fixa, sem IA: na voz, o modelo de linguagem devolve
+    # codinome nulo mesmo com 'cavalos' ou 'tambor' na transcricao (26/09).
+    # So as palavras declaradas: o dominio tambem tem sinonimos comuns
+    # ('objetivo', 'limite') que num texto livre casariam por acaso.
+    sinonimo_de = {str(s).lower(): c for c, d in valores.items() for s in (d.get("sinonimos") or [])}
+    texto = f"lower({_expressao_origem(regra['procurar_em'], {}, ctx)})"
+    achados = []
+    for p in regra.get("procurar_palavras") or []:
+        if str(p).lower() not in sinonimo_de:
+            raise SystemExit(f"\nprocurar_palavras: '{p}' nao e sinonimo do dominio {regra['dominio']}\n")
+        palavra = re.escape(str(p).lower()).replace("\\", "\\\\").replace("'", "''")
+        achados.append(f"WHEN {texto} RLIKE '\\\\b{palavra}s?\\\\b' THEN '{sinonimo_de[str(p).lower()]}'")
+    return f"coalesce({casado}, CASE {' '.join(achados)} END)" if achados else casado
 
 
 def _t_split_escala(origem, regra, ctx, alvo=None):
