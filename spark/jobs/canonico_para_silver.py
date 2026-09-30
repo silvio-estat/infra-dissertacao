@@ -309,23 +309,6 @@ def _t_dominio(origem, regra, ctx, alvo=None):
     return f"coalesce({casado}, CASE {' '.join(achados)} END)" if achados else casado
 
 
-def _t_split_escala(origem, regra, ctx, alvo=None):
-    """Um campo de origem, DOIS canonicos.
-
-    A doutrina escreve o grau de confianca num codigo unico de duas posicoes:
-    'B2' = fonte geralmente confiavel, informacao provavelmente verdadeira. Aqui
-    ele se separa em duas colunas, e por isso a transformacao precisa saber qual
-    das duas esta produzindo.
-    """
-    posicao = 1 if str(alvo).endswith("CONFIABILIDADE_COD") else 2
-    valor = f"upper(substring(trim({origem}), {posicao}, 1))"
-    # O OCR le 'A2' como 'AZ'. Letra ou algarismo fora da escala vira vazio, e
-    # nao sujeira: vale o dominio declarado para a coluna em EVENTO.
-    dominio = ctx["modelo"]["entidades"]["EVENTO"]["campos"][alvo]["dominio"]
-    validos = ", ".join(f"'{v}'" for v in ctx["modelo"]["dominios"][dominio]["valores"])
-    return f"CASE WHEN length(trim({origem})) = 2 AND {valor} IN ({validos}) THEN {valor} END"
-
-
 # Nome da coluna que a view `origem_bruta` ja traz, por tabela da Bronze referida.
 _ELO_DA_BRONZE = {"ARQUIVO": "ARQUIVO_IDT", "RECEPCAO_BRUTA": "RECEPCAO_IDT",
                   "EXTRACAO": "EXTRACAO_IDT"}
@@ -728,7 +711,6 @@ TRANSFORMACOES = {
     "dominio":         _t_dominio,
     "referencia":      _t_referencia,
     "gazetteer":       _t_gazetteer,
-    "split_escala":    _t_split_escala,
     "celula":          _t_celula,
     "abreviatura":     _t_abreviatura,
     "sobra":           _t_sobra,
@@ -979,10 +961,6 @@ def _origem_dos_campos_extraidos(spark, fonte):
     fica em EXTRACAO_ORIGEM_IDT, e e por ele que se reconhece qual extracao e a
     do modelo de linguagem.
 
-    Aos campos que o modelo devolveu junta-se `texto_lido`: o que ele LEU, quando
-    a leitura anterior foi um OCR. No informe do INTEL as paginas do OCR sao o
-    corpo do documento, e o modelo nao as repete na resposta. Na voz fica vazio.
-
     Trocar o pedido ao modelo gera uma interpretacao NOVA sobre a mesma leitura,
     e a antiga continua na Bronze. Vale a mais recente de cada leitura (ORDEM = 1).
     """
@@ -990,13 +968,11 @@ def _origem_dos_campos_extraidos(spark, fonte):
         SELECT a.ARQUIVO_IDT, r.RECEPCAO_IDT, i.EXTRACAO_IDT, r.RECEBIMENTO_DATA,
                a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
                from_json(r.CONTEUDO_JSON_TXT, 'map<string,string>') AS SIDECAR,
-               map_concat(from_json(i.SAIDA_TXT, 'map<string,string>'),
-                          map('texto_lido', array_join(
-                              from_json(o.SAIDA_TXT, 'struct<paginas:array<string>>').paginas, '\\n'))) AS CAMPOS,
+               from_json(i.SAIDA_TXT, 'map<string,string>') AS CAMPOS,
                CAST(NULL AS STRING) AS SOBRA_JSON,
                CAST(NULL AS STRING) AS FORMULARIO_VERSAO,
                -- a cadeia de IA, da ultima leitura para a primeira: o modelo de
-               -- linguagem <- o transcritor ou o OCR que ele leu
+               -- linguagem <- o transcritor que ele leu
                nullif(concat_ws(' <- ',
                    CASE WHEN i.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', i.FERRAMENTA_NOME, i.MODELO_NOME) END,
                    CASE WHEN o.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', o.FERRAMENTA_NOME, o.MODELO_NOME) END), '') AS EXTRACAO_MODELO
@@ -1094,8 +1070,8 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
                      f"WHERE r2.SISTEMA_ORIGEM_COD = '{fonte}' AND r2.MODALIDADE_COD = '{modalidade_irma}' "
                      f"AND r2.CONTEUDO_JSON_TXT = r.CONTEUDO_JSON_TXT)")
 
-    # So entra extracao que E grade (tem `abas`): o mesmo PDF tem tambem a leitura
-    # do tesseract, que e texto corrido e nao tem o que abrir.
+    # So entra extracao que E grade (tem `abas`): uma leitura em texto corrido do
+    # mesmo arquivo, se um dia houver, nao tem o que abrir.
     grade = spark.sql(f"""
         SELECT e.EXTRACAO_IDT, e.SAIDA_TXT, a.ARQUIVO_IDT,
                r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA,

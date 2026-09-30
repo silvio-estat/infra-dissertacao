@@ -47,7 +47,7 @@ TABELA_INGESTAO = f"{CATALOGO}.bronze.INGESTAO"
 # landing/<operacao>/<fonte>/... — a pasta diz de que sistema o dado veio
 FONTE_POR_PASTA = {
     "c2a": "C2_A", "c2b": "C2_B", "relper": "RELPER",
-    "fogos": "FOGOS", "intel": "INTEL", "voz": "VOZ",
+    "fogos": "FOGOS", "voz": "VOZ",
 }
 MODALIDADE_POR_EXTENSAO = {
     "xlsx": "PLANILHA", "pdf": "PDF", "jpg": "IMAGEM", "jpeg": "IMAGEM",

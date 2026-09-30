@@ -1,5 +1,5 @@
 <title>Modelo Canônico ARQ_TEMAC</title>
-<meta name="description" content="Como seis fontes heterogêneas convergem na tabela EVENTO, como a linhagem liga cada número ao registro bruto que o originou, e como se mede o que não chegou.">
+<meta name="description" content="Como cinco fontes heterogêneas convergem na tabela EVENTO, como a linhagem liga cada número ao registro bruto que o originou, e como se mede o que não chegou.">
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
 
@@ -465,7 +465,7 @@
   <header>
     <p class="eyebrow">ARQ_TEMAC · parte empírica · modelo_canonico.yaml</p>
     <h1>O modelo canônico em dois diagramas e um exemplo</h1>
-    <p class="lead">Seis sistemas de origem, seis modalidades de arquivo, uma única tabela de
+    <p class="lead">Cinco sistemas de origem, seis modalidades de arquivo, uma única tabela de
       destino — e uma <strong>operação</strong> que amarra tudo. Esta página mostra o percurso que
       todo dado faz, o que permite cruzar fontes tão diferentes, e como, a partir de qualquer
       número na camada final, se volta ao registro bruto que o gerou.</p>
@@ -504,14 +504,13 @@
       camada tem um trabalho e só um.</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Fluxo de dados das seis fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze. O arquivo que não pode ser catalogado vai da pasta landing para a tabela REJEICAO e não segue adiante; a tabela INGESTAO registra, a cada execução, a conferência entre o que havia na pasta e o que a Bronze conhece.">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze. O arquivo que não pode ser catalogado vai da pasta landing para a tabela REJEICAO e não segue adiante; a tabela INGESTAO registra, a cada execução, a conferência entre o que havia na pasta e o que a Bronze conhece.">
 flowchart TD
   subgraph FONTES["FONTES · sistemas de origem"]
     C2A["C2_A<br/>JSON com geometria"]
     C2B["C2_B<br/>texto livre + foto"]
     REL["RELPER<br/>planilha ou PDF assinado"]
     FOG["FOGOS<br/>Relatorio de Bombardeio (Anexo I)"]
-    INT["INTEL<br/>informe de inteligencia assinado"]
     VOZ["VOZ<br/>audio de radio"]
   end
 
@@ -521,7 +520,6 @@ flowchart TD
   C2B --> LAND
   REL --> LAND
   FOG --> LAND
-  INT --> LAND
   VOZ --> LAND
 
   subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
@@ -595,7 +593,7 @@ flowchart TD
           <p>Cada sistema entrega o que já produz, no formato em que produz. O <code>C2_A</code>
             manda JSON com a geometria embutida; o <code>RELPER</code>, uma planilha — ou o mesmo
             formulário impresso, assinado e escaneado; a artilharia, o Relatório de Bombardeio
-            digitalizado; a seção de inteligência, um informe assinado; a rede de rádio, um
+            digitalizado; a rede de rádio, um
             arquivo de áudio. Nada é adaptado na origem.</p>
         </div>
       </li>
@@ -913,7 +911,7 @@ landing/perseu_2024/relper/relper_bi511_matutino.json     ← o sidecar    → R
         <tbody>
           <tr><td><span class="mod">JSON</span> C2_A</td><td>campos nativos <code>operacao</code> + <code>ano</code> — a chave natural do sistema, formatada por ele</td></tr>
           <tr><td><span class="mod">JSON</span> C2_B relato</td><td>campo nativo no payload</td></tr>
-          <tr><td>C2_B incidente · RELPER · FOGOS · INTEL · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
+          <tr><td>C2_B incidente · RELPER · FOGOS · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
           <tr><td>arquivo sem sidecar (fallback)</td><td>hora + geo de captura dentro da janela e da área de <code>REF_OPERACAO</code></td></tr>
         </tbody>
       </table>
@@ -1123,7 +1121,7 @@ ponteiros de linhagem:
   </section>
 
   <section>
-    <h2><span class="n">Referência</span> As seis fontes</h2>
+    <h2><span class="n">Referência</span> As cinco fontes</h2>
     <p>Cada linha da coluna &ldquo;Bloco no YAML&rdquo; é um conjunto de regras de/para dentro de
       <code>fontes:</code> — <strong>não</strong> uma tabela. Uma fonte pode ter mais de um bloco,
       um por forma de entrada: o <code>RELPER</code> chega como planilha <em>ou</em> como PDF
@@ -1189,14 +1187,6 @@ ponteiros de linhagem:
             <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
             <td>sidecar</td>
             <td>OCR + LLM: data, prioridade. Só a 1ª parte do Anexo I (informes de observador sobre bombardeio inimigo) vira evento</td>
-          </tr>
-          <tr>
-            <th scope="row">INTEL</th>
-            <td><span class="mod">PDF</span></td>
-            <td><code>informe</code></td>
-            <td><code>RECEPCAO_BRUTA</code> (sidecar) + <code>ARQUIVO</code> → <code>EVENTO</code></td>
-            <td>sidecar</td>
-            <td>OCR + LLM: data, tipo, prioridade. A avaliação <span class="kw">B2</span> é lida do cabeçalho, não inferida</td>
           </tr>
           <tr>
             <th scope="row">VOZ</th>

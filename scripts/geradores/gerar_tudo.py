@@ -32,13 +32,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cenario import gerar_cenario, salvar_verdade   # noqa: E402
 from comum import SAIDA_PADRAO, Contexto            # noqa: E402
 
-ORDEM = ["C2_A", "C2_B", "RELPER", "FOGOS", "INTEL", "VOZ"]
+ORDEM = ["C2_A", "C2_B", "RELPER", "FOGOS", "VOZ"]
 
 
 def _geradores():
-    import gerar_c2a, gerar_c2b, gerar_fogos, gerar_intel, gerar_relper, gerar_voz
+    import gerar_c2a, gerar_c2b, gerar_fogos, gerar_relper, gerar_voz
     return {"C2_A": gerar_c2a.gerar, "C2_B": gerar_c2b.gerar, "RELPER": gerar_relper.gerar,
-            "FOGOS": gerar_fogos.gerar, "INTEL": gerar_intel.gerar, "VOZ": gerar_voz.gerar}
+            "FOGOS": gerar_fogos.gerar, "VOZ": gerar_voz.gerar}
 
 
 def _args(argv=None):

@@ -1,27 +1,26 @@
 """
 DAG extracao — tira o conteudo de dentro dos binarios e grava em EXTRACAO.
 
-    conferir_pendentes ──► planilha ──► ocr ──► tabela ──► voz ──► texto ──► relato ──► informe
+    conferir_pendentes ──► planilha ──► tabela ──► voz ──► texto ──► relato
                        └─► nada_a_fazer
 
 Uma etapa do fluxo, uma DAG: ingestao ──► EXTRACAO ──► canonico_silver ──► gold.
 
 Uma TAREFA por modalidade, e nao uma so para tudo, porque as ferramentas e os
-tempos sao muito diferentes — 0,01 s por planilha, 0,7 s por PDF, 5,6 s por
+tempos sao muito diferentes — 0,01 s por planilha, segundos por PDF, 5,6 s por
 audio — e uma falha no reconhecimento optico nao pode derrubar a transcricao
 junto. Correm em serie: todas disputam a mesma CPU.
 
-O que separa as tres e so COMO o conteudo e lido:
+O que separa as tarefas e so COMO o conteudo e lido:
 
     planilha  openpyxl abre o .xlsx e copia as celulas      leitura direta, sem IA
-    ocr       tesseract adivinha as letras dos pixels       inferencia
     tabela    docling reconstroi a grade do PDF escaneado   inferencia
     voz       faster-whisper adivinha as palavras do som    inferencia
     texto     um modelo de linguagem le o que a VOZ escreveu e devolve campos
-    informe   um modelo de linguagem le o que o OCR leu do INTEL e devolve campos
+    relato    um modelo de linguagem le o relato do C2_B e devolve campos
 
-A `texto` e a `informe` nao leem um binario: leem a SAIDA de outra
-extracao. Por isso grava EXTRACAO_ORIGEM_IDT — sem essa coluna as duas
+A `texto` nao le um binario: le a SAIDA de outra extracao (a transcricao).
+Por isso grava EXTRACAO_ORIGEM_IDT — sem essa coluna as duas
 inferencias ficariam penduradas no mesmo .wav como se fossem independentes, e se
 perderia que uma leu a outra.
 
@@ -51,12 +50,6 @@ from helpers.lineage_emitter import linhagem
 
 CANONICO = "/opt/canonico"      # o modelo e os seeds, montados no container
 
-# --- ajustes do reconhecimento optico, MEDIDOS contra as 7 remessas que chegam
-# em planilha e em escaneado (a planilha e a verdade por construcao):
-#     200 dpi, psm 3 (padrao) 75,7% · 200 dpi, psm 4 79,3% · 300 dpi 27%
-# Rasterizar a 300 piora: o gerador digitalizou a 200, e ampliar borra.
-OCR_IDIOMA, OCR_RESOLUCAO, OCR_SEGMENTACAO = "por", 200, 4
-
 # --- transcricao. medium contra small, sobre os mesmos 150 audios:
 #     WER 21,6% contra 29,4% · codinome 93% contra 65% · 5,6 s contra 2,2 s
 # O codinome vira TIPO_COD, entao o ganho compensa o triplo do tempo.
@@ -76,12 +69,11 @@ LLM_PROMPT_VERSAO = "voz-v2"
 # "deslocamento normal" como prioridade.
 PRIORIDADES_RADIO = ["chuva", "orvalho", "relampago"]
 LLM_PROMPT_VERSAO_RELATO = "relato-v3"
-LLM_PROMPT_VERSAO_INTEL = "intel-v1"
 # as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
 LLM_OPCOES = {"format": "json", "think": False, "options": {"temperature": 0}}
 
 # --- tabela de PDF escaneado. O Docling reconstroi a GRADE (linha e coluna de cada
-# celula), o que o tesseract nao faz. Medido: RELPER 95,7% dos numeros na celula
+# celula), o que o OCR de texto corrido (tesseract) nao faz. Medido: RELPER 95,7% dos numeros na celula
 # certa (7 pares planilha x escaneado); FOGOS 11/11 areas bombardeadas na coluna
 # certa (ACHADOS.md, 13/09). Roda como servico, como o Ollama.
 DOCLING_URL = os.environ.get("DOCLING_URL", "http://docling:5001")
@@ -99,7 +91,7 @@ LOTE = 50
 
 
 # =============================================================================
-# O que e igual para as tres
+# O que e igual para todas
 # =============================================================================
 
 def conexao_trino():
@@ -173,7 +165,7 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
              parametros=None, prompt=None, fila=None):
     """Le todos os binarios pendentes de uma modalidade e grava o que saiu.
 
-    `ler` e a unica coisa que muda entre as tres tarefas: recebe os bytes e
+    `ler` e a unica coisa que muda entre as tarefas: recebe os bytes e
     devolve um dicionario com o conteudo. O resto — achar o que falta, baixar,
     cronometrar, registrar a falha sem parar a fila, gravar a cada LOTE —
     e identico, e por isso mora aqui.
@@ -283,46 +275,6 @@ def ler_planilha(conteudo: bytes) -> dict:
     wb = openpyxl.load_workbook(io.BytesIO(conteudo), read_only=True, data_only=True)
     return {"abas": {aba.title: [[valor(c) for c in linha] for linha in aba.iter_rows(values_only=True)]
                      for aba in wb.worksheets}}
-
-
-def ler_ocr(conteudo: bytes) -> dict:
-    """Rasteriza cada pagina e devolve o texto que o tesseract reconheceu.
-    Os PDFs deste estudo sao imagem de papel: nao ha camada de texto para copiar,
-    as letras precisam ser adivinhadas dos pixels."""
-    import pdf2image
-    import pytesseract
-
-    paginas = pdf2image.convert_from_bytes(conteudo, dpi=OCR_RESOLUCAO)
-    return {"paginas": [pytesseract.image_to_string(p, lang=OCR_IDIOMA,
-                                                    config=f"--psm {OCR_SEGMENTACAO}")
-                        for p in paginas]}
-
-
-def pdfs_sem_tabela() -> list:
-    """[(arquivo_idt, uri)] dos PDFs de tabela (RELPER, FOGOS) ainda nao lidos pelo Docling.
-
-    O mesmo PDF ja tem a leitura do tesseract: reler com ferramenta nova ACRESCENTA
-    uma linha em EXTRACAO, nunca altera a anterior. O INTEL fica de fora — e prosa, e
-    segue pela cadeia tesseract -> modelo de linguagem.
-    """
-    com_extracao = """
-        SELECT a.arquivo_idt, a.arquivo_uri_txt
-        FROM iceberg.bronze.arquivo a
-        JOIN iceberg.bronze.recepcao_bruta r ON r.arquivo_idt = a.arquivo_idt
-        LEFT JOIN iceberg.bronze.extracao e
-               ON e.arquivo_idt = a.arquivo_idt AND e.ferramenta_nome LIKE 'docling%'
-        WHERE a.modalidade_cod = 'PDF' AND r.sistema_origem_cod IN ('RELPER', 'FOGOS')
-          AND e.extracao_idt IS NULL
-        ORDER BY a.arquivo_uri_txt
-    """
-    sem_extracao = """
-        SELECT a.arquivo_idt, a.arquivo_uri_txt
-        FROM iceberg.bronze.arquivo a
-        JOIN iceberg.bronze.recepcao_bruta r ON r.arquivo_idt = a.arquivo_idt
-        WHERE a.modalidade_cod = 'PDF' AND r.sistema_origem_cod IN ('RELPER', 'FOGOS')
-        ORDER BY a.arquivo_uri_txt
-    """
-    return consultar(com_extracao, sem_extracao)
 
 
 def ler_tabela(conteudo: bytes) -> dict:
@@ -587,103 +539,10 @@ def extrair_relatos():
         gravar(linhas, "RELATO", f"ollama/{LLM_MODELO}")
 
 
-def ocr_sem_interpretacao() -> list:
-    """[(extracao_idt, arquivo_idt, saida)] das leituras de OCR do INTEL ainda nao interpretadas.
-
-    Mesma conta da voz: uma leitura esta pendente enquanto nenhuma outra extracao
-    a tiver lido. Sem EXTRACAO nao ha leitura de OCR nenhuma.
-    """
-    sql = """
-        SELECT t.extracao_idt, t.arquivo_idt, t.saida_txt
-        FROM iceberg.bronze.extracao t
-        JOIN iceberg.bronze.recepcao_bruta r ON r.arquivo_idt = t.arquivo_idt
-        LEFT JOIN iceberg.bronze.extracao filha ON filha.extracao_origem_idt = t.extracao_idt
-        WHERE r.sistema_origem_cod = 'INTEL' AND t.status_cod = 'OK'
-          AND t.extracao_origem_idt IS NULL      -- so o OCR, que leu o PDF direto
-          AND filha.extracao_idt IS NULL
-        ORDER BY t.extracao_idt
-    """
-    return consultar(sql)
-
-
-def instrucao_informe() -> str:
-    """O pedido para o informe, montado a partir da receita do INTEL no modelo canonico.
-
-    Medido numa amostra dos 30 informes antes de virar tarefa (13/09): numero e
-    data-hora 30/30, lugar 29/30, tipo 14/14 e prioridade 8/14 contra o gabarito.
-    O lugar e pedido COMO ESTA ESCRITO, sem a lista do gazetteer: com a lista de 70
-    nomes o modelo devolvia vazio em 5 informes de nome legivel. Quem transforma o
-    nome em coordenada e a consulta a REF_GAZETTEER, na Silver.
-    """
-    modelo = yaml.safe_load(open(f"{CANONICO}/modelo_canonico.yaml", encoding="utf-8"))
-    receita = modelo["fontes"]["INTEL"]["entidades"]["informe"]
-    dominios = modelo["dominios"]
-
-    def listar(dominio, apenas=None):
-        return "\n".join(f"     {k:22s} {v.get('quando', v.get('rotulo', ''))}"
-                         for k, v in dominios[dominio]["valores"].items() if apenas is None or k in apenas)
-
-    return (
-        "Voce le o texto de um INFORME DE INTELIGENCIA militar escaneado, reconhecido por OCR. "
-        "O OCR pode errar letras. Nao invente: o que nao estiver no texto vira null.\n\n"
-        f"{receita['documento']}\n\n"
-        "Responda so um JSON com estas chaves:\n"
-        '  "nr": o numero do informe, como no cabecalho (ex. 001/24)\n'
-        '  "data_hora": o grupo data-hora do cabecalho, como escrito (ex. 250812 NOV 24)\n'
-        '  "avaliacao": letra de A a F seguida de algarismo de 1 a 6 (ex. B2)\n'
-        '  "referencia_local": o lugar citado no paragrafo 1, copiado EXATAMENTE como esta escrito '
-        '(o nome que vem depois de "nas proximidades de"), ou null se nao houver\n'
-        '  "ocorrencia": dia e hora do fato, do paragrafo 1, no formato AAAA-MM-DDTHH:MM (o ano e o do cabecalho)\n'
-        '  "TIPO_COD": o que o informe relata. Use SO um destes:\n'
-        + listar("tipo_evento", receita["tipos_possiveis"]) + "\n"
-        '  "PRIORIDADE_COD": o que o informe exige de quem o recebe. Use SO um destes:\n'
-        + listar("prioridade") + "\n\n"
-    )
-
-
-def extrair_informes():
-    """Cada leitura de OCR de um informe vira uma linha NOVA em EXTRACAO, que aponta para ela.
-
-    A cadeia e a da voz com outro par de modelos: o tesseract leu a pagina
-    escaneada; o modelo de linguagem le ESSE TEXTO e devolve os campos.
-    """
-    prompt_base = instrucao_informe()
-    pendentes_ = ocr_sem_interpretacao()
-    print(f"informes sem interpretacao: {len(pendentes_)}")
-    if pendentes_:
-        registrar_ajuste(LLM_PROMPT_VERSAO_INTEL, "ollama", LLM_OPCOES, prompt_base)
-
-    linhas = []
-    for extracao_origem, arquivo_idt, saida_ocr in pendentes_:
-        texto = "\n".join(json.loads(saida_ocr)["paginas"])
-        inicio = time.perf_counter()
-        agora = datetime.now(timezone.utc)
-        try:
-            resposta = perguntar(prompt_base + f"\nTEXTO DO OCR:\n{texto}\n")
-            json.loads(resposta)        # so aceita o que e JSON de verdade
-            saida, status = resposta, "OK"
-        except Exception as erro:
-            saida, status = None, "FALHA"
-            print(f"FALHA {extracao_origem}: {erro}")
-        idt = "ext_" + hashlib.sha256(
-            f"{extracao_origem}|{LLM_MODELO}|{agora.isoformat()}".encode()).hexdigest()[:16]
-        linhas.append((idt, arquivo_idt, None, extracao_origem, "S", "ollama", LLM_MODELO,
-                       LLM_PROMPT_VERSAO_INTEL, saida, round(time.perf_counter() - inicio, 3),
-                       status, agora))
-        if len(linhas) == LOTE:
-            gravar(linhas, "INFORME", f"ollama/{LLM_MODELO}")
-            linhas = []
-
-    if linhas or not pendentes_:
-        gravar(linhas, "INFORME", f"ollama/{LLM_MODELO}")
-
-
 def conferir_pendentes() -> str:
     quantos = {m: len(pendentes(m)) for m in ("PLANILHA", "PDF", "AUDIO")}
     quantos["transcricoes a interpretar"] = len(transcricoes_sem_interpretacao())
     quantos["relatos a interpretar"] = len(relatos_sem_interpretacao())
-    quantos["informes a interpretar"] = len(ocr_sem_interpretacao())
-    quantos["tabelas a ler"] = len(pdfs_sem_tabela())
     print("pendente:", quantos)
     return "planilha" if sum(quantos.values()) else "nada_a_fazer"
 
@@ -691,15 +550,6 @@ def conferir_pendentes() -> str:
 def extrair_planilha():
     import openpyxl
     executar("PLANILHA", ler_planilha, f"openpyxl {openpyxl.__version__}", inferencia="N")
-
-
-def extrair_ocr():
-    import pytesseract
-    executar("PDF", ler_ocr, f"tesseract {pytesseract.get_tesseract_version()}",
-             inferencia="S", modelo=OCR_IDIOMA,
-             ajuste=f"psm{OCR_SEGMENTACAO}-{OCR_RESOLUCAO}dpi",
-             parametros={"idioma": OCR_IDIOMA, "resolucao_dpi": OCR_RESOLUCAO,
-                         "segmentacao_psm": OCR_SEGMENTACAO})
 
 
 def extrair_tabelas():
@@ -711,7 +561,7 @@ def extrair_tabelas():
     """
     import urllib.request
 
-    fila = pdfs_sem_tabela()
+    fila = pendentes("PDF")
     if not fila:
         print("nada a extrair em PDF de tabela")
         return
@@ -776,7 +626,7 @@ def tarefa(nome, funcao, usa_ajuste=True) -> PythonOperator:
 
 with DAG(
     dag_id="2_bronze_extracao",
-    description="ARQUIVO -> EXTRACAO: planilha por leitura direta, PDF por OCR, audio por transcricao",
+    description="ARQUIVO -> EXTRACAO: planilha por leitura direta, PDF pelo Docling, audio por transcricao",
     schedule=None,
     start_date=datetime(2026, 9, 1),
     catchup=False,
@@ -789,7 +639,6 @@ with DAG(
     nada_a_fazer = EmptyOperator(task_id="nada_a_fazer")
 
     planilha = tarefa("planilha", extrair_planilha, usa_ajuste=False)
-    ocr = tarefa("ocr", extrair_ocr)
     tabela = tarefa("tabela", extrair_tabelas)
     voz = tarefa("voz", extrair_voz)
     texto = PythonOperator(
@@ -816,17 +665,5 @@ with DAG(
         ),
     )
 
-    informe = PythonOperator(
-        task_id="informe",
-        python_callable=extrair_informes,
-        # como a `texto`: a entrada e outra EXTRACAO (o OCR do PDF), nao o arquivo
-        on_success_callback=linhagem(
-            le=["bronze.extracao", "bronze.ajuste_extracao"], escreve=["bronze.extracao"],
-            colunas={"saida_txt": [("bronze.extracao", "saida_txt")],
-                     "extracao_origem_idt": [("bronze.extracao", "extracao_idt")],
-                     "prompt_versao_cod": [("bronze.ajuste_extracao", "prompt_versao_cod")]},
-        ),
-    )
-
     conferir >> [planilha, nada_a_fazer]
-    planilha >> ocr >> tabela >> voz >> texto >> relato >> informe
+    planilha >> tabela >> voz >> texto >> relato

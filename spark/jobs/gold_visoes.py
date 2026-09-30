@@ -94,11 +94,8 @@ def _bloco(colunas, origem, **valores):
     return f"SELECT {proj} FROM ({origem})"
 
 
-# Descricao curta de um evento. O informe do INTEL guarda o documento inteiro lido
-# pelo OCR, com cabecalho: o que interessa e o paragrafo 1.
-_DESCRICAO = (r"coalesce(CASE WHEN SISTEMA_ORIGEM_COD = 'INTEL' THEN nullif(regexp_replace("
-              r"regexp_extract(RELATO_TXT, '(?s)\\n\\s*1\\.\\s*(.+?)\\n\\s*2\\.', 1), '\\s+', ' '), '') END, "
-              r"substring(regexp_replace(RELATO_TXT, '\\s+', ' '), 1, 300))")
+# Descricao curta de um evento: o relato em uma linha, cortado em 300 caracteres.
+_DESCRICAO = r"substring(regexp_replace(RELATO_TXT, '\\s+', ' '), 1, 300)"
 
 # Armamento inimigo na primeira celula do relato do FOGOS: '2/Ob/Me' (quantidade/tipo/calibre).
 _ARMA = r"regexp_extract(RELATO_TXT, '^\\s*(\\d+)\\s*/\\s*([A-Za-z]+)\\s*/\\s*([A-Za-z]+)', {})"

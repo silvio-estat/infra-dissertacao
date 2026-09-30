@@ -28,7 +28,6 @@ Os dados são **sintéticos** (Operação Perseu 2024): nenhuma unidade, lugar o
 | Orquestração | Apache Airflow 2.9 |
 | Governança e linhagem | OpenMetadata 1.12.5 (+ Elasticsearch) |
 | Leitura de planilha | openpyxl |
-| OCR de PDF escaneado | tesseract 5 (português) |
 | Tabela de PDF escaneado | Docling (serviço `docling-serve`, RapidOCR) |
 | Transcrição de voz | faster-whisper `medium` |
 | Modelo de linguagem | Ollama + `qwen3.5:4b`, **na máquina, fora do Docker** |
@@ -65,7 +64,7 @@ acrescentar um bloco no YAML e uma tarefa na DAG 3.
 
 **Nomes de catálogo:** `lakehouse.*` no Spark e `iceberg.*` no Trino. São as mesmas tabelas.
 
-### As seis fontes
+### As cinco fontes
 
 | Fonte | O que chega | Como o conteúdo é lido |
 |---|---|---|
@@ -73,7 +72,6 @@ acrescentar um bloco no YAML e uma tarefa na DAG 3.
 | C2_B | JSON com relato em texto livre + fotos | modelo de linguagem lê o relato |
 | RELPER | planilha `.xlsx` e cópias escaneadas em PDF | openpyxl / Docling |
 | FOGOS | Relatório de Bombardeio, PDF escaneado | Docling |
-| INTEL | informe de inteligência, PDF escaneado | tesseract → modelo de linguagem |
 | VOZ | mensagem de rádio `.wav` | faster-whisper → modelo de linguagem |
 
 Todo evento em que alguma IA participou traz a cadeia de ferramentas na coluna
@@ -224,7 +222,7 @@ Cada DAG começa conferindo se há algo pendente. Se não houver, vai para `nada
 dispará-la de novo é seguro.
 
 **Tempo da DAG 2.** A transcrição dos 150 áudios leva ~14 min e as tabelas dos 78 PDFs pelo Docling,
-~6 min, ambas em CPU. O modelo de linguagem responde ~480 pedidos: **com GPU, ~1 s cada (minutos);
+~6 min, ambas em CPU. O modelo de linguagem responde ~450 pedidos: **com GPU, ~1 s cada (minutos);
 só em CPU, ~18 s cada (algumas horas)**. A DAG grava a cada 50 itens, então uma queda no meio não
 perde o que já foi feito.
 
@@ -261,7 +259,7 @@ Credenciais de desenvolvimento local: `.env.example`.
 | DAG | O que faz |
 |---|---|
 | `1_ingestao` | cataloga o que chegou em `landing/` em `RECEPCAO_BRUTA` e `ARQUIVO` |
-| `2_bronze_extracao` | lê o conteúdo: planilha → OCR → tabela (Docling) → voz → texto → relato → informe |
+| `2_bronze_extracao` | lê o conteúdo: planilha → tabela (Docling) → voz → texto → relato |
 | `3_silver_evento` | uma tarefa por receita do YAML; escreve `EVENTO`, `SITUACAO_UNIDADE` e `MEDIDA_COORDENACAO` |
 | `4_gold_visoes` | cinco tarefas em série: `pitcic` → `problema_dados` → `ppcot` → `coc` → `amc`; cada uma reescreve sua tabela inteira. Nomes de coluna pelo IR 14-06; valores das células com as siglas do MD33-M-02 |
 | `5_governanca` | OpenMetadata: metadados → perfil → qualidade → amostra |
@@ -281,7 +279,7 @@ Credenciais de desenvolvimento local: `.env.example`.
   | `C2_A` | `posicao`, `mcc` |
   | `C2_B` | `relato`, `incidente` |
   | `RELPER` | `situacao`, `situacao_digitalizada` |
-  | `VOZ` · `INTEL` · `FOGOS` | `transcricao` · `informe` · `relatorio_bombardeio` |
+  | `VOZ` · `FOGOS` | `transcricao` · `relatorio_bombardeio` |
 
   A gravação na Silver atualiza o que já existe, pela chave do evento, sem duplicar.
 - **Mudou um prompt?** Dê um código de versão novo na DAG 2 (ex.: `voz-v2`). A interpretação antiga

@@ -208,6 +208,11 @@ material para a discussão dos pontos positivos e negativos de usar IA.
 
 ## INTEL: a cadeia OCR → modelo de linguagem (13/set/2026)
 
+> A fonte INTEL foi **retirada em 30/09/2026** (realismo do estudo de caso: o
+> documento de inteligência tem canal próprio; e falta documentação ostensiva
+> citável). Os achados abaixo ficam como registro do que foi medido enquanto ela
+> existia. Ver `nota_2026_09_30` no modelo canônico.
+
 - **Amostra antes de construir.** Sobre os 30 informes: número e data-hora 30/30,
   lugar 29/30, tipo 14/14 e prioridade 8/14 contra o gabarito. Custou 2 minutos
   e evitou construir sobre um lugar que falhava.

@@ -159,7 +159,7 @@ TESTES = [
         "tabela": "bronze.recepcao_bruta",
         "definicao": "tableCustomSQLQuery",
         "sql": "SELECT origem_uri_txt FROM iceberg.bronze.recepcao_bruta "
-               "WHERE sistema_origem_cod IN ('RELPER', 'FOGOS', 'INTEL', 'VOZ') "
+               "WHERE sistema_origem_cod IN ('RELPER', 'FOGOS', 'VOZ') "
                "AND arquivo_idt IS NULL",
     },
     {
