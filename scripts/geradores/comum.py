@@ -3,14 +3,14 @@
 comum.py — o que todos os geradores de scripts/geradores/ compartilham.
 
 Ha um gerador por fonte (gerar_c2a.py, gerar_c2b.py, gerar_relper.py,
-gerar_fogos.py, gerar_intel.py, gerar_voz.py) e este modulo por baixo de
+gerar_fogos.py, gerar_voz.py) e este modulo por baixo de
 todos: seeds, operacao, geometria, datas, escrita de arquivo + sidecar,
 "escaneamento" de pagina e registro dos defeitos propositais.
 
 PRINCIPIO
   Toda saida nasce de uma lista de FATOS (cenario.py), a "verdade" interna do
   gerador. Ela existe para que fontes diferentes falem do MESMO fato — o
-  avistamento que aparece no radio, no relato do C2_B e no informe — e NAO e
+  avistamento que aparece no radio e no relato do C2_B — e NAO e
   usada para medir acerto da extracao: a IA aponta, o estado-maior confere
   (decisao de projeto, 2026-09-10).
 

@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-20
+  atualizado_em: 2026-09-30
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -229,6 +229,21 @@ metadados:
     PITCIC e no PPCOT ela nao chega a ser unica, porque as linhas da fase 3 nao
     tem ELEMENTO_NOME/INSUMO_NOME; quando um identificador estavel importa de
     verdade, o padrao e uma coluna explicita, como o REGISTRO_IDT do COC.
+  nota_2026_09_30: >-
+    Sai a fonte INTEL (informe de inteligencia em PDF assinado). Dois motivos.
+    O primeiro e de realismo do estudo de caso: o documento do sistema de
+    inteligencia circula por canal proprio, com sigilo e difusao controlados, e
+    nao chegaria ao repositorio comum de C2 da brigada. O que permanece e a
+    funcao de combate Inteligencia como INFORMACAO DE COMBATE — o avistamento do
+    inimigo relatado pela tropa, pelo radio (VOZ) e pelo relato do C2_B. O
+    segundo e de fundamentacao: nao ha documentacao ostensiva que permita
+    descrever o formulario com referencia citavel. Consequencias: nenhum fato
+    do cenario fica sem fonte (todo fato que a INTEL relatava tinha outra); a
+    avaliacao de fonte e informacao passa a vir so do relato do C2_B, inferida
+    pelo modelo de linguagem, e nao mais lida do documento; e sai a cadeia
+    tesseract -> modelo de linguagem, com a tarefa de OCR por tesseract, cuja
+    leitura so a INTEL usava (RELPER escaneado e FOGOS seguem pelo Docling).
+    O corpus e regerado inteiro, porque os geradores compartilham a semente.
 
 
 # =============================================================================
@@ -249,7 +264,6 @@ dominios:
       RELPER: {rotulo: Relatorio Periodico de Pessoal e Material}
       FOGOS:  {rotulo: Documentacao de fogos}
       VOZ:    {rotulo: Mensagem de voz}
-      INTEL:  {rotulo: Informe de inteligencia}
     # RELPER: o MD33-M-02 cataloga RPP (Relatorio Periodico de Pessoal) e RPI
     # (Relatorio Periodico de Inteligencia). O formulario decretado pelo EM da
     # brigada consolida pessoal e material num documento so, entao o codigo
@@ -883,8 +897,8 @@ entidades:
       RECEPCAO_IDT:      {tipo: string, nulo: true, referencia: RECEPCAO_BRUTA, descricao: "Registro estruturado sobre o qual a inferencia foi feita, quando nao houve binario. E o caso do relato do C2_B: o texto livre chega dentro do proprio JSON, e o modelo de linguagem le dali."}
       EXTRACAO_ORIGEM_IDT: {tipo: string, nulo: true, referencia: EXTRACAO, descricao: "A extracao que esta leu, quando a entrada NAO foi o binario. E o caso de toda cadeia de dois modelos: o transcritor le o audio e devolve texto; o modelo de linguagem le ESSE TEXTO e devolve campos. Sem esta coluna as duas inferencias ficam penduradas no mesmo arquivo como se fossem independentes, e se perde a informacao de que uma leu a outra. Nulo quando a entrada foi o proprio binario."}
       INFERENCIA_INDIC:  {tipo: string, nulo: false, valores: [S, N], descricao: "S ou N. S: houve inferencia (OCR, transcricao, modelo de linguagem) — o resultado e estimativa e pode errar. N: leitura direta e deterministica (celula, camada de texto) — mesma entrada, mesma saida. E a coluna que responde 'quantos eventos passaram por IA'. Substitui uma confianca numerica: o que as ferramentas devolvem nao e probabilidade calibrada nem e comparavel entre elas."}
-      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'tesseract 5.3', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
-      MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, por (Tesseract), small-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}
+      FERRAMENTA_NOME:   {tipo: string, nulo: false, descricao: "Ferramenta e versao, sempre. Ex.: 'openpyxl 3.1.5', 'pypdf 5.1.0', 'docling-serve 1.32.0', 'faster-whisper 1.1', 'ollama 0.6'. A versao importa tambem na leitura direta: bibliotecas tem defeitos, e sem ela um erro de leitura e indistinguivel de um erro no arquivo."}
+      MODELO_NOME:       {tipo: string, nulo: true, descricao: "Modelo usado, quando ha um. Ex.: qwen3.5:4b, docling 2.124.0 + rapidocr, medium-int8 (Whisper). Nulo quando INFERENCIA_INDIC = N: leitura direta nao tem modelo."}
       PROMPT_VERSAO_COD: {tipo: string, nulo: true, referencia: AJUSTE_EXTRACAO, descricao: "O AJUSTE com que a ferramenta foi chamada, sem o qual o resultado nao se reproduz: a versao do prompt do modelo de linguagem, o vocabulario inicial do transcritor, o modo de segmentacao e a resolucao do reconhecimento optico (ex.: psm4-200dpi). O conteudo de cada codigo esta em AJUSTE_EXTRACAO. Nulo na leitura direta, que nao tem ajuste."}
       SAIDA_TXT:         {tipo: string, nulo: true, descricao: "O que saiu do binario: as celulas, o texto do PDF, a transcricao, os campos que o modelo devolveu. E daqui — nunca do binario — que o de/para le o conteudo."}
       EXTRACAO_SEGUNDOS: {tipo: double, nulo: true, descricao: Tempo gasto.}
@@ -911,7 +925,7 @@ entidades:
     chave: [PROMPT_VERSAO_COD]
     campos:
       PROMPT_VERSAO_COD:   {tipo: string, nulo: false, descricao: "Codigo do ajuste, o mesmo de EXTRACAO.PROMPT_VERSAO_COD (ex.: relato-v3, vocab-v1, psm4-200dpi). O nome vem de quando so havia prompt; cobre todo ajuste."}
-      FERRAMENTA_NOME:     {tipo: string, nulo: false, descricao: "Ferramenta a que o ajuste se aplica, sem versao: ollama, faster-whisper, tesseract. A versao fica em EXTRACAO, porque a biblioteca pode mudar sem mudar o ajuste."}
+      FERRAMENTA_NOME:     {tipo: string, nulo: false, descricao: "Ferramenta a que o ajuste se aplica, sem versao: ollama, faster-whisper, docling-serve. A versao fica em EXTRACAO, porque a biblioteca pode mudar sem mudar o ajuste."}
       PARAMETROS_JSON_TXT: {tipo: string, nulo: false, descricao: "Parametros da chamada, em JSON com chaves ordenadas: as opcoes do modelo de linguagem (formato, raciocinio, temperatura), o idioma do transcritor, a resolucao e a segmentacao do OCR."}
       PROMPT_TXT:          {tipo: string, nulo: true, descricao: "O texto montado que a ferramenta recebeu. A DAG acrescenta a entrada de cada item depois dele (RELATO: ou TRANSCRICAO:). Nulo quando o ajuste e so parametro, como no OCR."}
       CONTEUDO_HASH_COD:   {tipo: string, nulo: false, descricao: "sha256 de PARAMETROS_JSON_TXT e PROMPT_TXT, no formato 'sha256:<hex>' das demais tabelas. E o que a tarefa compara antes de extrair."}
@@ -1044,7 +1058,7 @@ entidades:
       ETAPA_COD:     {tipo: string, nulo: false, descricao: "Etapa dentro da fase, em sigla do MD33-M-02 quando existe: Crtr Sgf, Z Ac, Cnsd Civ, VA, Rest Mov, DiCoVAP, Atv."}
       ELEMENTO_TIPO_COD: {tipo: string, nulo: false, descricao: "O que a linha e, em sigla: A Op, Loc, Lim, Rdv, E Prog, Obt, Incid, Amc, Atv, Avistamento."}
       ELEMENTO_NOME: {tipo: string, nulo: true, descricao: "Nome do elemento: o lugar, a medida desenhada no mapa ou, na fase 4, lugar e periodo."}
-      ELEMENTO_DCRI: {tipo: string, nulo: true, descricao: "Descricao curta: tipo do lugar, observacao do obstaculo, trecho do relato. No informe do INTEL, o paragrafo 1."}
+      ELEMENTO_DCRI: {tipo: string, nulo: true, descricao: "Descricao curta: tipo do lugar, observacao do obstaculo, trecho do relato."}
       OPERACAO_COD:  {tipo: string, nulo: false, referencia: REF_OPERACAO, descricao: "Operacao. Recorte de toda visao."}
       GEOMETRIA_WKT: {tipo: string, nulo: true, descricao: "Onde, em Well-Known Text: ponto, linha (limite, eixo, rodovia) ou area."}
       LOCAL_REFERENCIA_NOME: {tipo: string, nulo: true, descricao: "Lugar de referencia mais proximo (REF_GAZETTEER): e por ele que o oficial de inteligencia casa o evento com as RIPI do calco."}
@@ -1057,7 +1071,7 @@ entidades:
       EVENTO_QNT:    {tipo: int, nulo: true, descricao: "Eventos por tras da linha. Na fase 3, o proprio evento mais os que o corroboram."}
       FONTE_QNT:     {tipo: int, nulo: true, descricao: "Fontes (sistemas de origem) diferentes. Na fase 3 e a CORROBORACAO: quantas fontes independentes relatam a ameaca no mesmo lugar e hora (parametros em visoes.PITCIC)."}
       MODALIDADE_TXT: {tipo: string, nulo: true, descricao: "Formas em que os dados chegaram (JSON, TEXTO, IMAGEM, PLANILHA, PDF, AUDIO): o cruzamento de tipos diferentes que a tese demonstra."}
-      FONTE_CONFIABILIDADE_COD: {tipo: string, nulo: true, dominio: confiabilidade, descricao: "Confiabilidade da fonte, quando o documento a traz (informe do INTEL)."}
+      FONTE_CONFIABILIDADE_COD: {tipo: string, nulo: true, dominio: confiabilidade, descricao: "Confiabilidade da fonte, quando o registro a traz ou permite inferir (relato do C2_B)."}
       INFO_CREDIBILIDADE_COD: {tipo: string, nulo: true, dominio: credibilidade, descricao: "Credibilidade da informacao, quando o documento a traz."}
       ARMA_QNT:      {tipo: int, nulo: true, descricao: "Quantidade de armas inimigas lida do Relatorio de Bombardeio ('2/Ob/Me' -> 2)."}
       ARMA_TIPO_COD: {tipo: string, nulo: true, descricao: "Tipo da arma COMO FOI LIDO (Mrt, Can, Fgt, Ob). Nao e traduzido: o gerador escreve Ob para obus, e no manual Ob e Obras."}
@@ -1271,7 +1285,6 @@ entidades:
 #                      AREA_WKT de REF_OPERACAO (fallback para arquivo sem identificacao)
 #   constante          grava um valor fixo
 #   derivado           calculado por regra declarada no campo de destino
-#   split_escala       'B2' -> confiabilidade B e credibilidade 2 (um campo, dois destinos)
 #   sobra              tudo que o formulario nao previa -> uma coluna JSON
 #
 # SIDECAR: nenhum arquivo se descreve bem. TODA midia em landing/ — xlsx, PDF,
@@ -1553,7 +1566,7 @@ fontes:
                         busca: mais_parecido, limite: 2, contexto: om_remetente,
                         observacao: "celula escrita a mao e lida por OCR, que troca o ordinal 'o' por zero ('10 Pel', '510 GAC') e trunca ('.../51o Esqd Ca'). A estrutura das unidades e conhecida: dentro da OM remetente, vale a sigla MAIS PARECIDA com o que foi lido (distancia de edicao contra o inicio da sigla), com ate `limite` letras de diferenca; acima disso, ou empatado, fica vazio. Medido em 13/09: 145 de 145 linhas com unidade (73 com a busca da planilha) e, nas remessas gemeas, 22 de 23 iguais a planilha irma — a que falhou ficou vazia, nao errada."}
           _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
-                        observacao: "a leitura do Docling, que reconstroi a grade (INFERENCIA_INDIC = S). O mesmo PDF tem tambem a leitura do tesseract, que e texto corrido e nao entra aqui."}
+                        observacao: "a leitura do Docling, que reconstroi a grade (INFERENCIA_INDIC = S)."}
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: OCR_COORD}
         # a unidade nao passa por modelo de linguagem: a lista fechada de REF_UNIDADE resolve
@@ -1577,8 +1590,7 @@ fontes:
   # 3a partes ficam no PDF e em EXTRACAO.SAIDA_TXT, mapeaveis depois (ver
   # "PARA AUMENTAR O ESCOPO").
   #
-  # A avaliacao 'B2' NAO existe no Anexo I: saiu daqui e mora na fonte INTEL,
-  # que e o documento que a carrega de fato.
+  # A avaliacao 'B2' NAO existe no Anexo I e por isso nao e lida daqui.
   #
   # O PDF chega com sidecar .json (operacao, quem produziu, hora); as linhas
   # continuam vindo por OCR. O Anexo I e escaneado desde a origem — o S-2
@@ -1627,7 +1639,7 @@ fontes:
                         observacao: "armamento inimigo (ex. '2/Ob/Me' = 2 obuses medios, nota 6), classificacao do tiro (Ntz, Dest, Itd..., nota 7), municao (nota 8), tempo clarao-som em segundos, efeito dos fogos (nota 9)"}
           _arquivo:    {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
           _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
-                        observacao: "a grade do Docling (INFERENCIA_INDIC = S). O mesmo PDF tem tambem a leitura do tesseract, que e texto corrido e nao entra aqui."}
+                        observacao: "a grade do Docling (INFERENCIA_INDIC = S)."}
           _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
           _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: FOGOS}
           _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
@@ -1647,65 +1659,6 @@ fontes:
           da forma decametrica. A prioridade, que o manual deixa ao julgamento de quem
           recebe, nao e inferida: o efeito dos fogos segue no texto do evento para o
           estado-maior avaliar.
-
-  # --- INTEL: Informe de inteligencia. PDF assinado e digitalizado, OCR + LLM. --
-  # E o documento que carrega a avaliacao de fonte e informacao ('B2'): a letra
-  # e a confiabilidade da fonte, o algarismo a credibilidade da informacao.
-  # Chega assinado, por isso e PDF. Cabecalho fixo (Nr, grupo data-hora, origem,
-  # assunto, avaliacao) e corpo em texto livre — a segunda fonte em que o modelo
-  # de linguagem le prosa, desta vez saida de OCR, e nao do JSON do C2_B.
-  # O contraste com o C2_B e proposital: la a confiabilidade e INFERIDA do
-  # relato; aqui e LIDA do cabecalho, porque o analista ja a atribuiu.
-  INTEL:
-    modalidade: PDF
-    bronze: RECEPCAO_BRUTA
-    destino: EVENTO
-    entidades:
-      informe:
-        # Cadeia de dois modelos, como a voz: o tesseract le a pagina escaneada e
-        # devolve texto; o modelo de linguagem le esse texto e devolve os campos
-        # NOMEADOS (tarefa `informe`, prompt intel-v1). Nao ha grade a abrir: o
-        # informe e prosa, e o que o de/para le e a resposta do modelo.
-        conteudo: extracao_campos
-        modalidade: PDF
-        # O que o documento E — entra no pedido ao modelo.
-        documento: >-
-          O informe tem cabecalho (Nr, Data-hora em grupo data-hora, De, Para, Assunto, avaliacao da fonte
-          e da informacao como letra e algarismo, ex. B2) e corpo em paragrafos numerados. O paragrafo 1 diz
-          QUANDO e ONDE o fato aconteceu.
-        tipos_possiveis: [AVISTAMENTO, AVISTAMENTO_INIMIGO, BOMBARDEIO_INIMIGO, INCIDENTE]
-        sidecar:
-          operacao:  {campo: OPERACAO_COD, transformacao: referencia, referencia: REF_OPERACAO}
-          origem:    {campo: UNIDADE_REPORTANTE_COD, transformacao: referencia, referencia: REF_UNIDADE,
-                      observacao: "secao de inteligencia que expediu o informe: E-2 da brigada ou S-2 da OM"}
-        campos:
-          nr:          {campo: REGISTRO_ORIGEM_COD, transformacao: direto, observacao: "numero do informe, lido do cabecalho pelo modelo"}
-          avaliacao:   {campo: [FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD],
-                        transformacao: split_escala,
-                        observacao: "um campo de origem, dois canonicos: 'B2' -> fonte B, credibilidade 2. O OCR le 'A2' como 'AZ' e o modelo copia: a posicao fora da escala vira vazio."}
-          texto_lido:  {campo: RELATO_TXT, transformacao: direto,
-                        observacao: "corpo do informe como o OCR o leu. Vem da extracao que o modelo LEU (EXTRACAO_ORIGEM_IDT), nao da resposta do modelo, que nao repete o texto."}
-          referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
-                             referencia: REF_GAZETTEER,
-                             observacao: "o lugar citado no paragrafo 1, copiado como esta escrito ('Ponte sobre o Corrego Aroeira') -> ponto. O modelo extrai o nome; a tabela resolve. Sem lugar citado, vazio."}
-          ocorrencia:  {campo: OCORRENCIA_DATA, transformacao: ts_iso, fuso: UTC,
-                        observacao: "dia e hora do paragrafo 1. LIDA COMO UTC por um deslize do gerador: gerar_intel.py escreve a hora do corpo em UTC (e o mes em ingles, 'DEC'), enquanto o cabecalho usa -03. Se o gerador for corrigido e os dados regerados, tirar `fuso: UTC`."}
-          TIPO_COD:       {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, por: llm}
-          PRIORIDADE_COD: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm}
-          arquivo:     {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
-          _extracao:   {campo: EXTRACAO_IDT, transformacao: referencia, referencia: EXTRACAO,
-                        observacao: "a interpretacao do modelo de linguagem, que aponta para o OCR em EXTRACAO_ORIGEM_IDT. Dois elos, dois modelos."}
-          _recepcao:   {campo: RECEPCAO_IDT, transformacao: referencia, referencia: RECEPCAO_BRUTA}
-          _sistema:    {campo: SISTEMA_ORIGEM_COD, transformacao: constante, valor: INTEL}
-          _chegada:    {campo: CHEGADA_DATA, transformacao: derivado,
-                        regra: "RECEPCAO_BRUTA.RECEBIMENTO_DATA — quando o registro entrou na plataforma"}
-          _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: PDF}
-          _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
-          _funcao:     {campo: FUNCAO_COMBATE_COD, transformacao: constante, valor: INTELIGENCIA}
-          _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
-                        observacao: "resolve para N: documento avulso, nao produzido dentro de sistema de C2"}
-        extraidos_por_llm: [REGISTRO_ORIGEM_COD, FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD,
-                            GEOMETRIA_WKT, OCORRENCIA_DATA, TIPO_COD, PRIORIDADE_COD]
 
   # --- VOZ: audio de radio. A cadeia mais longa: wav -> texto -> dado. --------
   # O .wav nao se descreve. Vem com um SIDECAR .json do gravador de radio (voice
@@ -1838,7 +1791,7 @@ visoes:
     # Fontes que SEMPRE chegam com binario. E por elas que se distingue o sidecar
     # orfao do JSON legitimo do C2_A, que nunca teve arquivo — os dois ficam com
     # ARQUIVO_IDT vazio na Bronze e so a fonte os separa.
-    fontes_com_binario: [RELPER, FOGOS, INTEL, VOZ]
+    fontes_com_binario: [RELPER, FOGOS, VOZ]
     resumo: [PROBLEMA_TIPO_COD]                        # como o job resume a tabela ao terminar
     # A cadencia decretada pelo EM da brigada. Mudar aqui muda o que conta como
     # ausencia: com tres turnos, um dia sem a remessa do meio passa a ser problema.
@@ -1909,8 +1862,8 @@ visoes:
 # =============================================================================
 # PARA AUMENTAR O ESCOPO
 # =============================================================================
-# O recorte atual gera dois documentos em PDF: o Relatorio de Bombardeio
-# (FOGOS, tabular) e o informe de inteligencia (INTEL, prosa). Os demais anexos
+# O recorte atual gera dois documentos em PDF, ambos tabulares: o Relatorio de
+# Bombardeio (FOGOS) e o RELPER escaneado. Os demais anexos
 # do manual de artilharia (Folha de Trabalho do S-2, Lista de Alvos, Arquivo
 # Historico, Lista de Armas Inimigas) provam a mesma coisa do ponto de vista
 # das teses — documento tabular que exige OCR — e por isso nao sao gerados. O

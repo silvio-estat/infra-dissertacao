@@ -3,9 +3,7 @@ DAG canonico_silver — aplica o de/para do modelo canonico e escreve a Silver.
 
     conferir_pendentes ──► c2a_posicao ──► c2a_mcc ──► c2b_relato ──► c2b_incidente
                        │                                                    │
-                       │   intel_informe ◄── voz_transcricao ◄── relper_digitalizada ◄── relper_situacao
-                       │        │
-                       │        └──► fogos_bombardeio
+                       │   fogos_bombardeio ◄── voz_transcricao ◄── relper_digitalizada ◄── relper_situacao
                        └─► nada_a_fazer
 
 Cada tarefa processa UMA receita do YAML (um bloco dentro de `fontes:`). Elas
@@ -59,8 +57,8 @@ PENDENTES_SQL = """
                     SELECT 1 FROM iceberg.bronze.extracao i
                     WHERE i.arquivo_idt = r.arquivo_idt AND i.ferramenta_nome LIKE 'docling%'
                       AND i.status_cod = 'OK'))
-              -- voz e informe so viram evento DEPOIS que o modelo de linguagem leu
-              OR (r.sistema_origem_cod IN ('VOZ', 'INTEL') AND EXISTS (
+              -- voz so vira evento DEPOIS que o modelo de linguagem leu a transcricao
+              OR (r.sistema_origem_cod = 'VOZ' AND EXISTS (
                     SELECT 1 FROM iceberg.bronze.extracao i
                     WHERE i.arquivo_idt = r.arquivo_idt AND i.extracao_origem_idt IS NOT NULL
                       AND i.status_cod = 'OK'))))
@@ -225,9 +223,9 @@ with DAG(
         }),
     ])
 
-    # VOZ e INTEL chegam por uma cadeia de DOIS modelos: um le o binario (whisper,
-    # tesseract) e devolve texto; o modelo de linguagem le esse texto e devolve os
-    # campos. As tres tabelas da Bronze entram na linhagem.
+    # A VOZ chega por uma cadeia de DOIS modelos: o whisper le o .wav e devolve
+    # texto; o modelo de linguagem le esse texto e devolve os campos. As tres
+    # tabelas da Bronze entram na linhagem.
     bronze_da_cadeia = ["bronze.extracao", "bronze.arquivo", "bronze.recepcao_bruta"]
     voz = transformar("voz_transcricao", "VOZ", "transcricao", [
         linhagem(le=bronze_da_cadeia, escreve=["silver.evento"], colunas={
@@ -241,22 +239,6 @@ with DAG(
             "arquivo_idt":            [("bronze.arquivo", "arquivo_idt")],
         }),
     ])
-    intel = transformar("intel_informe", "INTEL", "informe", [
-        linhagem(le=bronze_da_cadeia, escreve=["silver.evento"], colunas={
-            "registro_origem_cod":      [("bronze.extracao", "saida_txt")],
-            "tipo_cod":                 [("bronze.extracao", "saida_txt")],
-            "prioridade_cod":           [("bronze.extracao", "saida_txt")],
-            "ocorrencia_data":          [("bronze.extracao", "saida_txt")],
-            "geometria_wkt":            [("bronze.extracao", "saida_txt")],
-            "fonte_confiabilidade_cod": [("bronze.extracao", "saida_txt")],
-            "info_credibilidade_cod":   [("bronze.extracao", "saida_txt")],
-            "relato_txt":               [("bronze.extracao", "saida_txt")],
-            "unidade_reportante_cod":   [("bronze.recepcao_bruta", "conteudo_json_txt")],
-            "extracao_idt":             [("bronze.extracao", "extracao_idt")],
-            "arquivo_idt":              [("bronze.arquivo", "arquivo_idt")],
-        }),
-    ])
-
     # FOGOS: a 1a parte do Relatorio de Bombardeio, um evento por informe de observador,
     # na grade que o Docling reconstruiu. O lugar sai da coluna F, convertida da forma
     # decametrica e ancorada na area da operacao — por isso REF_OPERACAO entra na linhagem.
@@ -273,4 +255,4 @@ with DAG(
     ])
 
     conferir >> [posicao, nada_a_fazer]
-    posicao >> mcc >> relato >> incidente >> relper >> relper_pdf >> voz >> intel >> fogos
+    posicao >> mcc >> relato >> incidente >> relper >> relper_pdf >> voz >> fogos

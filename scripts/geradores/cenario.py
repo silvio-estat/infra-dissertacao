@@ -5,8 +5,8 @@ cenario.py — a lista de FATOS que as fontes vao relatar, cada uma do seu jeito
 Um fato e algo que aconteceu no terreno num instante e num lugar: uma viatura
 da forca oponente vista perto de uma ponte, uma cratera na via, um bombardeio
 sobre uma posicao. O cenario sorteia os fatos e decide QUAIS fontes o relatam:
-o mesmo avistamento pode virar uma mensagem de radio (VOZ), um relato no
-C2_B e um informe de inteligencia (INTEL). E isso que da a consulta de fusao
+o mesmo avistamento pode virar uma mensagem de radio (VOZ) e um relato no
+C2_B. E isso que da a consulta de fusao
 algo para juntar — e o que o modelo canonico existe para permitir.
 
 Os fatos ficam em dados_sinteticos/verdade/fatos.csv. Servem para inspecao
@@ -22,11 +22,11 @@ from comum import Contexto, iso, jitter, local
 
 # tipo -> (funcao de combate, peso no sorteio, fontes candidatas [a primeira e obrigatoria])
 TIPOS = {
-    "AVISTAMENTO_INIMIGO": ("INTELIGENCIA", 5, ["VOZ", "C2B_RELATO", "INTEL"]),
+    "AVISTAMENTO_INIMIGO": ("INTELIGENCIA", 5, ["VOZ", "C2B_RELATO"]),
     "AVISTAMENTO":         ("INTELIGENCIA", 3, ["C2B_RELATO", "VOZ"]),
     "INCIDENTE":           ("PROTECAO",     5, ["C2B_INCIDENTE", "C2B_RELATO", "VOZ"]),
     "OBSTACULO":           ("PROTECAO",     3, ["C2A_MCC", "C2B_INCIDENTE", "VOZ"]),
-    "BOMBARDEIO_INIMIGO":  ("FOGOS",        3, ["FOGOS", "VOZ", "INTEL"]),
+    "BOMBARDEIO_INIMIGO":  ("FOGOS",        3, ["FOGOS", "VOZ"]),
     "MISSAO_TIRO":         ("FOGOS",        2, ["VOZ"]),
 }
 
