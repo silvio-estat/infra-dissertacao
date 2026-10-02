@@ -244,6 +244,17 @@ metadados:
     tesseract -> modelo de linguagem, com a tarefa de OCR por tesseract, cuja
     leitura so a INTEL usava (RELPER escaneado e FOGOS seguem pelo Docling).
     O corpus e regerado inteiro, porque os geradores compartilham a semente.
+  nota_2026_10_02: >-
+    Sai a transformacao contexto_operacao (atribuir a operacao pela hora e pelo
+    ponto de captura, para arquivo sem sidecar). Estava declarada desde a nota
+    de 09/09, mas nunca foi implementada nem exercitada: o texto prometia o que
+    o codigo nao fazia. Criterio: o modelo cobre so o que sustenta as duas
+    teses, heterogeneidade e linhagem (escopo minimo). E o que acontece de fato
+    com o binario sem sidecar e melhor do que o palpite: ele entra em ARQUIVO,
+    com a operacao carimbada pela pasta, nao gera EVENTO e e acusado pelo teste
+    arquivo_tem_sidecar e pelo tipo SEM_SIDECAR de PROBLEMA_DADOS. Denunciar a
+    falta, em vez de adivinhar a operacao, preserva a linhagem. A AREA_WKT de
+    REF_OPERACAO fica: ancora a conversao da coordenada decametrica.
 
 
 # =============================================================================
@@ -488,13 +499,12 @@ dominios:
 # (celulas da planilha, colunas do PDF) continua sendo lido do binario; o
 # sidecar carrega o que e ABOUT o arquivo (operacao, unidade remetente, data).
 # O OPERACAO_COD de ARQUIVO vem da pasta (landing/<operacao>/...), carimbado na
-# ingestao; serve de conferencia contra o do sidecar. Fallback, quase nunca
-# usado: arquivo sem sidecar -> hora + geo de captura dentro da janela e da
-# AREA_WKT de REF_OPERACAO (transformacao contexto_operacao).
+# ingestao; serve de conferencia contra o do sidecar. Arquivo sem sidecar nao
+# tem a operacao adivinhada: entra em ARQUIVO, nao gera EVENTO e e acusado em
+# PROBLEMA_DADOS (SEM_SIDECAR) — ver nota_2026_10_02.
 #
-# O estudo de caso e de UMA operacao: a seed operacoes.csv tem uma linha. O
-# aparato (fallback por contexto) esta modelado para
-# que uma segunda operacao entre sem tocar em codigo, mas nao e exercitado aqui.
+# O estudo de caso e de UMA operacao: a seed operacoes.csv tem uma linha. Uma
+# segunda operacao entra como mais uma linha da seed, sem tocar em codigo.
 #
 # A regra que separa EVENTO de SITUACAO_UNIDADE, e que vale para qualquer fonte
 # futura: esta em EVENTO o que TODA fonte tem (quem, quando, onde, por onde
@@ -945,10 +955,8 @@ entidades:
       aparece no sidecar de todo arquivo e no nome da pasta em landing/. Nao ha
       dicionario a consultar: so formatar.
 
-      A janela (INICIO_DATA / FIM_DATA) e a AREA_WKT servem de criterio de
-      atribuicao por contexto: um arquivo que chegou pelado, sem se identificar,
-      e atribuido a operacao cuja janela e area contem a hora e o ponto de
-      captura.
+      A AREA_WKT ancora a conversao da coordenada decametrica, que so tem
+      sentido dentro da area de operacoes.
     abreviatura: ROPE
     camada: silver
     chave: [OPERACAO_COD]
@@ -959,7 +967,7 @@ entidades:
       OPERACAO_TIPO_COD:       {tipo: string, nulo: false, dominio: tipo_operacao, descricao: Exercicio de adestramento ou operacao real.}
       INICIO_DATA:             {tipo: timestamp, nulo: false, descricao: Inicio da janela da operacao.}
       FIM_DATA:                {tipo: timestamp, nulo: true, descricao: "Fim da janela. Vazio enquanto a operacao esta em curso."}
-      AREA_WKT:                {tipo: string, nulo: true, descricao: "Area de operacoes, em WKT. Criterio de atribuicao por contexto para arquivo sem identificacao propria."}
+      AREA_WKT:                {tipo: string, nulo: true, descricao: "Area de operacoes, em WKT. Ancora a conversao da coordenada decametrica."}
       UNIDADE_RESP_COD:        {tipo: string, nulo: true, referencia: REF_UNIDADE, descricao: "Unidade que comanda a operacao. No estudo, a brigada."}
 
   # ---------------------------------------------------------------------------
@@ -1281,8 +1289,6 @@ entidades:
 #   abreviatura        abreviatura digitada -> termo, consultando REF_ABREVIATURA
 #   dominio            valor da origem -> valor canonico, pelos sinonimos
 #   referencia         valor da origem -> codigo de uma tabela de consulta
-#   contexto_operacao  hora e ponto de captura -> OPERACAO_COD, pela janela e
-#                      AREA_WKT de REF_OPERACAO (fallback para arquivo sem identificacao)
 #   constante          grava um valor fixo
 #   derivado           calculado por regra declarada no campo de destino
 #   sobra              tudo que o formulario nao previa -> uma coluna JSON
@@ -1887,7 +1893,7 @@ visoes:
 #
 # Fonte com arquivo (qualquer modalidade): alem do bloco em `fontes`, declarar o
 # `sidecar:` — o JSON de proveniencia que acompanha o arquivo. Vale para xlsx,
-# PDF, imagem e audio: um mecanismo so. Sem sidecar, a operacao e a unidade so
-# podem ser atribuidas por contexto (hora + area), com perda de certeza.
+# PDF, imagem e audio: um mecanismo so. Sem sidecar, o arquivo fica na Bronze
+# sem gerar evento, e a falta aparece em PROBLEMA_DADOS (SEM_SIDECAR).
 # REF_OPERACAO nao muda: uma operacao a mais e uma linha na seed operacoes.csv.
 # =============================================================================

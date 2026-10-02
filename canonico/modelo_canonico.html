@@ -537,7 +537,7 @@ flowchart TD
   LAND -->|"o que nao pode ser catalogado:<br/>JSON truncado, fora da convencao de pasta"| REJ
   LAND -.->|"conta e confere: cada objeto tem destino?"| INGE
 
-  MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio · gazetteer<br/>abreviatura · split_escala · sobra · contexto_operacao"}}
+  MAP{{"DE / PARA · modelo_canonico.yaml<br/>direto · json · celula · dominio · gazetteer<br/>abreviatura · sobra"}}
 
   RCPB -->|"quem, quando, onde, a OPERACAO<br/>+ ponteiro de linhagem (RECEPCAO_IDT)"| MAP
   ARQ -->|"ponteiro (ARQUIVO_IDT);<br/>geo do EXIF, na foto"| MAP
@@ -871,9 +871,8 @@ erDiagram
         </tbody>
       </table>
     </div>
-    <p>A janela e a área servem de rede de segurança: um arquivo que chegou sem se identificar é
-      atribuído à operação cuja <code>INICIO/FIM</code> e <code>AREA_WKT</code> contêm a hora e o
-      ponto de captura (a transformação <code>contexto_operacao</code>).</p>
+    <p>Um arquivo que chega sem se identificar não tem a operação adivinhada: entra na Bronze,
+      não gera evento e é acusado em <code>PROBLEMA_DADOS</code> (<code>SEM_SIDECAR</code>).</p>
 
     <h3>O sidecar: uma forma só de dar contexto a qualquer arquivo</h3>
     <p>Um <code>.xlsx</code>, um PDF, uma foto, um <code>.wav</code> — nenhum se descreve bem: quem
@@ -912,7 +911,7 @@ landing/perseu_2024/relper/relper_bi511_matutino.json     ← o sidecar    → R
           <tr><td><span class="mod">JSON</span> C2_A</td><td>campos nativos <code>operacao</code> + <code>ano</code> — a chave natural do sistema, formatada por ele</td></tr>
           <tr><td><span class="mod">JSON</span> C2_B relato</td><td>campo nativo no payload</td></tr>
           <tr><td>C2_B incidente · RELPER · FOGOS · VOZ</td><td><strong>sidecar</strong> — o <code>.json</code> ao lado do arquivo</td></tr>
-          <tr><td>arquivo sem sidecar (fallback)</td><td>hora + geo de captura dentro da janela e da área de <code>REF_OPERACAO</code></td></tr>
+          <tr><td>arquivo sem sidecar</td><td>só a pasta, em <code>ARQUIVO</code>; não gera evento e é acusado em <code>PROBLEMA_DADOS</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -1221,10 +1220,8 @@ ponteiros de linhagem:
       <div><dt>abreviatura</dt><dd>Abreviatura digitada vira termo, consultando <code>REF_ABREVIATURA</code>.</dd></div>
       <div><dt>dominio</dt><dd>Valor da origem vira valor canônico, pelos sinônimos da lista fechada.</dd></div>
       <div><dt>referencia</dt><dd>Valor da origem vira o código de uma tabela de consulta.</dd></div>
-      <div><dt>contexto_operacao</dt><dd>Hora e ponto de captura viram <code>OPERACAO_COD</code>, pela janela e pela área de <code>REF_OPERACAO</code>. É o recurso para o arquivo que chegou sem se identificar.</dd></div>
       <div><dt>constante</dt><dd>Grava um valor fixo, igual para toda linha daquela fonte.</dd></div>
       <div><dt>derivado</dt><dd>Calculado por uma regra declarada no próprio campo de destino.</dd></div>
-      <div><dt>split_escala</dt><dd>Um campo de origem, dois de destino: <span class="kw">B2</span> vira confiabilidade <span class="kw">B</span> e credibilidade <span class="kw">2</span>.</dd></div>
       <div><dt>sobra</dt><dd>Tudo que o formulário não previa vai para uma coluna JSON, com o nome que a unidade deu.</dd></div>
     </dl>
   </section>
