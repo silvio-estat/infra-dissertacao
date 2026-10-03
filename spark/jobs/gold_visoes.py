@@ -28,7 +28,7 @@ import math
 import re
 import time
 
-from canonico_para_silver import CATALOGO, _TIPOS, achar_modelo, carregar_modelo
+from canonico_para_silver import _MESES_GDH, CATALOGO, _TIPOS, achar_modelo, carregar_modelo
 
 SILVER = f"{CATALOGO}.silver"
 GOLD = f"{CATALOGO}.gold"
@@ -99,6 +99,32 @@ _DESCRICAO = r"substring(regexp_replace(RELATO_TXT, '\\s+', ' '), 1, 300)"
 
 # Armamento inimigo na primeira celula do relato do FOGOS: '2/Ob/Me' (quantidade/tipo/calibre).
 _ARMA = r"regexp_extract(RELATO_TXT, '^\\s*(\\d+)\\s*/\\s*([A-Za-z]+)\\s*/\\s*([A-Za-z]+)', {})"
+
+# Mes em portugues, como no grupo data-hora: o mesmo calendario que le o FOGOS
+# (a lista tambem tem os nomes em ingles; ficam os em portugues, que vem antes).
+_MES = {i: m for m, i in reversed(list(_MESES_GDH.items()))}
+
+
+def _fatos(e, siglas, corte=60):
+    """Os fatos de uma linha agregada, em ordem de data, para o EM ler sem consulta.
+
+    Cada fato vira '30 NOV · VOZ · Bomb Ini: texto da fonte', e os fatos se juntam
+    com '; '. O texto e o que a FONTE escreveu, so cortado — nada e resumido nem
+    abreviado aqui: o FOGOS da a ultima celula (o efeito dos fogos), a medida do
+    C2_A da o nome, e as demais dao o relato. `e` e o apelido da tabela de eventos.
+    """
+    mes = "CASE month({e}.OCORRENCIA_DATA) " + " ".join(
+        f"WHEN {i} THEN '{m}'" for i, m in sorted(_MES.items())) + " END"
+    dia = f"concat(lpad(CAST(day({e}.OCORRENCIA_DATA) AS STRING), 2, '0'), ' ', {mes.format(e=e)})"
+    texto = (f"regexp_replace(CASE WHEN {e}.SISTEMA_ORIGEM_COD = 'FOGOS' "
+             rf"THEN regexp_extract({e}.RELATO_TXT, '([^|]*)$', 1) "
+             f"ELSE coalesce({e}.MEDIDA_NOME, {e}.RELATO_TXT, {e}.OBSERVACAO) END, '\\\\s+', ' ')")
+    curto = (f"CASE WHEN length(trim({texto})) > {corte} "
+             f"THEN concat(substring(trim({texto}), 1, {corte}), '…') ELSE trim({texto}) END")
+    item = (f"concat_ws(': ', concat_ws(' · ', {dia}, {e}.SISTEMA_ORIGEM_COD, {_sigla(f'{e}.TIPO_COD', siglas)}), "
+            f"nullif({curto}, ''))")
+    return (f"nullif(array_join(transform(array_sort(collect_list(CASE WHEN {e}.EVENTO_IDT IS NOT NULL THEN "
+            f"named_struct('d', {e}.OCORRENCIA_DATA, 'i', {item}) END)), s -> s.i), '; '), '')")
 
 
 # =============================================================================
@@ -174,7 +200,8 @@ def montar_pitcic(modelo):
             SELECT l.LOCAL_NOME, l.GEOMETRIA_WKT, max(op.OPERACAO_COD) AS OP,
                    count(e.EVENTO_IDT) AS N, count(DISTINCT e.SISTEMA_ORIGEM_COD) AS NF,
                    collect_set(e.MODALIDADE_ORIGEM_COD) AS MODS, collect_set(e.TIPO_COD) AS TIPOS,
-                   min(e.OCORRENCIA_DATA) AS INI, max(e.OCORRENCIA_DATA) AS FIM, collect_list(e.EVENTO_IDT) AS IDS
+                   min(e.OCORRENCIA_DATA) AS INI, max(e.OCORRENCIA_DATA) AS FIM, collect_list(e.EVENTO_IDT) AS IDS,
+                   {_fatos('e', sg)} AS FATOS
             FROM lugar l CROSS JOIN op
             LEFT JOIN (SELECT l2.LOCAL_NOME AS LN, e2.*
                        FROM lugar l2 CROSS JOIN ev e2
@@ -185,6 +212,7 @@ def montar_pitcic(modelo):
             WHERE l.LOCAL_TIPO_COD = 'LOCALIDADE'
             GROUP BY l.LOCAL_NOME, l.GEOMETRIA_WKT""",
                FASE_NRO="2", ETAPA_COD=c("CONSIDERACOES_CIVIS"), ELEMENTO_TIPO_COD=c("LOCALIDADE"), ELEMENTO_NOME="LOCAL_NOME",
+               ELEMENTO_DCRI="FATOS",
                OPERACAO_COD="OP", GEOMETRIA_WKT="GEOMETRIA_WKT", INICIO_DATA="INI", FIM_DATA="FIM",
                TIPO_TXT=_lista("TIPOS", sg), EVENTO_QNT="N", FONTE_QNT="NF", MODALIDADE_TXT=_lista("MODS"),
                EVENTO_IDT="IDS"),
@@ -243,13 +271,13 @@ def montar_pitcic(modelo):
                    count(*) AS N, count(DISTINCT SISTEMA_ORIGEM_COD) AS NF,
                    collect_set(MODALIDADE_ORIGEM_COD) AS MODS, collect_set(TIPO_COD) AS TIPOS,
                    min(OCORRENCIA_DATA) AS INI, max(OCORRENCIA_DATA) AS FIM, collect_list(EVENTO_IDT) AS IDS,
-                   max(EXTRACAO_MODELO_NOME) AS IA
+                   max(EXTRACAO_MODELO_NOME) AS IA, {_fatos('x', sg)} AS FATOS
             FROM (SELECT a.*, p.LOCAL_NOME, p.LOCAL_TIPO_COD, l.GEOMETRIA_WKT AS WKT,
                          date_format(a.OCORRENCIA_DATA, 'dd/MM/yyyy') AS DIA, {periodo} AS PERIODO
                   FROM ameaca a JOIN perto p ON p.EVENTO_IDT = a.EVENTO_IDT
-                  JOIN lugar l ON l.LOCAL_NOME = p.LOCAL_NOME)
+                  JOIN lugar l ON l.LOCAL_NOME = p.LOCAL_NOME) x
             GROUP BY LOCAL_NOME, LOCAL_TIPO_COD, DIA, PERIODO""",
-               FASE_NRO="4", ETAPA_COD=c("ATIVIDADE"), ELEMENTO_TIPO_COD=c("ATIVIDADE"),
+               FASE_NRO="4", ETAPA_COD=c("ATIVIDADE"), ELEMENTO_TIPO_COD=c("ATIVIDADE"), ELEMENTO_DCRI="FATOS",
                ELEMENTO_NOME="concat(LOCAL_NOME, ' | ', DIA, ' ', PERIODO)", OPERACAO_COD="OP", GEOMETRIA_WKT="WKT",
                LOCAL_REFERENCIA_NOME="LOCAL_NOME", LOCAL_REFERENCIA_TIPO_COD=_sigla("LOCAL_TIPO_COD", sg), INICIO_DATA="INI",
                FIM_DATA="FIM", TIPO_TXT=_lista("TIPOS", sg), EVENTO_QNT="N", FONTE_QNT="NF",
