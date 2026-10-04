@@ -71,3 +71,5 @@ infra/openlineage/openlineage.yml
 
 # Dados sinteticos gerados (reproduziveis por scripts/geradores/gerar_tudo.py)
 dados_sinteticos/
+
+ensino/
