@@ -962,7 +962,10 @@ def _origem_dos_campos_extraidos(spark, fonte):
     do modelo de linguagem.
 
     Trocar o pedido ao modelo gera uma interpretacao NOVA sobre a mesma leitura,
-    e a antiga continua na Bronze. Vale a mais recente de cada leitura (ORDEM = 1).
+    e a antiga continua na Bronze. Trocar o transcritor gera uma transcricao nova,
+    com a sua propria interpretacao. Nos dois casos vale a interpretacao mais
+    recente de cada ARQUIVO (ORDEM = 1): a contagem por transcricao deixaria duas
+    por audio, a da transcricao velha e a da nova.
     """
     spark.sql(f"""
         SELECT a.ARQUIVO_IDT, r.RECEPCAO_IDT, i.EXTRACAO_IDT, r.RECEBIMENTO_DATA,
@@ -976,7 +979,7 @@ def _origem_dos_campos_extraidos(spark, fonte):
                nullif(concat_ws(' <- ',
                    CASE WHEN i.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', i.FERRAMENTA_NOME, i.MODELO_NOME) END,
                    CASE WHEN o.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', o.FERRAMENTA_NOME, o.MODELO_NOME) END), '') AS EXTRACAO_MODELO
-        FROM (SELECT *, row_number() OVER (PARTITION BY EXTRACAO_ORIGEM_IDT
+        FROM (SELECT *, row_number() OVER (PARTITION BY ARQUIVO_IDT
                                            ORDER BY EXECUCAO_DATA DESC) AS ORDEM
               FROM {CATALOGO}.bronze.EXTRACAO
               WHERE EXTRACAO_ORIGEM_IDT IS NOT NULL AND STATUS_COD = 'OK') i
@@ -1025,8 +1028,13 @@ def _origem_do_payload(spark, fonte, tipo):
         -- Os campos dela entram no mesmo mapa que os do registro: para o de/para
         -- nao ha diferenca entre um campo que veio escrito e um que foi inferido
         -- — a diferenca fica registrada aqui, em EXTRACAO, que e onde ela importa.
-        LEFT JOIN {CATALOGO}.bronze.EXTRACAO i
-               ON i.RECEPCAO_IDT = r.RECEPCAO_IDT AND i.STATUS_COD = 'OK'
+        -- Trocar o pedido gera uma interpretacao NOVA do mesmo registro, e a antiga
+        -- continua na Bronze: vale a mais recente (ORDEM = 1), como na voz.
+        LEFT JOIN (SELECT *, row_number() OVER (PARTITION BY RECEPCAO_IDT
+                                                ORDER BY EXECUCAO_DATA DESC) AS ORDEM
+                   FROM {CATALOGO}.bronze.EXTRACAO
+                   WHERE RECEPCAO_IDT IS NOT NULL AND STATUS_COD = 'OK') i
+               ON i.RECEPCAO_IDT = r.RECEPCAO_IDT AND i.ORDEM = 1
         WHERE r.SISTEMA_ORIGEM_COD = '{fonte}'
           AND r.ORIGEM_URI_TXT LIKE '%/{tipo}/%'
     """).createOrReplaceTempView("origem_bruta")
@@ -1071,19 +1079,23 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
                      f"AND r2.CONTEUDO_JSON_TXT = r.CONTEUDO_JSON_TXT)")
 
     # So entra extracao que E grade (tem `abas`): uma leitura em texto corrido do
-    # mesmo arquivo, se um dia houver, nao tem o que abrir.
+    # mesmo arquivo, se um dia houver, nao tem o que abrir. Trocar a versao da
+    # ferramenta (o Docling) gera uma leitura NOVA do mesmo arquivo, e a antiga
+    # continua na Bronze: vale a mais recente (ORDEM = 1).
     grade = spark.sql(f"""
         SELECT e.EXTRACAO_IDT, e.SAIDA_TXT, a.ARQUIVO_IDT,
                r.RECEPCAO_IDT, r.CONTEUDO_JSON_TXT AS SIDECAR_JSON, r.RECEBIMENTO_DATA,
                a.CAPTURA_GEOMETRIA_WKT, a.CAPTURA_DATA,
                CASE WHEN e.INFERENCIA_INDIC = 'S' THEN concat_ws(' ', e.FERRAMENTA_NOME, e.MODELO_NOME) END AS EXTRACAO_MODELO
-        FROM {CATALOGO}.bronze.EXTRACAO e
+        FROM (SELECT *, row_number() OVER (PARTITION BY ARQUIVO_IDT
+                                           ORDER BY EXECUCAO_DATA DESC) AS ORDEM
+              FROM {CATALOGO}.bronze.EXTRACAO
+              WHERE STATUS_COD = 'OK' AND get_json_object(SAIDA_TXT, '$.abas') IS NOT NULL) e
         JOIN {CATALOGO}.bronze.ARQUIVO a ON a.ARQUIVO_IDT = e.ARQUIVO_IDT
         JOIN {CATALOGO}.bronze.RECEPCAO_BRUTA r ON r.ARQUIVO_IDT = a.ARQUIVO_IDT
-        WHERE a.MODALIDADE_COD = '{bloco["modalidade"]}'
+        WHERE e.ORDEM = 1
+          AND a.MODALIDADE_COD = '{bloco["modalidade"]}'
           AND r.SISTEMA_ORIGEM_COD = '{fonte}'
-          AND e.STATUS_COD = 'OK'
-          AND get_json_object(e.SAIDA_TXT, '$.abas') IS NOT NULL
           {sem_gemeo}
     """)
     if grade.rdd.isEmpty():

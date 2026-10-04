@@ -124,15 +124,20 @@ def consultar(*consultas: str) -> list:
     return []
 
 
-def pendentes(modalidade: str) -> list:
+def pendentes(modalidade: str, ajuste: str | None = None) -> list:
     """[(arquivo_idt, uri)] dos binarios desta modalidade que ainda nao foram lidos.
 
+    Com `ajuste` (a versao da ferramenta de IA), pendente e o que ainda nao foi lido
+    COM A VERSAO ATUAL: trocar a versao deixa todos pendentes de novo, a leitura
+    antiga continua na Bronze, e a Silver usa a mais recente. Sem `ajuste` (a
+    planilha, leitura direta), basta ter sido lido uma vez.
     Se EXTRACAO nao existe, nada foi lido e tudo esta pendente.
     """
+    da_versao = f"AND e.prompt_versao_cod = '{ajuste}'" if ajuste else ""
     com_extracao = f"""
         SELECT a.arquivo_idt, a.arquivo_uri_txt
         FROM iceberg.bronze.arquivo a
-        LEFT JOIN iceberg.bronze.extracao e ON e.arquivo_idt = a.arquivo_idt
+        LEFT JOIN iceberg.bronze.extracao e ON e.arquivo_idt = a.arquivo_idt {da_versao}
         WHERE a.modalidade_cod = '{modalidade}' AND e.arquivo_idt IS NULL
         ORDER BY a.arquivo_uri_txt
     """
@@ -175,7 +180,7 @@ def executar(modalidade, ler, ferramenta, inferencia, modelo=None, ajuste=None,
     conta padrao de pendentes quando a pergunta e outra (ver `extrair_tabelas`).
     """
     if fila is None:
-        fila = pendentes(modalidade)
+        fila = pendentes(modalidade, ajuste)
     if fila and ajuste:
         registrar_ajuste(ajuste, ferramenta.split()[0], parametros, prompt)
     linhas = []
@@ -340,11 +345,16 @@ def transcricoes_sem_interpretacao() -> list:
     enquanto nao existir outra extracao que a tenha lido COM O PEDIDO ATUAL.
     Trocar a versao do pedido deixa todas pendentes de novo; a interpretacao
     antiga continua na Bronze, e a Silver usa a mais recente.
+    So conta a transcricao MAIS RECENTE de cada audio: se o transcritor mudou de
+    versao e releu, interpretar a transcricao velha seria trabalho jogado fora.
     """
     sql = f"""
         SELECT t.extracao_idt, t.arquivo_idt, t.saida_txt
-        FROM iceberg.bronze.extracao t
-        JOIN iceberg.bronze.arquivo a ON a.arquivo_idt = t.arquivo_idt
+        FROM (SELECT *, row_number() OVER (PARTITION BY arquivo_idt
+                                           ORDER BY execucao_data DESC) AS ordem
+              FROM iceberg.bronze.extracao
+              WHERE extracao_origem_idt IS NULL AND status_cod = 'OK') t
+        JOIN iceberg.bronze.arquivo a ON a.arquivo_idt = t.arquivo_idt AND t.ordem = 1
         LEFT JOIN iceberg.bronze.extracao filha ON filha.extracao_origem_idt = t.extracao_idt
                                                AND filha.prompt_versao_cod = '{LLM_PROMPT_VERSAO}'
         WHERE a.modalidade_cod = 'AUDIO' AND t.status_cod = 'OK'
@@ -426,11 +436,16 @@ def relatos_sem_interpretacao() -> list:
 
     Diferente da voz: aqui NAO ha binario nem transcricao. O texto chega dentro
     do proprio registro JSON, e o elo da inferencia e o RECEPCAO_IDT.
+
+    Como na voz, pendente e o relato que ainda nao foi lido COM O PEDIDO ATUAL.
+    Trocar a versao do pedido deixa todos pendentes de novo; a interpretacao
+    antiga continua na Bronze, e a Silver usa a mais recente.
     """
-    com_extracao = """
+    com_extracao = f"""
         SELECT r.recepcao_idt, json_extract_scalar(r.conteudo_json_txt, '$.situacao')
         FROM iceberg.bronze.recepcao_bruta r
         LEFT JOIN iceberg.bronze.extracao i ON i.recepcao_idt = r.recepcao_idt
+                                           AND i.prompt_versao_cod = '{LLM_PROMPT_VERSAO_RELATO}'
         WHERE r.sistema_origem_cod = 'C2_B' AND r.origem_uri_txt LIKE '%/relato/%'
           AND i.extracao_idt IS NULL
         ORDER BY r.recepcao_idt
@@ -540,7 +555,9 @@ def extrair_relatos():
 
 
 def conferir_pendentes() -> str:
-    quantos = {m: len(pendentes(m)) for m in ("PLANILHA", "PDF", "AUDIO")}
+    quantos = {"PLANILHA": len(pendentes("PLANILHA")),
+               "PDF": len(pendentes("PDF", DOCLING_AJUSTE)),
+               "AUDIO": len(pendentes("AUDIO", VOZ_VOCABULARIO))}
     quantos["transcricoes a interpretar"] = len(transcricoes_sem_interpretacao())
     quantos["relatos a interpretar"] = len(relatos_sem_interpretacao())
     print("pendente:", quantos)
@@ -561,7 +578,7 @@ def extrair_tabelas():
     """
     import urllib.request
 
-    fila = pendentes("PDF")
+    fila = pendentes("PDF", DOCLING_AJUSTE)
     if not fila:
         print("nada a extrair em PDF de tabela")
         return
