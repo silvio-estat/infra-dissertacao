@@ -13,6 +13,8 @@ build/
 
 # Ambiente
 .env
+# ajuste por maquina (copia de docker-compose.override.example.yml)
+docker-compose.override.yml
 *.env.local
 
 # Docker volumes (dados locais)

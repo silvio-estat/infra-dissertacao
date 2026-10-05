@@ -63,9 +63,24 @@ ok "python $(python3 -V | awk '{print $2}')"
 
 # O Ollama roda NA MAQUINA, fora do Docker: no Docker Desktop o conteiner nao
 # enxerga a placa de video. As DAGs falam com ele por host.docker.internal:11434.
-command -v ollama >/dev/null \
-    || erro "Ollama nao encontrado. Instale de https://ollama.com e rode este script de novo."
-ok "ollama $(ollama --version 2>/dev/null | awk '{print $NF}')"
+# Excecao: maquina sem GPU, com o bloco A do docker-compose.override.yml — ai
+# ele roda em conteiner (dlh_ollama). Ver README, "Maquina diferente".
+OLLAMA_CONTEINER=0
+grep -q '^  ollama:' docker-compose.override.yml 2>/dev/null && OLLAMA_CONTEINER=1
+if [ "$OLLAMA_CONTEINER" = 1 ]; then
+    ok "ollama em conteiner (docker-compose.override.yml)"
+    grep -q '^OLLAMA_URL=http://ollama:11434' .env 2>/dev/null \
+        || echo "    aviso: com o Ollama em conteiner, o .env precisa de OLLAMA_URL=http://ollama:11434"
+else
+    command -v ollama >/dev/null \
+        || erro "Ollama nao encontrado. Instale de https://ollama.com (ou, sem GPU, use o bloco A de docker-compose.override.example.yml) e rode este script de novo."
+    ok "ollama $(ollama --version 2>/dev/null | awk '{print $NF}')"
+fi
+
+# Mesmo comando nos dois casos: na maquina ou dentro do conteiner.
+ollama_cmd() {
+    if [ "$OLLAMA_CONTEINER" = 1 ]; then docker exec dlh_ollama ollama "$@"; else ollama "$@"; fi
+}
 
 # -----------------------------------------------------------------------------
 passo "Arquivos de configuracao"
@@ -95,11 +110,14 @@ passo "Modelo de linguagem (Ollama)"
 MODELO_LLM=$(grep -oP 'LLM_MODELO\s*=\s*"\K[^"]+' airflow/dags/2_bronze_extracao.py | head -1)
 [ -n "$MODELO_LLM" ] || erro "nao consegui ler LLM_MODELO de airflow/dags/2_bronze_extracao.py"
 
-if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODELO_LLM"; then
+# Em conteiner, o Ollama precisa estar de pe para baixar o modelo.
+[ "$OLLAMA_CONTEINER" = 1 ] && [ "$SO_CONFERIR" = 0 ] && docker compose up -d ollama >/dev/null
+
+if ollama_cmd list 2>/dev/null | awk '{print $1}' | grep -qx "$MODELO_LLM"; then
     pular "$MODELO_LLM"
 else
     faz "ollama pull $MODELO_LLM (~3,4 GB)"
-    [ "$SO_CONFERIR" = 1 ] || ollama pull "$MODELO_LLM"
+    [ "$SO_CONFERIR" = 1 ] || ollama_cmd pull "$MODELO_LLM"
 fi
 
 # -----------------------------------------------------------------------------

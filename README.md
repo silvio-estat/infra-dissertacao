@@ -99,6 +99,33 @@ vídeo. Como servidor na máquina, o Ollama usa a GPU e as DAGs falam com ele po
 > **Docker Engine no Linux (sem Desktop):** o Ollama escuta só em `127.0.0.1` e recusa o contêiner.
 > Libere-o com `sudo systemctl edit ollama`, acrescentando
 > `[Service]` / `Environment="OLLAMA_HOST=0.0.0.0"`, e depois `sudo systemctl restart ollama`.
+> Sem sudo, use o bloco A da seção abaixo.
+
+### Máquina diferente: `docker-compose.override.yml`
+
+A stack foi montada e testada numa máquina com Docker Desktop e placa NVIDIA. Em outra máquina,
+dois ajustes podem ser necessários. Os dois estão prontos em `docker-compose.override.example.yml`:
+
+```bash
+cp docker-compose.override.example.yml docker-compose.override.yml   # e apague o bloco que não se aplica
+docker compose --profile governance up -d
+```
+
+O Docker Compose lê o `docker-compose.override.yml` sozinho e o junta ao `docker-compose.yml`. Ele
+fica no `.gitignore`: vale só para a máquina onde foi criado. Na máquina de referência, ele não existe.
+
+| Bloco | Quando usar | Sintoma sem ele |
+|---|---|---|
+| **A — Ollama em contêiner** | sem placa NVIDIA; ou Docker Engine no Linux **sem sudo** para liberar o Ollama da máquina | `play.sh` para em "Ollama não encontrado"; ou as tarefas `texto` e `relato` da DAG 2 falham sem conseguir falar com `host.docker.internal:11434` |
+| **B — portas internas do Airflow e do Spark** | antivírus que inspeciona tráfego web (visto com o Kaspersky Endpoint Security, serviço `kesl`) | `localhost:8080` e `:8081` conectam e ficam carregando para sempre, enquanto `:8090`, `:9001` e `:8585` abrem; de dentro do contêiner, o mesmo endereço responde |
+
+Com o bloco A, acrescente ao `.env` a linha `OLLAMA_URL=http://ollama:11434` (o `play.sh` avisa se
+faltar e baixa o modelo dentro do contêiner). Em CPU, o modelo leva cerca de 18 s por mensagem,
+contra 0,8 s na GPU: o pipeline funciona, mas a DAG 2 fica bem mais lenta, e **os tempos medidos
+nessa máquina não são os do estudo**.
+
+Para conferir se é o antivírus (bloco B): `systemctl status kesl` e, de fora e de dentro,
+`curl -m 5 http://localhost:8081` × `docker exec dlh_spark_master curl -s http://localhost:8080`.
 
 ---
 
@@ -247,7 +274,7 @@ Todas publicadas só em `127.0.0.1` (a máquina local).
 | MinIO Console / API S3 | http://localhost:9001 · http://localhost:9000 |
 | Spark Master UI / Worker UI | http://localhost:8081 · http://localhost:8082 |
 | Docling (API + documentação em `/docs`) | http://localhost:5001 |
-| Ollama (na máquina, fora do compose) | http://localhost:11434 |
+| Ollama (na máquina, fora do compose; ou contêiner `dlh_ollama`, bloco A do override) | http://localhost:11434 |
 | Hive Metastore · PostgreSQL · Elasticsearch | 9083 · 5432 · 9200 |
 
 Credenciais de desenvolvimento local: `.env.example`.

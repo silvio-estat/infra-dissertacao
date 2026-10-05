@@ -1,0 +1,65 @@
+# =============================================================================
+# docker-compose.override.example.yml — ajustes para uma maquina "diferente"
+#
+# NAO e lido pelo Docker Compose com este nome. Para usar:
+#
+#     cp docker-compose.override.example.yml docker-compose.override.yml
+#
+# e apague o bloco que nao se aplica. O docker-compose.override.yml (sem
+# "example") e lido SOZINHO pelo Compose a cada `docker compose up` e junta-se
+# ao docker-compose.yml; ele fica no .gitignore, porque vale so para a maquina
+# onde foi criado. Na maquina de referencia (Docker Desktop + GPU NVIDIA) ele
+# nao existe. Detalhes e sintomas: README, secao "Maquina diferente".
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # BLOCO A — Ollama em conteiner.
+  # Quando: maquina SEM placa de video NVIDIA, ou Docker Engine no Linux sem
+  # sudo para liberar o Ollama instalado na maquina (ele escuta so em
+  # 127.0.0.1 e recusa os conteineres).
+  # O docker-compose.yml deixa o Ollama fora do Docker por causa da GPU: no
+  # Docker Desktop o conteiner nao a enxerga (ACHADOS.md). Sem GPU, o motivo
+  # some — em CPU ele roda igual dentro ou fora, cerca de 18 s por mensagem.
+  # Junto com este bloco, no .env:   OLLAMA_URL=http://ollama:11434
+  # E baixar o modelo uma vez:       docker exec dlh_ollama ollama pull qwen3.5:4b
+  # (o play.sh faz as duas conferencias sozinho quando encontra este bloco).
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: dlh_ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_modelos:/root/.ollama
+    networks:
+      - dlh_net
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # BLOCO B — antivirus que inspeciona trafego web (visto com o Kaspersky
+  # Endpoint Security, servico `kesl`).
+  # Sintoma: http://localhost:8080 (Airflow) e :8081 (Spark) conectam e ficam
+  # carregando para sempre, enquanto Trino (8090), MinIO (9001) e OpenMetadata
+  # (8585) abrem normais; de dentro do conteiner, o mesmo endereco responde.
+  # Causa: o antivirus segura o trafego nas portas "de web" (8080, 8088 e
+  # outras) do lado do conteiner. Aqui eles passam a escutar em outra porta
+  # por dentro; no navegador o endereco continua o mesmo.
+  # `!override` troca a lista de portas inteira (sem ele, as listas se somam).
+  # ---------------------------------------------------------------------------
+  spark-master:
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 18080
+    ports: !override
+      - "127.0.0.1:7077:7077"    # Spark Master
+      - "127.0.0.1:8081:18080"   # Spark Master WebUI
+
+  airflow-webserver:
+    command: webserver --port 8089
+    ports: !override
+      - "127.0.0.1:8080:8089"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/health"]
+
+volumes:
+  ollama_modelos:   # do bloco A: o modelo baixado (~3,4 GB) sobrevive a recriacao
