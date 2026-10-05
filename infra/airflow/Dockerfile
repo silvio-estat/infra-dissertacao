@@ -58,9 +58,11 @@ RUN pip install --no-cache-dir "faster-whisper==1.1.0"
 # nao depende de rede para rodar e o resultado nao muda por troca de versao.
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('medium', device='cpu', compute_type='int8')"
 
-# O `collate-sqlfluff`, dependencia do openmetadata-ingestion, exige click<8.4.
-# Alguma das instalacoes acima sobe o click para 8.5 e, quando isso acontece,
+# O `collate-sqlfluff`, dependencia do openmetadata-ingestion, limita o click
+# (a 3.5.2 declara click<=8.3.0; a trava antiga, <8.4.0, deixou passar o 8.3.3
+# num build de 05/10/2026). Alguma das instalacoes acima sobe o click e, quando isso acontece,
 # TODA tarefa do OpenMetadata falha com "SourceConnectionException: CheckAccess"
 # — mensagem que parece problema de conexao com o Trino e nao e: quebra antes,
 # ao carregar as bibliotecas. Esta linha vem por ULTIMO de proposito.
-RUN pip install --no-cache-dir "click<8.4.0"
+# Conferir em `pip show collate-sqlfluff` a exigencia atual se voltar a falhar.
+RUN pip install --no-cache-dir "click<=8.3.0"
