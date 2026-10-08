@@ -182,7 +182,7 @@ Se o texto nao permitir decidir um campo, devolva null. Nunca invente valor fora
 
 ---
 
-## `relato-v3` — cada lista amarrada à sua chave, e três exemplos (EM USO)
+## `relato-v3` — cada lista amarrada à sua chave, e três exemplos
 
 Cada lista aparece numerada junto da chave que ela preenche, e a prioridade ganha três exemplos
 concretos: para julgamento, exemplo move o resultado; a definição abstrata da v2 não tinha movido.
@@ -249,6 +249,16 @@ nao pelo assunto:
 
 Responda so um JSON: {"PRIORIDADE_COD": <um dos tres>}
 ```
+
+---
+
+## `relato-v6` — sem a avaliação de fonte e informação (EM USO)
+
+Igual à `relato-v3`, sem as chaves 3 e 4 (`FONTE_CONFIABILIDADE_COD` e `INFO_CREDIBILIDADE_COD`):
+a avaliação A-F / 1-6 saiu do modelo canônico em 08/10/2026 (`nota_2026_10_08` do YAML). Na `v3` ela
+voltou nula nos 300 relatos, porque o pedido mandava não emitir juízo de analista. O pedido passa a
+pedir "exatamente estas duas chaves"; o resto do texto é o mesmo. O código pula `v4` e `v5`, que já
+nomeiam os experimentos acima.
 
 ---
 

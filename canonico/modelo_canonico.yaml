@@ -13,8 +13,8 @@
 # nomes de dados no Exercito: MAIUSCULAS, termos separados por _, no maximo 30
 # caracteres, sem acento, na ordem Propriedade + Representacao.
 #
-#     FONTE_CONFIABILIDADE_COD
-#     |________propriedade_____|_COD = CODIGO (termo de representacao)
+#     UNIDADE_REPORTANTE_COD
+#     |______propriedade_____|_COD = CODIGO (termo de representacao)
 #
 # O termo final vem de uma lista fechada (canonico/ir_14_06/termos_representacao.csv),
 # e as abreviaturas vem do MD33-M-02, o manual das Forcas Armadas.
@@ -32,7 +32,7 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-09-30
+  atualizado_em: 2026-10-08
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -244,6 +244,19 @@ metadados:
     tesseract -> modelo de linguagem, com a tarefa de OCR por tesseract, cuja
     leitura so a INTEL usava (RELPER escaneado e FOGOS seguem pelo Docling).
     O corpus e regerado inteiro, porque os geradores compartilham a semente.
+  nota_2026_10_08: >-
+    Sai a avaliacao de fonte e informacao: os dominios confiabilidade (A-F) e
+    credibilidade (1-6) e as colunas FONTE_CONFIABILIDADE_COD e
+    INFO_CREDIBILIDADE_COD de EVENTO e de PITCIC. Ela vinha do antigo relt_intel
+    e, depois da retirada da fonte INTEL (nota_2026_09_30), so restava como
+    inferencia do modelo de linguagem sobre o relato do C2_B. Na pratica nunca
+    foi preenchida: o pedido manda nao emitir juizo de analista, e os 300
+    relatos voltaram com as duas chaves nulas. O caso nao trabalha mais com
+    documento de inteligencia, e a avaliacao nao sustenta nenhuma das duas
+    teses. As frases de avaliacao que o gerador do C2_B escreve no fim de cada
+    relato ficam no texto, como narrativa: muda-las alteraria o corpus ja
+    ingerido na Bronze, que e append-only. O pedido do relato passa a relato-v6 (v4 e v5 ja nomeiam
+    experimentos registrados em canonico/prompts.md).
   nota_2026_10_02: >-
     Sai a transformacao contexto_operacao (atribuir a operacao pela hora e pelo
     ponto de captura, para arquivo sem sidecar). Estava declarada desde a nota
@@ -365,29 +378,6 @@ dominios:
       URGENTE:     {rotulo: Urgente, quando: "risco imediato a tropa ou a missao; exige acao agora",     sinonimos: [Alta, Critica, Imediato, relampago]}
       PRIORITARIO: {rotulo: Prioritario, quando: "precisa de providencia, mas nao e imediato", sinonimos: [Media, Moderada, chuva]}
       ROTINA:      {rotulo: Rotina, quando: "informativo; nada a fazer",      sinonimos: [Baixa, Normal, orvalho]}
-
-  confiabilidade:
-    descricao: Confiabilidade da fonte. Escala doutrinaria de A a F.
-    valores:
-      A: {rotulo: Fonte confiavel, sinonimos: [granito]}
-      B: {rotulo: Fonte geralmente confiavel}
-      C: {rotulo: Fonte razoavelmente confiavel, sinonimos: [arenito]}
-      D: {rotulo: Fonte nao usualmente confiavel}
-      E: {rotulo: Fonte nao confiavel, sinonimos: [areia]}
-      F: {rotulo: Confiabilidade nao pode ser julgada}
-
-  credibilidade:
-    descricao: >-
-      Credibilidade da informacao. Escala doutrinaria de algarismo, que anda
-      junto com a letra da confiabilidade: 'B2' e fonte geralmente confiavel
-      com informacao provavelmente verdadeira.
-    valores:
-      "1": {rotulo: Confirmada por outras fontes}
-      "2": {rotulo: Provavelmente verdadeira}
-      "3": {rotulo: Possivelmente verdadeira}
-      "4": {rotulo: Duvidosa}
-      "5": {rotulo: Improvavel}
-      "6": {rotulo: Veracidade nao pode ser julgada}
 
   metodo_localizacao:
     descricao: Como a posicao foi obtida. Explica a precisao.
@@ -584,11 +574,6 @@ entidades:
          descricao: "Como a posicao foi obtida. Explica a precisao."}
       PRIORIDADE_COD:
         {tipo: string, nulo: true, dominio: prioridade, descricao: Urgencia do tratamento.}
-      FONTE_CONFIABILIDADE_COD:
-        {tipo: string, nulo: true, dominio: confiabilidade, descricao: Confiabilidade da fonte.}
-      INFO_CREDIBILIDADE_COD:
-        {tipo: string, nulo: true, dominio: credibilidade,
-         descricao: "Credibilidade da informacao. Chega junto com a confiabilidade num codigo unico de duas posicoes, separado na ingestao."}
       RELATO_TXT:
         {tipo: string, nulo: true,
          descricao: "Narrativa livre, quando houver. E a entrada da extracao por modelo de linguagem. Sufixo TXT conforme o termo TEXTO do Art. 138."}
@@ -1079,8 +1064,6 @@ entidades:
       EVENTO_QNT:    {tipo: int, nulo: true, descricao: "Eventos por tras da linha. Na fase 3, o proprio evento mais os que o corroboram."}
       FONTE_QNT:     {tipo: int, nulo: true, descricao: "Fontes (sistemas de origem) diferentes. Na fase 3 e a CORROBORACAO: quantas fontes independentes relatam a ameaca no mesmo lugar e hora (parametros em visoes.PITCIC)."}
       MODALIDADE_TXT: {tipo: string, nulo: true, descricao: "Formas em que os dados chegaram (JSON, TEXTO, IMAGEM, PLANILHA, PDF, AUDIO): o cruzamento de tipos diferentes que a tese demonstra."}
-      FONTE_CONFIABILIDADE_COD: {tipo: string, nulo: true, dominio: confiabilidade, descricao: "Confiabilidade da fonte, quando o registro a traz ou permite inferir (relato do C2_B)."}
-      INFO_CREDIBILIDADE_COD: {tipo: string, nulo: true, dominio: credibilidade, descricao: "Credibilidade da informacao, quando o documento a traz."}
       ARMA_QNT:      {tipo: int, nulo: true, descricao: "Quantidade de armas inimigas lida do Relatorio de Bombardeio ('2/Ob/Me' -> 2)."}
       ARMA_TIPO_COD: {tipo: string, nulo: true, descricao: "Tipo da arma COMO FOI LIDO (Mrt, Can, Fgt, Ob). Nao e traduzido: o gerador escreve Ob para obus, e no manual Ob e Obras."}
       ARMA_CALIBRE_COD: {tipo: string, nulo: true, descricao: "Calibre como foi lido: L, Me, P."}
@@ -1430,7 +1413,7 @@ fontes:
           _modalidade: {campo: MODALIDADE_ORIGEM_COD, transformacao: constante, valor: TEXTO}
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: MANUAL}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado}
-          # Os quatro abaixo NAO chegam no registro: sao inferidos por um modelo
+          # Os dois abaixo NAO chegam no registro: sao inferidos por um modelo
           # de linguagem que le `situacao`. `por: llm` e o que diz isso — e e o
           # que faz a tarefa de extracao montar o pedido com estes campos e com
           # os valores que cada dominio admite. A conversao `dominio` continua
@@ -1438,15 +1421,10 @@ fontes:
           # em vez de entrar como se fosse bom.
           TIPO_COD:                 {campo: TIPO_COD, transformacao: dominio, dominio: tipo_evento, por: llm}
           PRIORIDADE_COD:           {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm}
-          FONTE_CONFIABILIDADE_COD: {campo: FONTE_CONFIABILIDADE_COD, transformacao: dominio, dominio: confiabilidade, por: llm}
-          INFO_CREDIBILIDADE_COD:   {campo: INFO_CREDIBILIDADE_COD, transformacao: dominio, dominio: credibilidade, por: llm}
         # Estes NAO vem da origem: sao inferidos pelo modelo de linguagem a
         # partir de RELATO_TXT. Cada inferencia gera uma linha em EXTRACAO.
-        # A confiabilidade entrou aqui porque o antigo relt_intel a trazia
-        # pronta ('A1'); num relato livre de verdade ela e juizo do analista,
-        # e portanto inferida.
-        extraidos_por_llm: [TIPO_COD, PRIORIDADE_COD,
-                            FONTE_CONFIABILIDADE_COD, INFO_CREDIBILIDADE_COD]
+        # A avaliacao de fonte e informacao (A-F / 1-6) saiu: ver nota_2026_10_08.
+        extraidos_por_llm: [TIPO_COD, PRIORIDADE_COD]
         # FUNCAO_COMBATE_COD saiu desta lista: classificar funcao de combate e
         # DOUTRINA, nao leitura de texto — pedir isso a um modelo de linguagem e
         # indefensavel. Ela deriva do TIPO_COD por uma tabela de referencia, que

@@ -219,7 +219,6 @@ def montar_pitcic(modelo):
         # consideracoes civis: o que foi visto e NAO e forca oponente
         _bloco(colunas, f"SELECT e.*, {campos_lugar} FROM ev e {junta_lugar} WHERE e.TIPO_COD = 'AVISTAMENTO'",
                FASE_NRO="2", ETAPA_COD=c("CONSIDERACOES_CIVIS"), ELEMENTO_TIPO_COD=c("AVISTAMENTO"), ELEMENTO_DCRI=_DESCRICAO,
-               FONTE_CONFIABILIDADE_COD="FONTE_CONFIABILIDADE_COD", INFO_CREDIBILIDADE_COD="INFO_CREDIBILIDADE_COD",
                **evento_simples, **com_lugar),
         # vias de acesso: a rodovia vira linha, ligando os marcos de km em ordem
         _bloco(colunas, r"""
@@ -259,8 +258,7 @@ def montar_pitcic(modelo):
                OPERACAO_COD="OPERACAO_COD", GEOMETRIA_WKT="GEOMETRIA_WKT", LOCAL_REFERENCIA_NOME="LN",
                LOCAL_REFERENCIA_TIPO_COD=_sigla("LT", sg), LOCAL_DISTANCIA_METRO="round(DIST)", INICIO_DATA="OCORRENCIA_DATA",
                UNIDADE_COD="UNIDADE_REPORTANTE_COD", TIPO_TXT=_sigla("TIPO_COD", sg), EVENTO_QNT="N", FONTE_QNT="NF",
-               MODALIDADE_TXT=_lista("MODS"), FONTE_CONFIABILIDADE_COD="FONTE_CONFIABILIDADE_COD",
-               INFO_CREDIBILIDADE_COD="INFO_CREDIBILIDADE_COD", ARMA_QNT="nullif(AQ, '')",
+               MODALIDADE_TXT=_lista("MODS"), ARMA_QNT="nullif(AQ, '')",
                ARMA_TIPO_COD="nullif(AT, '')", ARMA_CALIBRE_COD="nullif(AC, '')",
                EXTRACAO_MODELO_NOME="EXTRACAO_MODELO_NOME", EVENTO_IDT="IDS"),
 

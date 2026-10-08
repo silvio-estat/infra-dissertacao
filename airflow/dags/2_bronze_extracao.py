@@ -68,7 +68,7 @@ LLM_PROMPT_VERSAO = "voz-v2"
 # dos formularios ("Alta", "Normal"); aqui so as do radio, para o modelo nao ler
 # "deslocamento normal" como prioridade.
 PRIORIDADES_RADIO = ["chuva", "orvalho", "relampago"]
-LLM_PROMPT_VERSAO_RELATO = "relato-v3"
+LLM_PROMPT_VERSAO_RELATO = "relato-v6"
 # as opcoes de TODA chamada ao modelo; as mesmas vao para AJUSTE_EXTRACAO
 LLM_OPCOES = {"format": "json", "think": False, "options": {"temperature": 0}}
 
@@ -483,7 +483,7 @@ def instrucao_relato() -> str:
     # de TIPO_COD em 30 dos 300 relatos.
     return (
         f"Voce le RELATOS DE OBSERVADOR. {receita['documento']}\n\n"
-        "Responda so um JSON com exatamente estas quatro chaves:\n\n"
+        "Responda so um JSON com exatamente estas duas chaves:\n\n"
         "1) \"TIPO_COD\" — o que o relato descreve. Use SO um destes:\n"
         f"{listar('tipo_evento', receita.get('tipos_possiveis'))}\n\n"
         "2) \"PRIORIDADE_COD\" — o que o relato exige de quem o recebe. Use SO um destes:\n"
@@ -494,10 +494,6 @@ def instrucao_relato() -> str:
         "     'Tropa inimiga a 500 m da posicao, em aproximacao.'           -> URGENTE\n"
         "   Um relato que so informa e ROTINA. Um que pede providencia e PRIORITARIO.\n"
         "   Um que indica risco agora e URGENTE.\n\n"
-        "3) \"FONTE_CONFIABILIDADE_COD\" e 4) \"INFO_CREDIBILIDADE_COD\" — juizo de\n"
-        "   analista sobre QUEM relatou e sobre a informacao. O texto de um relato\n"
-        "   quase nunca permite decidir: devolva null nas duas, salvo se o proprio\n"
-        "   texto trouxer a avaliacao.\n\n"
         "Nunca use um valor de uma lista na chave da outra. Se o texto nao permitir\n"
         "decidir um campo, devolva null. Nunca invente valor fora dos listados.\n"
     )

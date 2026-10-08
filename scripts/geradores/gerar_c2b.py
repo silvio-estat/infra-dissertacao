@@ -6,8 +6,8 @@ gerar_c2b.py — a fonte C2_B: relato em texto livre e incidente com foto.
                brasileiro, relator ('<posto> <funcao> <fracao> - <IDENTIDADE_MIL>'),
                localizacao em grau-minuto-segundo (ou 'Sem localizacao') e a
                narrativa livre. A narrativa e a ENTRADA do modelo de linguagem:
-               tipo, funcao de combate, prioridade e confiabilidade nao vem em
-               campo — o modelo deduz do texto, e o estado-maior confere.
+               tipo e prioridade nao vem em campo — o modelo deduz do texto,
+               e o estado-maior confere.
   incidente/   um JSON + um JPG de mesmo nome. O JSON e o sidecar da foto
                (operacao, unidade, hora). A foto e uma cena sintetica com
                EXIF (GPS + data) — a coordenada do evento vem DO EXIF, nao do
@@ -40,7 +40,9 @@ PRIORIDADE_TXT = {
     "PRIORITARIO": ["Acompanhando a situacao.", "Solicita orientacao do COp.", "Mantendo observacao."],
     "ROTINA": ["Sem necessidade de apoio.", "Nada mais a relatar.", "Situacao sob controle."],
 }
-# pistas de CONFIABILIDADE da fonte / CREDIBILIDADE da informacao (escala A-F / 1-6)
+# frases de avaliacao da informacao, no fim de cada relato. Nascidas como pistas da
+# escala A-F / 1-6, que saiu do modelo em 08/10/2026 (nota_2026_10_08): ficam como
+# narrativa, porque muda-las alteraria o corpus ja ingerido na Bronze (append-only).
 CONFIAB_TXT = [
     "Informacao confirmada por dois observadores da fracao.",           # ~A1
     "Observado diretamente pela patrulha.",                             # ~B2
