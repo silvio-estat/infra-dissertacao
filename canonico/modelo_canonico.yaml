@@ -244,6 +244,14 @@ metadados:
     tesseract -> modelo de linguagem, com a tarefa de OCR por tesseract, cuja
     leitura so a INTEL usava (RELPER escaneado e FOGOS seguem pelo Docling).
     O corpus e regerado inteiro, porque os geradores compartilham a semente.
+  nota_2026_10_20: >-
+    Sai o codinome da Funcao de Combate do fim das mensagens de voz ('Luneta.',
+    'Escudo.', 'Lanca.'): metade das mensagens de fato o trazia. A funcao e
+    classificacao doutrinaria, so didatica no estudo (nota_2026_10_02), e nenhum
+    operador a anuncia no radio; nenhum campo da receita VOZ a lia. A receita deixa
+    de listar FUNCAO_COMBATE_COD em extraidos_por_llm. Os sinonimos bussola, luneta,
+    lanca, escudo e celeiro do dominio funcao_combate ficam, sem uso. O corpus e
+    regerado inteiro, porque o wav nao sai igual ao regerar e a Bronze e append-only.
   nota_2026_10_08: >-
     Sai a avaliacao de fonte e informacao: os dominios confiabilidade (A-F) e
     credibilidade (1-6) e as colunas FONTE_CONFIABILIDADE_COD e
@@ -1689,7 +1697,7 @@ fontes:
           _metodo:     {campo: LOCALIZACAO_METODO_COD, transformacao: constante, valor: GAZETTEER}
           _c2:         {campo: FUNCAO_C2_INDIC, transformacao: derivado,
                         observacao: "resolve para N. Radio e MEIO de transmissao de C2, nao sistema de informacao que registre o processo de estado-maior — mesma razao pela qual o documento avulso tambem nao conta."}
-        extraidos_por_llm: [PRIORIDADE_COD, FUNCAO_COMBATE_COD]
+        extraidos_por_llm: [PRIORIDADE_COD]   # FUNCAO_COMBATE_COD saiu: ver nota_2026_10_20
 
 
 # =============================================================================

@@ -44,7 +44,11 @@ VOZES = ["pt_BR-cadu-medium"]
 CODINOME_TIPO = {"AVISTAMENTO_INIMIGO": "cavalo", "AVISTAMENTO": "potro", "INCIDENTE": "brasa", "OBSTACULO": "bigorna",
                  "MISSAO_TIRO": "martelo", "BOMBARDEIO_INIMIGO": "tambor", "POSICAO": "tordilho"}
 CODINOME_PRIO = {"URGENTE": "relâmpago", "PRIORITARIO": "chuva", "ROTINA": "orvalho"}
-CODINOME_FUNCAO = {"MOV_MANOBRA": "bússola", "INTELIGENCIA": "luneta", "FOGOS": "lança", "PROTECAO": "escudo", "LOGISTICA": "celeiro"}
+# Ate 20/10/2026, metade das mensagens de fato terminava com o codinome da Funcao de
+# Combate ('Luneta.'). Saiu: a funcao e classificacao doutrinaria, so didatica no
+# estudo, e nenhum operador a anuncia no radio. O sorteio dos 50% continua sendo
+# feito e descartado: retira-lo deslocaria a sequencia da semente e mudaria as
+# demais mensagens.
 INDICATIVOS = ["Trovão", "Falcão", "Jaguar", "Lobo", "Águia", "Tigre", "Cobra", "Pantera", "Condor", "Touro"]
 ACENTOS = [("Corrego", "Córrego"), ("Goncalo", "Gonçalo"), ("Nucleo", "Núcleo"), ("Jatoba", "Jatobá"), ("Copaiba", "Copaíba"),
            ("Macauba", "Macaúba"), ("Pequi", "Pequi"), ("Baru", "Barú"), ("Pau-Terra", "Pau Terra"), ("km", "quilômetro")]
@@ -115,8 +119,7 @@ def gerar(ctx: Contexto) -> dict:
         corpo = rng.choice(CORPOS[f.tipo_cod]).format(lugar=f.local_nome, dir=rng.choice(["norte", "sul", "leste", "oeste"]),
                                                        n=rng.randint(2, 9), desc=f.descricao)
         partes = [corpo, CODINOME_PRIO[f.prioridade_cod].capitalize() + "."]
-        if rng.random() < 0.5:
-            partes.append(CODINOME_FUNCAO[f.funcao_cod].capitalize() + ".")
+        rng.random()            # descartado de proposito: ver CODINOME_FUNCAO
         mensagens.append((f.hora_dt + timedelta(minutes=rng.randint(0, 6)), ucod, " ".join(partes)))
     for i in range(ctx.n(150) - len(mensagens)):
         u = rng.choice(fracoes)

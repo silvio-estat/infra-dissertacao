@@ -2,23 +2,27 @@
 """
 testes_qualidade.py — declara no OpenMetadata os testes de qualidade do repositorio.
 
-Treze testes, escolhidos para MOSTRAR O QUE A PLATAFORMA FAZ — nao para cobrir o
+Catorze testes, escolhidos para MOSTRAR O QUE A PLATAFORMA FAZ — nao para cobrir o
 modelo canonico inteiro (que renderia 76 testes estruturais e nenhum leitor). Sao
 dois grupos:
 
-  1. SETE de conformidade (Bronze) — o dado que chegou esta certo? Nulo, dominio,
-     unicidade do hash, integridade da linhagem. Seis passam; `arquivo_operacao_da_pasta`
-     falha de proposito: o gerador remeteu uma planilha na pasta do ano errado.
+  1. OITO de conformidade (Bronze) — o dado que chegou esta certo? Nulo, dominio,
+     unicidade do hash, integridade da linhagem, foto contra local digitado. Seis
+     passam; dois falham de proposito: `arquivo_operacao_da_pasta` (o gerador remeteu
+     uma planilha na pasta do ano errado) e `foto_confirma_local_digitado` (21 fotos
+     sem EXIF e 3 com o GPS deslocado).
 
   2. SEIS de completude (Bronze e Silver) — FALTA dado? Sao os que respondem
      "como voce sabe que uma informacao nao chegou ao EM": objeto de landing/ que
      nao chegou a lugar nenhum, arquivo recusado sem reenvio, binario sem sidecar,
      sidecar sem binario, turno que nenhuma OM remeteu e subunidade que sumiu de
      dentro de um relatorio que chegou. O primeiro deles e o unico do conjunto
-     inteiro que compara o repositorio com o mundo fora dele. `relper_turno_remetido` falha de proposito
-     e devolve os 11 turnos que o gerador deixou de remeter.
+     inteiro que compara o repositorio com o mundo fora dele. Tres falham de proposito:
+     `relper_turno_remetido` (os 18 turnos que o gerador deixou de remeter),
+     `rejeitado_foi_reenviado` (lote truncado e lote fora da convencao) e
+     `relper_todas_subunidades` (as 2 linhas de grafia ambigua).
 
-Os dois que falham de proposito sao o ponto, nao um defeito: e o que se mostra
+Os cinco que falham de proposito sao o ponto, nao um defeito: e o que se mostra
 quando a pergunta e "e os dados errados, como voce tratou?".
 
 Criar um teste por aqui e o mesmo que cria-lo pela tela do OpenMetadata: a tela e
@@ -27,7 +31,7 @@ botao de rodar e historico. A diferenca e que aqui ele fica VERSIONADO no
 repositorio — quem repetir o experimento tem os mesmos testes, e um reset do
 OpenMetadata nao os leva embora.
 
-    python3 scripts/testes_qualidade.py            # cria (ou atualiza) os treze
+    python3 scripts/testes_qualidade.py            # cria (ou atualiza) os catorze
     python3 scripts/testes_qualidade.py --listar   # so mostra o que existe hoje
 
 Depois de criar, quem EXECUTA os testes e a DAG 5_governanca (tarefa
@@ -46,7 +50,7 @@ SERVICO = "trino_lakehouse.iceberg"
 MODALIDADES = ["JSON", "TEXTO", "PLANILHA", "IMAGEM", "AUDIO", "PDF"]
 
 # -----------------------------------------------------------------------------
-# OS TREZE TESTES
+# OS CATORZE TESTES
 # -----------------------------------------------------------------------------
 # `porque` vira a descricao na tela do OpenMetadata: quem abrir o catalogo le
 # a justificativa junto com o resultado.
@@ -104,6 +108,47 @@ TESTES = [
         "coluna": "operacao_cod",
         "definicao": "columnValuesToBeInSet",
         "parametros": {"allowedValues": ["PERSEU_2024"], "matchEnum": True},
+    },
+    {
+        "nome": "foto_confirma_local_digitado",
+        "rotulo": "A foto do incidente confirma o local digitado pelo operador",
+        "porque": "ESTE FALHA DE PROPOSITO. O incidente do C2_B tem duas coordenadas: a que o "
+                  "operador digitou no registro e a que a camera gravou no EXIF da foto. A Silver "
+                  "usa a do EXIF, fonte independente do que foi digitado; este teste avisa quando "
+                  "ela falta (foto encaminhada por aplicativo de mensagem perde o metadado) ou "
+                  "quando as duas ficam a mais de 1 km uma da outra. Normalmente a foto fica a "
+                  "poucos metros do ponto digitado, e a divergente, a varios quilometros: qualquer "
+                  "limite entre os dois separa os casos. O gerador plantou 21 fotos sem EXIF e 3 "
+                  "com o GPS deslocado; a consulta devolve exatamente essas 24, com o incidente, "
+                  "a foto e a distancia, para alguem ir atras da informacao.",
+        "tabela": "bronze.arquivo",
+        "definicao": "tableCustomSQLQuery",
+        "sql": """
+WITH incidente AS (
+  SELECT json_extract_scalar(r.conteudo_json_txt, '$.id') AS incidente_cod,
+         json_extract_scalar(r.conteudo_json_txt, '$.foto') AS foto,
+         json_extract_scalar(r.conteudo_json_txt, '$.localizacao_informada') AS digitada,
+         a.captura_geometria_wkt AS exif_wkt
+  FROM iceberg.bronze.recepcao_bruta r
+  LEFT JOIN iceberg.bronze.arquivo a ON a.arquivo_idt = r.arquivo_idt
+  WHERE strpos(r.origem_uri_txt, '/c2b/incidente/') > 0
+),
+-- a digitada vem em grau-minuto-segundo: 22° 31' 41.8" S, 44° 15' 57.3" W
+numeros AS (SELECT *, regexp_extract_all(digitada, '[0-9.]+') AS n FROM incidente),
+distancia AS (
+  SELECT incidente_cod, foto, digitada, exif_wkt,
+         ST_Distance(to_spherical_geography(ST_GeometryFromText(exif_wkt)),
+                     to_spherical_geography(ST_Point(
+                       -(CAST(n[4] AS double) + CAST(n[5] AS double) / 60 + CAST(n[6] AS double) / 3600),
+                       -(CAST(n[1] AS double) + CAST(n[2] AS double) / 60 + CAST(n[3] AS double) / 3600)))) AS metros
+  FROM numeros
+)
+SELECT incidente_cod, foto, digitada,
+       CASE WHEN exif_wkt IS NULL THEN 'foto sem EXIF'
+            ELSE 'foto a ' || CAST(CAST(metros / 1000 AS decimal(6, 1)) AS varchar) || ' km do local digitado' END AS problema
+FROM distancia
+WHERE exif_wkt IS NULL OR metros > 1000
+""".strip(),
     },
     {
         "nome": "extracao_aponta_arquivo_existente",
@@ -170,8 +215,8 @@ TESTES = [
                   "quais OM existem: o cruzamento das duas coisas produz a lista do que DEVERIA "
                   "ter chegado, e o que sobra depois de subtrair o que chegou e a ausencia — que "
                   "e dado operacional, nao falha de TI (uma OM que nao reporta pode estar sem "
-                  "comunicacao, deslocando ou em contato). O gerador deixou de remeter 11 turnos "
-                  "de proposito; a consulta devolve exatamente esses 11, com OM, dia e turno. A "
+                  "comunicacao, deslocando ou em contato). O gerador deixou de remeter 18 turnos "
+                  "de proposito; a consulta devolve exatamente esses 18, com OM, dia e turno. A "
                   "janela vai da primeira a ultima remessa observada, e nao do inicio ao fim da "
                   "operacao, para nao acusar como ausencia a borda em que nenhuma OM remeteu.",
         "tabela": "silver.situacao_unidade",
