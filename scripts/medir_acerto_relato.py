@@ -78,7 +78,10 @@ def versoes() -> dict:
     """{versao: snapshot} — as que estao na tabela hoje (snapshot None) e as apagadas."""
     hoje = {l["prompt_versao_cod"]: None for l in trino(
         "SELECT DISTINCT prompt_versao_cod FROM iceberg.bronze.extracao WHERE recepcao_idt IS NOT NULL")}
-    return dict(sorted({**SNAPSHOTS, **hoje}.items()))
+    # um `docker compose down -v` apaga os snapshots: a versao some da medicao em vez de derrubar o script
+    existem = {l["snapshot_id"] for l in trino('SELECT snapshot_id FROM iceberg.bronze."extracao$snapshots"')}
+    apagadas = {v: s for v, s in SNAPSHOTS.items() if s in existem}
+    return dict(sorted({**apagadas, **hoje}.items()))
 
 
 def ler(versao: str, snapshot) -> list:

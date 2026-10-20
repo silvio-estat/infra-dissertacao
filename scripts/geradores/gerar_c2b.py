@@ -40,9 +40,10 @@ PRIORIDADE_TXT = {
     "PRIORITARIO": ["Acompanhando a situacao.", "Solicita orientacao do COp.", "Mantendo observacao."],
     "ROTINA": ["Sem necessidade de apoio.", "Nada mais a relatar.", "Situacao sob controle."],
 }
-# frases de avaliacao da informacao, no fim de cada relato. Nascidas como pistas da
-# escala A-F / 1-6, que saiu do modelo em 08/10/2026 (nota_2026_10_08): ficam como
-# narrativa, porque muda-las alteraria o corpus ja ingerido na Bronze (append-only).
+# frases de avaliacao da informacao. Nascidas como pistas da escala A-F / 1-6, que
+# saiu do modelo em 08/10/2026 (nota_2026_10_08); em 19/10/2026 sairam tambem do
+# texto do relato. O sorteio continua sendo feito e descartado: retira-lo deslocaria
+# a sequencia da semente e mudaria o resto do corpus (fatos, posicoes, defeitos).
 CONFIAB_TXT = [
     "Informacao confirmada por dois observadores da fracao.",           # ~A1
     "Observado diretamente pela patrulha.",                             # ~B2
@@ -97,7 +98,8 @@ def gerar_relatos(ctx: Contexto) -> dict:
         t = f.hora_dt + timedelta(minutes=rng.randint(3, 45))
         hora_txt = f.hora_dt.astimezone(ctx_fuso()).strftime("%H%M")
         texto = (f"As {hora_txt}, {ctx.sigla(f.unidade_cod)} informa {f.descricao} nas proximidades de "
-                 f"{f.local_nome}. {rng.choice(PRIORIDADE_TXT[f.prioridade_cod])} {rng.choice(CONFIAB_TXT)}")
+                 f"{f.local_nome}. {rng.choice(PRIORIDADE_TXT[f.prioridade_cod])}")
+        rng.choice(CONFIAB_TXT)     # descartado de proposito: ver CONFIAB_TXT
         lat, lon = jitter(f.lat, f.lon, 0.15, rng)
         relatos.append((t, f.unidade_cod, lat, lon, texto))
     # 2) relatos de rotina
