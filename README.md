@@ -343,6 +343,7 @@ scripts/
   governanca/               provisionamento do glossário no OpenMetadata
   testes_qualidade.py       os 7 testes de qualidade da Bronze
   medir_acerto_relato.py    acerto do modelo de linguagem contra o gabarito
+  medir_acerto_leitura.py   acerto da voz (transcrição e leitura) e do Docling contra o gabarito
 infra/                      Dockerfiles e configuração de Airflow, Spark, Trino, MinIO, OpenLineage
 ACHADOS.md                  o que custou tempo para descobrir, com números de acerto e erros da IA
 relatorios/                 guias do OpenMetadata e histórico (os relatórios comparativos estão superados)
