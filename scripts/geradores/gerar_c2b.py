@@ -107,7 +107,7 @@ def gerar_relatos(ctx: Contexto) -> dict:
         u = rng.choice(ctx.por_escalao("FR"))
         om = ctx.om_de(u["UNIDADE_COD"])
         lugar = rng.choice(ctx.locais(om) or ctx.gazetteer)
-        rodovia = rng.choice(["BR-154", "VC-231"])
+        rodovia = rng.choice(["BR-116", "VC-231"])
         t = local(rng.choice(ctx.operacao.dias), rng.randint(5, 23), rng.randint(0, 59), rng.randint(0, 59))
         texto = rng.choice(ROTINA).format(rodovia=rodovia, lugar=lugar["LOCAL_NOME"]) + " " + rng.choice(PRIORIDADE_TXT["ROTINA"])
         lat, lon = jitter(lugar["lat"], lugar["lon"], 0.5, rng)

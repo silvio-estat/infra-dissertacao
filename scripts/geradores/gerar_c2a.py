@@ -5,7 +5,7 @@ gerar_c2a.py — a fonte C2_A: JSON com geometria nativa, sem IA.
 Duas exportacoes, como o aplicativo faria:
 
   posicao/   localizadores em tempo real. Cada fracao (pelotao) anda pelo
-             setor da sua OM ao longo do eixo da BR-154, e o aplicativo grava
+             setor da sua OM ao longo do eixo da BR-116, e o aplicativo grava
              um ponto a cada `PASSO_MIN` minutos entre 06h e 22h. Um arquivo
              por dia e hora, com N registros — e uma exportacao em lote, nao
              um arquivo por ponto.

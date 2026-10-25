@@ -4,7 +4,7 @@ gerar_seeds.py — Produz as tabelas de referencia de canonico/seeds/.
 
 Sao dimensoes conformadas: mudam pouco e sao consultadas pelas transformacoes
 `referencia` e `gazetteer` do modelo canonico. Ficam num script, e nao escritas
-a mao, por um motivo so: COERENCIA GEOGRAFICA. Se 'BR-154 km 43' e 'km 44'
+a mao, por um motivo so: COERENCIA GEOGRAFICA. Se 'BR-116 km 43' e 'km 44'
 ficarem a 300 km um do outro, toda consulta espacial vira ruido.
 
 SIGILO
@@ -14,12 +14,15 @@ SIGILO
   uma familia sintetica — nomes de arvores nativas — para que fique evidente
   que sao inventados. A regiao geografica e real: o Vale do Paraiba, entre
   Lorena/Cruzeiro (SP) e Resende (RJ), onde ocorreu a Operacao Perseu 2024
-  (exercicio publico, 25 nov a 5 dez 2024) que da contexto ao estudo. As
-  rodovias, os corregos e as localidades, porem, sao inventados: a BR-154 nao
-  existe na numeracao do DNIT.
+  (exercicio publico, 25 nov a 5 dez 2024) que da contexto ao estudo. O eixo e a
+  BR-116 (Rodovia Presidente Dutra), real, mas SIMPLIFICADA: o trecho Lorena-Resende
+  vira uma reta (a estrada real se afasta dela ate ~6 km, em Queluz) e a
+  quilometragem e a do cenario, contada de 15 km antes de Lorena, nao a das
+  placas (a numeracao paulista da Dutra cresce para oeste a partir da divisa).
+  A vicinal VC-231, os corregos e as localidades sao inventados.
 
 GEOMETRIA
-  Tudo e posicionado num eixo: a BR-154 parte de LAT0/LON0 com rumo AZIMUTE e
+  Tudo e posicionado num eixo: a BR-116 parte de LAT0/LON0 com rumo AZIMUTE e
   cada ponto e descrito por (km ao longo do eixo, km perpendicular a ele). Da
   para mover a area inteira trocando duas constantes.
 
@@ -40,8 +43,8 @@ RAIZ = Path(__file__).resolve().parents[2]
 DIR = RAIZ / "canonico" / "seeds"
 
 # --- ancora geografica: Vale do Paraiba, area da Operacao Perseu 2024 --------
-LAT0, LON0 = -22.80, -45.25      # km 0 da BR-154 (ficticia), a sudoeste de Lorena/SP
-AZIMUTE = 68.0                   # rumo do eixo em graus (ENE), acompanhando o vale ate Resende/RJ
+LAT0, LON0 = -22.778, -45.260    # km 0 do eixo, ~15 km a oes-sudoeste de Lorena/SP
+AZIMUTE = 68.0                   # rumo do eixo em graus (ENE): a reta passa por Lorena (km 15) e Resende (km 90)
 KM_LAT = 1 / 110.574                                        # 1 km em graus de latitude
 KM_LON = 1 / (111.320 * math.cos(math.radians(LAT0)))       # 1 km em graus de longitude nesta latitude
 
@@ -52,7 +55,7 @@ PC_BDA_KM, PC_BDA_PERP = 60, -10
 
 
 def _latlon(km, perp=0.0):
-    """Ponto a `km` ao longo do eixo da BR-154 e `perp` km ao lado dele (+ esquerda, - direita)."""
+    """Ponto a `km` ao longo do eixo da BR-116 e `perp` km ao lado dele (+ esquerda, - direita)."""
     az = math.radians(AZIMUTE)
     norte = km * math.cos(az) + perp * math.sin(az)
     leste = km * math.sin(az) - perp * math.cos(az)
@@ -152,12 +155,12 @@ def _ponto(lat, lon):
 
 def gerar_gazetteer():
     g = []
-    # --- BR-154: rodovia ficticia ao longo do eixo do vale, marcos de 5 em 5 km ---
+    # --- BR-116 (Dutra) simplificada como reta ao longo do vale, marcos de 5 em 5 km ---
     for km in range(0, 121, 5):
-        g.append([f"BR154K{km:03d}", f"BR-154 km {km}", "RODOVIA_KM",
-                  f"BR-154 km {km}", _ponto(*_latlon(km)), 250])
+        g.append([f"BR116K{km:03d}", f"BR-116 km {km}", "RODOVIA_KM",
+                  f"BR-116 km {km}", _ponto(*_latlon(km)), 250])
 
-    # --- VC-231: vicinal perpendicular, cruza a BR-154 no km 45 ---
+    # --- VC-231: vicinal perpendicular, cruza a BR-116 no km 45 ---
     for km in range(0, 41, 5):
         g.append([f"VC231K{km:03d}", f"VC-231 km {km}", "RODOVIA_KM",
                   f"VC-231 km {km}", _ponto(*_latlon(45, km - 20)), 250])
@@ -171,7 +174,7 @@ def gerar_gazetteer():
 
     # --- pontos notaveis, ancorados em marcos ja definidos ---
     notaveis = [
-        ("PN01", "Entroncamento BR-154 / VC-231", 45, 0),
+        ("PN01", "Entroncamento BR-116 / VC-231", 45, 0),
         ("PN02", "Ponte sobre o Corrego Aroeira", 22, 0),
         ("PN03", "Ponte sobre o Corrego Pequi", 63, 0),
         ("PN04", "Morro do Jatoba", 31, 4),

@@ -489,7 +489,7 @@ def instrucao_relato() -> str:
         "2) \"PRIORIDADE_COD\" — o que o relato exige de quem o recebe. Use SO um destes:\n"
         f"{listar('prioridade')}\n"
         "   Decida pela ACAO, nao pelo assunto. Exemplos:\n"
-        "     'Fracao instalada em BR-154 km 15, PC operando normalmente.'  -> ROTINA\n"
+        "     'Fracao instalada em BR-116 km 15, PC operando normalmente.'  -> ROTINA\n"
         "     'Viatura da fracao atolada na via, solicito apoio.'           -> PRIORITARIO\n"
         "     'Tropa inimiga a 500 m da posicao, em aproximacao.'           -> URGENTE\n"
         "   Um relato que so informa e ROTINA. Um que pede providencia e PRIORITARIO.\n"

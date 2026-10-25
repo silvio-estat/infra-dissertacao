@@ -244,6 +244,17 @@ metadados:
     tesseract -> modelo de linguagem, com a tarefa de OCR por tesseract, cuja
     leitura so a INTEL usava (RELPER escaneado e FOGOS seguem pelo Docling).
     O corpus e regerado inteiro, porque os geradores compartilham a semente.
+  nota_2026_10_25: >-
+    O eixo do cenario passa de 'BR-154' para BR-116 (Rodovia Presidente Dutra). A
+    BR-154 existe (Itumbiara/GO a Lins/SP), longe do Vale do Paraiba, e o texto a
+    dava como inexistente. A Dutra e a estrada real que liga Lorena a Resende,
+    area da Operacao Perseu 2024; fica simplificada como reta (rumo 68 graus,
+    deslocada ~2,7 km para passar por Lorena e Resende; afastamento maximo do
+    tracado real ~6 km, em Queluz) e com quilometragem do cenario, nao a das
+    placas. Nenhum sorteio muda; mudam o nome e as coordenadas. O texto do pedido
+    relato-v6 (exemplo) e a lista de lugares de vocab-v1 e voz-v2 trocam BR-154
+    por BR-116 sem trocar a versao: a Bronze e refeita do zero, nao ha leitura
+    antiga a reler.
   nota_2026_10_20: >-
     Sai o codinome da Funcao de Combate do fim das mensagens de voz ('Luneta.',
     'Escudo.', 'Lanca.'): metade das mensagens de fato o trazia. A funcao e
@@ -992,7 +1003,7 @@ entidades:
       LOCAL_COD:        {tipo: string, nulo: false, descricao: Codigo do local.}
       LOCAL_NOME:       {tipo: string, nulo: false, descricao: Nome do local.}
       LOCAL_TIPO_COD:   {tipo: string, nulo: false, dominio: tipo_local, descricao: Natureza da referencia.}
-      REFERENCIA_TXT:   {tipo: string, nulo: false, descricao: "Forma textual usada para casar com a origem. Ex.: 'BR-154 km 43'."}
+      REFERENCIA_TXT:   {tipo: string, nulo: false, descricao: "Forma textual usada para casar com a origem. Ex.: 'BR-116 km 43'."}
       GEOMETRIA_WKT:    {tipo: string, nulo: false, descricao: Ponto correspondente.}
       PRECISAO_METRO:   {tipo: double, nulo: true, descricao: "Incerteza da referencia: um marco de rodovia e mais preciso que o nome de um povoado."}
 
@@ -1683,7 +1694,7 @@ fontes:
                      observacao: "'cavalo' casa com o sinonimo de AVISTAMENTO_INIMIGO. Se o modelo de linguagem devolve codinome nulo, procura-se um dos codinomes de radio (procurar_palavras) na propria transcricao, como palavra inteira e aceitando plural (procurar_em, regra fixa sem IA). Motivo (26/09): em 12 audios o modelo deixou o codinome nulo com 'cavalos' ou 'tambor' escritos no texto — o pedido era copiar da lista, e o plural nao e copia exata. A regra recupera 4; os demais tinham o codinome estragado pelo transcritor ('Brasembr' por 'brasa em BR') e ficam nulos."}
           referencia_local: {campo: GEOMETRIA_WKT, transformacao: gazetteer,
                              referencia: REF_GAZETTEER,
-                             observacao: "'BR-154 km 43' -> ponto. Nao converte: consulta."}
+                             observacao: "'BR-116 km 43' -> ponto. Nao converte: consulta."}
           prioridade: {campo: PRIORIDADE_COD, transformacao: dominio, dominio: prioridade, por: llm,
                        observacao: "a palavra-codigo do fim da mensagem ('chuva' -> PRIORITARIO), copiada pelo modelo (voz-v2, 14/09). Sai COM ERRO e fica assim de proposito: o transcritor nunca escreve 'orvalho' e o modelo, sem a palavra, as vezes inventa outra. O evento traz a marca de IA para o militar conferir. Ver ACHADOS.md."}
           audio:      {campo: ARQUIVO_IDT, transformacao: referencia, referencia: ARQUIVO}
