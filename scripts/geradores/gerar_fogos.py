@@ -34,6 +34,7 @@ ARTILHARIA_SIGLA = "51o GAC"
 BRIGADA_SIGLA = "51a Bda Inf Mtz"
 
 
+# Uma linha da 1a parte (informe de observador, colunas A a L) para um bombardeio em (lat, lon).
 def _linha_parte1(ctx: Contexto, t, lat, lon, fracao_sigla, prioridade):
     rng = ctx.rng
     obs = f"{rng.choice(OBSERVADORES)} {rng.randint(1, 4)}"
@@ -47,6 +48,7 @@ def _linha_parte1(ctx: Contexto, t, lat, lon, fracao_sigla, prioridade):
             str(rng.randint(3, 15)), efeito]
 
 
+# Uma linha da 2a parte (outras fontes, colunas M a R), sorteada perto de (lat, lon).
 def _linha_parte2(ctx: Contexto, t, lat, lon):
     rng = ctx.rng
     lat2, lon2 = jitter(lat, lon, 4, rng)
@@ -55,6 +57,7 @@ def _linha_parte2(ctx: Contexto, t, lat, lon):
             f"{rng.randint(1, 4)}/{rng.choice(['?', 'Ob', 'Mrt'])}", rng.choice(["Quatro Pecas", "Duas Pecas", "Em espaldao", "Linha de Vtr"])]
 
 
+# Desenha o formulario completo (cabecalho e as tres partes), assina e 'escaneia' a pagina.
 def _desenhar(ctx: Contexto, nr, t, p1, p2, p3) -> list:
     rng = ctx.rng
     img, d = pagina()
@@ -86,6 +89,7 @@ def _desenhar(ctx: Contexto, nr, t, p1, p2, p3) -> list:
 
 def _tabela_multilinha(d, x0, y0, larguras, cabecalho, linhas, f_cab, f_txt):
     """Como desenhar_tabela, mas celulas com quebra de linha ('\\n'), como o formulario impresso."""
+    # Desenha uma faixa da tabela (cabecalho ou linha), cortando o texto que nao cabe na celula.
     def bloco(y, textos, f, alt):
         d.rectangle([x0, y, x0 + sum(larguras), y + alt], outline="black", width=2)
         x = x0
@@ -104,6 +108,7 @@ def _tabela_multilinha(d, x0, y0, larguras, cabecalho, linhas, f_cab, f_txt):
     return y
 
 
+# Relatorios de bombardeio: um por dia com fato, completados ate 30 com dias sorteados; 2 a 4 informes cada.
 def gerar(ctx: Contexto) -> dict:
     rng = ctx.rng
     pasta = ctx.pasta("fogos")

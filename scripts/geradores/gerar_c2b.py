@@ -75,11 +75,13 @@ PRIO_ORIGEM = {"URGENTE": ["Alta", "Critica"], "PRIORITARIO": ["Media", "Moderad
 
 
 # =============================================================================
+# Monta o campo relator: posto, funcao, fracao e uma identidade militar inventada.
 def _relator(ctx: Contexto, unidade_cod: str) -> str:
     rng = ctx.rng
     return f"{rng.choice(POSTOS)} {rng.choice(FUNCOES)} {ctx.sigla(unidade_cod)} - {rng.randint(10**9, 10**10 - 1)}"
 
 
+# Imita a digitacao do operador: abrevia palavras ao acaso e as vezes deixa tudo em minusculas.
 def _abreviar(rng: random.Random, txt: str) -> str:
     for cheio, curto in ABREV:
         if cheio in txt and rng.random() < 0.5:
@@ -89,6 +91,7 @@ def _abreviar(rng: random.Random, txt: str) -> str:
     return txt
 
 
+# Relatos em texto livre: os fatos do cenario mais relatos de rotina, ate 300; um JSON por relato.
 def gerar_relatos(ctx: Contexto) -> dict:
     rng = ctx.rng
     pasta = ctx.pasta("c2b", "relato")
@@ -185,7 +188,9 @@ def _foto(ctx: Contexto, especie: str, legenda: str, noite: bool) -> Image.Image
     return img.filter(ImageFilter.GaussianBlur(rng.uniform(0.2, 1.4)))
 
 
+# Monta o EXIF da foto: GPS e data-hora de captura, como um celular grava.
 def _exif(lat: float, lon: float, t) -> bytes:
+    # Grau decimal -> (grau, minuto, segundo) em fracoes, o formato que o EXIF exige.
     def racional(v):
         v = abs(v)
         g = int(v)
@@ -204,11 +209,13 @@ def _exif(lat: float, lon: float, t) -> bytes:
     return piexif.dump(exif)
 
 
+# O fuso de Brasilia, importado na hora do uso.
 def ctx_fuso():
     from comum import FUSO
     return FUSO
 
 
+# Incidentes com foto: JSON + JPG por incidente. Planta foto sem EXIF, EXIF divergente e foto reenviada.
 def gerar_incidentes(ctx: Contexto) -> dict:
     rng = ctx.rng
     pasta = ctx.pasta("c2b", "incidente")
@@ -286,6 +293,7 @@ def gerar_incidentes(ctx: Contexto) -> dict:
     return {"registros": n, "arquivos": 2 * n}
 
 
+# Gera as duas exportacoes do C2_B (relato e incidente) e anota as contagens no resumo.
 def gerar(ctx: Contexto) -> dict:
     r = {"relato": gerar_relatos(ctx), "incidente": gerar_incidentes(ctx)}
     ctx.resumo["C2_B"] = r

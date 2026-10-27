@@ -57,6 +57,7 @@ _NS = uuid.UUID("6f1c2a4e-0000-4000-8000-0000000000dc")   # namespace fixo: ids 
 # =============================================================================
 # Seeds
 # =============================================================================
+# Le um CSV de seed, pulando as linhas de comentario (comecadas por '#').
 def _ler_csv(caminho: Path) -> list[dict]:
     with open(caminho, encoding="utf-8") as fh:
         linhas = [l for l in fh if not l.startswith("#")]
@@ -79,6 +80,7 @@ class Operacao:
     def nome_c2a(self) -> str:
         return self.cod.rsplit("_", 1)[0].capitalize()
 
+    # O ano da operacao, tirado do codigo (PERSEU_2024 -> '2024').
     @property
     def ano(self) -> str:
         return self.cod.rsplit("_", 1)[1]
@@ -91,6 +93,7 @@ class Operacao:
         return [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
 
 
+# Le a operacao do estudo (a unica linha de operacoes.csv).
 def carregar_operacao() -> Operacao:
     linha = _ler_csv(DIR_SEEDS / "operacoes.csv")[0]
     return Operacao(
@@ -100,6 +103,7 @@ def carregar_operacao() -> Operacao:
         area_wkt=linha["AREA_WKT"], unidade_resp=linha["UNIDADE_RESP_COD"])
 
 
+# Le os dominios (listas de valores validos) do modelo canonico.
 def carregar_dominios() -> dict:
     with open(DIR_CANONICO / "modelo_canonico.yaml", encoding="utf-8") as fh:
         return yaml.safe_load(fh)["dominios"]
@@ -116,6 +120,7 @@ def axial(lat: float, lon: float) -> tuple[float, float]:
     return norte * math.cos(az) + leste * math.sin(az), norte * math.sin(az) - leste * math.cos(az)
 
 
+# Move um ponto alguns km para o norte e para o leste.
 def deslocar(lat: float, lon: float, norte_km: float, leste_km: float) -> tuple[float, float]:
     return lat + norte_km * KM_LAT, lon + leste_km * KM_LON
 
@@ -133,12 +138,14 @@ def ponto_de_wkt(wkt: str) -> tuple[float, float]:
     return float(lat), float(lon)
 
 
+# (lat, lon) -> texto 'POINT(lon lat)'; o inverso de ponto_de_wkt.
 def wkt_ponto(lat: float, lon: float) -> str:
     return f"POINT({lon:.6f} {lat:.6f})"
 
 
 def dms(lat: float, lon: float) -> str:
     """Grau-minuto-segundo por extenso, como o C2_B mostra na tela."""
+    # Converte uma coordenada (lat ou lon) para grau-minuto-segundo com o hemisferio.
     def parte(v, pos, neg):
         h = pos if v >= 0 else neg
         v = abs(v)
@@ -183,6 +190,7 @@ def decametrica(lat: float, lon: float) -> str:
     return f"{int(e // 10) % 100000:05d}-{int(n // 10) % 100000:05d}"
 
 
+# (lat, lon) -> ponto no formato GeoJSON, como os aplicativos de C2 exportam.
 def geojson_ponto(lat: float, lon: float) -> dict:
     return {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]}
 
@@ -195,10 +203,12 @@ def local(dia: date, hora: int, minuto: int = 0, segundo: int = 0) -> datetime:
     return datetime(dia.year, dia.month, dia.day, hora, minuto, segundo, tzinfo=FUSO).astimezone(UTC)
 
 
+# Data-hora -> texto ISO em UTC ('2024-11-27T14:30:00Z').
 def iso(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Data-hora -> texto no formato brasileiro, hora de Brasilia ('27/11/2024 11:30:00').
 def br(dt: datetime) -> str:
     return dt.astimezone(FUSO).strftime("%d/%m/%Y %H:%M:%S")
 
@@ -209,6 +219,7 @@ def dtg(dt: datetime) -> str:
     return f"{d.day:02d}{d.hour:02d}{d.minute:02d} {MESES_DTG[d.month - 1]} {d.year % 100:02d}"
 
 
+# Data-hora -> so hora e minuto, hora local ('1430').
 def hora_curta(dt: datetime) -> str:
     return dt.astimezone(FUSO).strftime("%H%M")
 
@@ -221,10 +232,12 @@ def id_det(*partes) -> str:
     return str(uuid.uuid5(_NS, "|".join(str(p) for p in partes)))
 
 
+# Impressao digital (hash SHA-256) do conteudo de um arquivo.
 def sha256_arquivo(caminho: Path) -> str:
     return hashlib.sha256(caminho.read_bytes()).hexdigest()
 
 
+# Grava um objeto como JSON legivel, criando a pasta se preciso.
 def escrever_json(caminho: Path, obj) -> Path:
     caminho.parent.mkdir(parents=True, exist_ok=True)
     caminho.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -260,6 +273,7 @@ _FONTES = {
 }
 
 
+# Carrega uma fonte tipografica do sistema; se nenhuma existir, usa a padrao do Pillow.
 def fonte(tamanho: int, negrito: bool = False, mono: bool = False) -> ImageFont.FreeTypeFont:
     chave = "mono" if mono else ("sans_b" if negrito else "sans")
     for caminho in _FONTES[chave]:
@@ -268,11 +282,13 @@ def fonte(tamanho: int, negrito: bool = False, mono: bool = False) -> ImageFont.
     return ImageFont.load_default()
 
 
+# Cria uma folha A4 em branco e o 'pincel' para desenhar nela.
 def pagina() -> tuple[Image.Image, ImageDraw.ImageDraw]:
     img = Image.new("RGB", A4, "white")
     return img, ImageDraw.Draw(img)
 
 
+# Escreve um texto centralizado na horizontal.
 def texto_centrado(draw, y, txt, f, largura=A4[0], x0=0, fill="black"):
     w = draw.textlength(txt, font=f)
     draw.text((x0 + (largura - w) / 2, y), txt, font=f, fill=fill)
@@ -325,6 +341,7 @@ def escanear(img: Image.Image, rng: random.Random, np_rng: np.random.Generator) 
     return g.filter(ImageFilter.GaussianBlur(rng.uniform(0.35, 0.8)))
 
 
+# Junta as paginas (imagens) num PDF a 200 dpi.
 def salvar_pdf(paginas: list[Image.Image], caminho: Path) -> Path:
     caminho.parent.mkdir(parents=True, exist_ok=True)
     paginas[0].save(caminho, "PDF", resolution=200.0, save_all=True, append_images=paginas[1:])
@@ -340,6 +357,7 @@ class Contexto:
     saida: Path = SAIDA_PADRAO
     escala: float = 1.0          # multiplica os volumes; 0.1 para um teste rapido
 
+    # Prepara o contexto: sorteadores com a semente, seeds, pastas de saida e setores das OM.
     def __post_init__(self):
         self.saida = Path(self.saida)
         self.rng = random.Random(self.seed)
@@ -364,12 +382,15 @@ class Contexto:
     def unidade(self, cod: str) -> dict:
         return self._por_cod[cod]
 
+    # Sigla da unidade a partir do codigo ('BI511C1' -> '1a Cia Fuz/511o Btl Inf Mtz').
     def sigla(self, cod: str) -> str:
         return self._por_cod[cod]["UNIDADE_SIGLA"]
 
+    # Todas as unidades de um escalao (FR = pelotao, SU = companhia, OM, BDA).
     def por_escalao(self, escalao: str) -> list[dict]:
         return [u for u in self.unidades if u["ESCALAO_COD"] == escalao]
 
+    # As unidades diretamente subordinadas a uma unidade.
     def filhas(self, cod: str) -> list[dict]:
         return [u for u in self.unidades if u["SUPERIOR_COD"] == cod]
 

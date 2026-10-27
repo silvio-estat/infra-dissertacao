@@ -64,6 +64,7 @@ CORPOS = {
 }
 
 
+# Baixa a voz do Piper na primeira vez; depois reaproveita a copia local.
 def _baixar_vozes(dir_vozes: Path):
     dir_vozes.mkdir(parents=True, exist_ok=True)
     faltam = [v for v in VOZES if not (dir_vozes / f"{v}.onnx").exists()]
@@ -72,6 +73,7 @@ def _baixar_vozes(dir_vozes: Path):
         subprocess.run([sys.executable, "-m", "piper.download_voices", "--data-dir", str(dir_vozes)] + faltam, check=True)
 
 
+# Repoe acentos nos nomes de lugar, para o sintetizador pronunciar certo.
 def _acentuar(txt: str) -> str:
     for a, b in ACENTOS:
         txt = txt.replace(a, b)
@@ -97,6 +99,7 @@ def _degradar_radio(ctx: Contexto, amostras: np.ndarray, taxa: int) -> np.ndarra
     return (x * 32767).astype(np.int16)
 
 
+# Mensagens de radio: os fatos da VOZ mais relatos de posicao de rotina, ate 150; cada uma vira .wav + sidecar.
 def gerar(ctx: Contexto) -> dict:
     from piper import PiperVoice
     rng = ctx.rng

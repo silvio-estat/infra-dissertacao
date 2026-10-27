@@ -24,6 +24,7 @@ from minio import Minio
 RAIZ = Path(__file__).resolve().parents[2]
 
 
+# Le as variaveis do .env; as MINIO_* do ambiente, se houver, tem prioridade.
 def _env():
     env = {}
     caminho = RAIZ / ".env"
@@ -36,6 +37,7 @@ def _env():
     return env
 
 
+# Envia cada arquivo de dados_sinteticos/landing/ para o bucket, mantendo o caminho.
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--saida", type=Path, default=RAIZ / "dados_sinteticos")

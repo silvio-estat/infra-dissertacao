@@ -35,12 +35,14 @@ from comum import SAIDA_PADRAO, Contexto            # noqa: E402
 ORDEM = ["C2_A", "C2_B", "RELPER", "FOGOS", "VOZ"]
 
 
+# Liga o nome de cada fonte a funcao que a gera.
 def _geradores():
     import gerar_c2a, gerar_c2b, gerar_fogos, gerar_relper, gerar_voz
     return {"C2_A": gerar_c2a.gerar, "C2_B": gerar_c2b.gerar, "RELPER": gerar_relper.gerar,
             "FOGOS": gerar_fogos.gerar, "VOZ": gerar_voz.gerar}
 
 
+# Le as opcoes da linha de comando.
 def _args(argv=None):
     p = argparse.ArgumentParser(description="Gera os dados sinteticos multimodais da Operacao Perseu 2024.")
     p.add_argument("--seed", type=int, default=2024)
@@ -52,6 +54,7 @@ def _args(argv=None):
     return p.parse_args(argv)
 
 
+# Apaga a saida da rodada anterior (landing/ e verdade/), salvo com --manter.
 def _preparar(ctx: Contexto, manter: bool):
     landing = ctx.saida / "landing"
     if landing.exists() and not manter:
@@ -60,10 +63,12 @@ def _preparar(ctx: Contexto, manter: bool):
         shutil.rmtree(ctx.verdade)
 
 
+# Soma o tamanho dos arquivos de uma pasta, em MB.
 def _tamanho_mb(pasta: Path) -> float:
     return sum(p.stat().st_size for p in pasta.rglob("*") if p.is_file()) / 1e6 if pasta.exists() else 0.0
 
 
+# Rodada completa: cenario, cada fonte na ordem, verdade/ e um resumo na tela.
 def executar(args) -> Contexto:
     ctx = Contexto(seed=args.seed, saida=args.saida, escala=args.escala)
     _preparar(ctx, args.manter)

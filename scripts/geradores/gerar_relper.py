@@ -60,6 +60,7 @@ def _grafia_fracao(ctx: Contexto, u: dict) -> str:
     return rng.choice(opcoes)
 
 
+# Estado de partida de uma subunidade: efetivo, viaturas, combustivel e suprimentos.
 def _estado_inicial(ctx: Contexto, u: dict) -> dict:
     rng = ctx.rng
     esc = u["ESCALAO_COD"]
@@ -100,6 +101,7 @@ def _avancar(ctx: Contexto, e: dict, turno_idx: int):
     e["ausentes"] = max(0, e["ausentes"] + rng.randint(-1, 1))
 
 
+# Os numeros de uma linha do RELPER, na ordem das colunas do formulario.
 def _valores(ctx: Contexto, e: dict, versao: int, nec: str) -> list:
     v = [e["ef_prev"], e["ef_prev"] - e["ausentes"] - e["bx_cmb"] - e["bx_ncmb"] - e["evac"],
          e["bx_cmb"], e["bx_ncmb"], e["evac"], e["vtr_op"], e["vtr_total"], round(e["comb"], 1),
@@ -109,6 +111,7 @@ def _valores(ctx: Contexto, e: dict, versao: int, nec: str) -> list:
     return v
 
 
+# Grava o RELPER como planilha: cabecalho do documento, cabecalho das colunas e as linhas.
 def _xlsx(caminho, om_sigla, data_txt, turno, cabecalho, linhas):
     wb = Workbook()
     ws = wb.active
@@ -125,6 +128,7 @@ def _xlsx(caminho, om_sigla, data_txt, turno, cabecalho, linhas):
     wb.save(caminho)
 
 
+# Desenha o RELPER numa folha A4, assina e 'escaneia' (as OM que remetem em papel).
 def _pdf(ctx: Contexto, caminho, om_sigla, data_txt, turno, cabecalho, linhas):
     img, d = pagina()
     texto_centrado(d, 110, "RELATÓRIO PERIÓDICO DE PESSOAL E MATERIAL", fonte(40, negrito=True))
@@ -140,6 +144,7 @@ def _pdf(ctx: Contexto, caminho, om_sigla, data_txt, turno, cabecalho, linhas):
     salvar_pdf([escanear(img, ctx.rng, ctx.np_rng)], caminho)
 
 
+# Para cada dia, turno e OM: avanca o estado, monta as linhas e grava xlsx ou pdf. Planta os defeitos do RELPER.
 def gerar(ctx: Contexto) -> dict:
     rng = ctx.rng
     pasta = ctx.pasta("relper")

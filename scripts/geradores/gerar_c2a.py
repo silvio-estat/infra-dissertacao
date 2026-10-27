@@ -59,6 +59,7 @@ NOMES_LF = ["AZUL", "VERDE", "PRATA", "BRONZE", "OURO", "RUBI", "JADE", "ONIX", 
 
 
 # =============================================================================
+# Localizadores: cada pelotao passeia ao acaso no setor da sua OM; um JSON por dia e hora. Planta 3 defeitos de transporte.
 def gerar_posicoes(ctx: Contexto) -> dict:
     rng = ctx.rng
     fracoes = ctx.por_escalao("FR")
@@ -128,9 +129,11 @@ def gerar_posicoes(ctx: Contexto) -> dict:
 
 
 # =============================================================================
+# Desenha a geometria de uma medida de coordenacao de fundo (ponto, poligono ou linha) perto de (km, perp).
 def _geometria(ctx: Contexto, especie: str, tipo_geo: str, km: float, perp: float) -> dict:
     rng = ctx.rng
 
+    # Converte (km do eixo, afastamento) em [lon, lat], a ordem do GeoJSON.
     def ll(k, p):
         lat, lon = _latlon(k, p)
         return [round(lon, 6), round(lat, 6)]
@@ -158,6 +161,7 @@ def _geometria(ctx: Contexto, especie: str, tipo_geo: str, km: float, perp: floa
     return {"type": "LineString", "coordinates": pts}
 
 
+# Medidas de coordenacao: os obstaculos do cenario mais medidas de fundo, ate 200, em lotes de 25.
 def gerar_mcc(ctx: Contexto) -> dict:
     rng = ctx.rng
     registros = []
@@ -214,6 +218,7 @@ def gerar_mcc(ctx: Contexto) -> dict:
     return {"registros": len(registros), "arquivos": math.ceil(len(registros) / por_lote)}
 
 
+# Gera as duas exportacoes do C2_A (posicao e mcc) e anota as contagens no resumo.
 def gerar(ctx: Contexto) -> dict:
     r = {"posicao": gerar_posicoes(ctx), "mcc": gerar_mcc(ctx)}
     ctx.resumo["C2_A"] = r

@@ -68,6 +68,7 @@ CABECALHO = (
 )
 
 
+# Grava um CSV de seed com o cabecalho de aviso ('nao editar a mao').
 def _escrever(nome, titulo, colunas, linhas):
     caminho = DIR / nome
     with caminho.open("w", encoding="utf-8", newline="") as fh:
@@ -149,10 +150,12 @@ ARVORES = ["Aroeira", "Sucupira", "Jatoba", "Copaiba", "Barriguda", "Pequi",
            "Macauba", "Cagaita", "Mangaba", "Baru", "Pau-Terra", "Gonçalo-Alves"]
 
 
+# (lat, lon) -> texto 'POINT(lon lat)'.
 def _ponto(lat, lon):
     return f"POINT({lon:.6f} {lat:.6f})"
 
 
+# Os lugares do cenario: marcos da BR-116 e da VC-231, localidades, pontos notaveis e quadriculas.
 def gerar_gazetteer():
     g = []
     # --- BR-116 (Dutra) simplificada como reta ao longo do vale, marcos de 5 em 5 km ---

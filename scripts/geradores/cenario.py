@@ -106,12 +106,14 @@ class Fato:
     especie: str = ""         # so para OBSTACULO: o que o C2_A exporta
     fontes: list = field(default_factory=list)
 
+    # A hora do fato como datetime (no CSV ela fica como texto ISO).
     @property
     def hora_dt(self):
         from datetime import datetime
         return datetime.fromisoformat(self.hora.replace("Z", "+00:00"))
 
 
+# Sorteia um valor de uma lista de pares (valor, peso), com chance proporcional ao peso.
 def _sortear_ponderado(rng, pares):
     total = sum(p for _, p in pares)
     r = rng.uniform(0, total)
@@ -123,6 +125,7 @@ def _sortear_ponderado(rng, pares):
     return pares[-1][0]
 
 
+# Sorteia os fatos do cenario: para cada um, tipo, unidade, lugar, hora, prioridade e fontes que o relatam.
 def gerar_cenario(ctx: Contexto, n_fatos: int | None = None) -> list[Fato]:
     rng = ctx.rng
     n = n_fatos or ctx.n(60)
@@ -160,6 +163,7 @@ def gerar_cenario(ctx: Contexto, n_fatos: int | None = None) -> list[Fato]:
     return fatos
 
 
+# Grava em verdade/ os fatos, os defeitos plantados, o gabarito e o resumo por fonte.
 def salvar_verdade(ctx: Contexto):
     ctx.verdade.mkdir(parents=True, exist_ok=True)
     with open(ctx.verdade / "fatos.csv", "w", encoding="utf-8", newline="") as fh:
@@ -182,5 +186,6 @@ def salvar_verdade(ctx: Contexto):
         json.dumps(ctx.resumo, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+# Devolve so os fatos que a fonte indicada deve relatar.
 def fatos_para(ctx: Contexto, fonte: str) -> list[Fato]:
     return [f for f in ctx.fatos if fonte in f.fontes]
