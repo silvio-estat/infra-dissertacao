@@ -1799,13 +1799,12 @@ visoes:
     # A cadencia decretada pelo EM da brigada. Mudar aqui muda o que conta como
     # ausencia: com tres turnos, um dia sem a remessa do meio passa a ser problema.
     relper_turnos: [MATUTINO, VESPERTINO]
-    janela_observada: true
-    janela_observada_porque: >-
-      A janela vai da primeira a ultima remessa que chegou, e nao do inicio ao fim
-      da operacao. Sem isso, o dia final da operacao — em que nenhuma OM remeteu,
-      porque a operacao terminou antes do turno — apareceria como 14 ausencias que
-      nao existem. O custo e conhecido: um dia inteiro sem remessa nas BORDAS da
-      operacao nao e acusado; no meio, e.
+    # Janela da ausencia (fixa em gold_visoes.py, nao e parametro): vai da primeira
+    # a ultima remessa que chegou, e nao do inicio ao fim da operacao. Sem isso, o
+    # dia final da operacao — em que nenhuma OM remeteu, porque a operacao terminou
+    # antes do turno — apareceria como 14 ausencias que nao existem. O custo e
+    # conhecido: um dia inteiro sem remessa nas BORDAS da operacao nao e acusado;
+    # no meio, e.
 
   PITCIC:
     tabela: PITCIC
