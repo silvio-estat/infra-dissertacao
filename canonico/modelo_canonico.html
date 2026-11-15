@@ -504,7 +504,7 @@
       camada tem um trabalho e só um.</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e SITUACAO_UNIDADE, com setas pontilhadas de linhagem de volta ao Bronze. O arquivo que não pode ser catalogado vai da pasta landing para a tabela REJEICAO e não segue adiante; a tabela INGESTAO registra, a cada execução, a conferência entre o que havia na pasta e o que a Bronze conhece.">
+      <pre class="mermaid" role="img" aria-label="Fluxo de dados das cinco fontes, passando pela pasta landing, pelas tabelas Bronze RECEPCAO_BRUTA (que recebe o JSON do C2 e o sidecar das mídias), ARQUIVO e EXTRACAO, pela transformação de/para do modelo_canonico.yaml apoiada nas tabelas de consulta REF_OPERACAO, REF_UNIDADE, REF_GAZETTEER e REF_ABREVIATURA, até as tabelas Silver EVENTO e suas extensões SITUACAO_UNIDADE e MEDIDA_COORDENACAO, com setas pontilhadas de linhagem de volta ao Bronze. O arquivo que não pode ser catalogado vai da pasta landing para a tabela REJEICAO e não segue adiante; a tabela INGESTAO registra, a cada execução, a conferência entre o que havia na pasta e o que a Bronze conhece.">
 flowchart TD
   subgraph FONTES["FONTES · sistemas de origem"]
     C2A["C2_A<br/>JSON com geometria"]
@@ -525,7 +525,7 @@ flowchart TD
   subgraph BRONZE["BRONZE · guarda o payload, nao interpreta"]
     RCPB["RECEPCAO_BRUTA<br/>o registro estruturado de TODO evento:<br/>o JSON do C2, ou o sidecar .json do arquivo.<br/>payload cru inteiro, hash, operacao"]
     ARQ["ARQUIVO<br/>manifesto do binario (xlsx, pdf, foto, audio):<br/>URI, hash, MIME, operacao (da pasta)"]
-    EXT["EXTRACAO<br/>1 linha por leitura de um binario:<br/>ferramenta+versao, houve IA? (S/N),<br/>modelo e prompt quando houve"]
+    EXT["EXTRACAO<br/>1 linha por leitura: do binario,<br/>do texto do relato ou de outra leitura:<br/>ferramenta+versao, houve IA? (S/N),<br/>modelo e prompt quando houve"]
     REJ["REJEICAO<br/>o arquivo que chegou e NAO abre:<br/>motivo, mensagem do erro, tamanho.<br/>nao entra: fica registrado que existiu"]
     INGE["INGESTAO<br/>1 linha por execucao, com a CONFERENCIA:<br/>quantos objetos havia em landing/ e onde<br/>cada um foi parar — inclusive os que<br/>nao geram linha (duplicata byte a byte)"]
   end
@@ -558,15 +558,18 @@ flowchart TD
   subgraph SILVER["SILVER · modelo canonico unico"]
     EVT["EVENTO<br/>o denominador comum de toda fonte:<br/>quem, quando, onde, tipo, funcao de combate<br/>por onde chegou, de que registro bruto, qual IA"]
     SIT["SITUACAO_UNIDADE<br/>extensao - so o RELPER produz:<br/>efetivo, baixas, viaturas, suprimento"]
+    MDD["MEDIDA_COORDENACAO<br/>extensao - so o mapa do C2_A produz:<br/>especie e nome da medida ou obstaculo"]
   end
 
   MAP ==>|"toda fonte"| EVT
   MAP ==>|"so RELPER"| SIT
+  MAP ==>|"so C2_A (mapa)"| MDD
   EVT -->|"1 : 0..1"| SIT
+  EVT -->|"1 : 0..1"| MDD
 
   EVT -.->|"RECEPCAO_IDT · elo 1, sempre"| RCPB
   EVT -.->|"ARQUIVO_IDT · o binario, quando ha"| ARQ
-  EVT -.->|"EXTRACAO_IDT · elo 2, sempre que ha binario"| EXT
+  EVT -.->|"EXTRACAO_IDT · elo 2, quando houve leitura<br/>(a foto nao tem: o EXIF vem na ingestao)"| EXT
 </pre>
       <figcaption>Prancha 1 — o percurso do dado. Seta cheia é fluxo; seta pontilhada é um
         ponteiro (a linhagem); seta grossa é o fluxo principal, onde toda fonte cai. A prancha
@@ -653,25 +656,37 @@ flowchart TD
       <code>FK</code> marca a chave estrangeira (aponta para a linha de outra tabela).</p>
 
     <figure class="plate">
-      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: REF_OPERACAO dá contexto a EVENTO, ARQUIVO e RECEPCAO_BRUTA; RECEPCAO_BRUTA origina EVENTO e, quando é sidecar, aponta para o ARQUIVO da mídia; ARQUIVO é entrada de EXTRACAO e origina EVENTO; EXTRACAO produz EVENTO; EVENTO estende SITUACAO_UNIDADE numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
+      <pre class="mermaid" role="img" aria-label="Diagrama entidade-relacionamento: REF_OPERACAO dá contexto a EVENTO, ARQUIVO e RECEPCAO_BRUTA, e REF_UNIDADE é a unidade que a comanda; todo EVENTO vem de uma RECEPCAO_BRUTA, mas há recepção sem evento (o PDF digitalizado de um turno do RELPER que também chegou em planilha); todo ARQUIVO chega com um ou mais sidecars em RECEPCAO_BRUTA (a mesma foto anexada a dois incidentes); EXTRACAO lê um ARQUIVO, ou o texto de uma RECEPCAO_BRUTA, ou a saída de outra EXTRACAO, com o ajuste registrado em AJUSTE_EXTRACAO; ARQUIVO e EXTRACAO originam EVENTO quando há; EVENTO estende SITUACAO_UNIDADE e MEDIDA_COORDENACAO numa relação de um para zero-ou-um; REF_UNIDADE informa a unidade reportante de EVENTO e aponta para si mesma pela unidade superior.">
 erDiagram
-  REF_OPERACAO   ||--o{ EVENTO         : "contexto"
-  REF_OPERACAO   ||--o{ ARQUIVO        : "contexto"
-  REF_OPERACAO   ||--o{ RECEPCAO_BRUTA : "contexto"
-  RECEPCAO_BRUTA ||--|{ EVENTO         : "origina — sempre (JSON ou sidecar)"
-  RECEPCAO_BRUTA ||--o| ARQUIVO        : "sidecar do arquivo"
-  ARQUIVO     ||--o{ EXTRACAO         : "e entrada de"
-  ARQUIVO     ||--o{ EVENTO           : "e o binario de"
-  EXTRACAO    ||--o{ EVENTO           : "produz"
-  EVENTO      ||--o| SITUACAO_UNIDADE : "estende (1 : 0..1)"
-  REF_UNIDADE ||--o{ EVENTO           : "unidade reportante"
-  REF_UNIDADE ||--o{ REF_UNIDADE      : "unidade superior"
+  REF_OPERACAO    ||--o{ EVENTO             : "contexto"
+  REF_OPERACAO    ||--o{ ARQUIVO            : "contexto"
+  REF_OPERACAO    ||--o{ RECEPCAO_BRUTA     : "contexto"
+  REF_UNIDADE     |o--o{ REF_OPERACAO       : "comanda"
+  RECEPCAO_BRUTA  ||--o{ EVENTO             : "origina"
+  ARQUIVO         |o--|{ RECEPCAO_BRUTA     : "acompanhado pelo sidecar"
+  ARQUIVO         |o--o{ EXTRACAO           : "e entrada de"
+  RECEPCAO_BRUTA  |o--o{ EXTRACAO           : "texto lido por IA"
+  EXTRACAO        |o--o{ EXTRACAO           : "le a saida de"
+  AJUSTE_EXTRACAO |o--o{ EXTRACAO           : "ajuste da chamada"
+  ARQUIVO         |o--o{ EVENTO             : "e o binario de"
+  EXTRACAO        |o--o{ EVENTO             : "produz"
+  EVENTO          ||--o| SITUACAO_UNIDADE   : "estende (1 : 0..1)"
+  EVENTO          ||--o| MEDIDA_COORDENACAO : "estende (1 : 0..1)"
+  REF_UNIDADE     |o--o{ EVENTO             : "unidade reportante"
+  REF_UNIDADE     |o--o{ REF_UNIDADE        : "unidade superior"
 
   REF_OPERACAO {
     string OPERACAO_COD PK
     string OPERACAO_NOME
     timestamp INICIO_DATA
     string AREA_WKT
+    string UNIDADE_RESP_COD FK
+  }
+  REF_UNIDADE {
+    string UNIDADE_COD PK
+    string UNIDADE_SIGLA
+    string ESCALAO_COD
+    string SUPERIOR_COD FK
   }
   RECEPCAO_BRUTA {
     string RECEPCAO_IDT PK
@@ -690,15 +705,24 @@ erDiagram
   EXTRACAO {
     string EXTRACAO_IDT PK
     string ARQUIVO_IDT FK
+    string RECEPCAO_IDT FK
+    string EXTRACAO_ORIGEM_IDT FK
     string INFERENCIA_INDIC
     string FERRAMENTA_NOME
     string MODELO_NOME
-    string PROMPT_VERSAO_COD
+    string PROMPT_VERSAO_COD FK
     string SAIDA_TXT
+  }
+  AJUSTE_EXTRACAO {
+    string PROMPT_VERSAO_COD PK
+    string FERRAMENTA_NOME
+    string PARAMETROS_JSON_TXT
+    string PROMPT_TXT
   }
   EVENTO {
     string EVENTO_IDT PK
     string OPERACAO_COD FK
+    string UNIDADE_REPORTANTE_COD FK
     string SISTEMA_ORIGEM_COD
     string MODALIDADE_ORIGEM_COD
     string TIPO_COD
@@ -709,11 +733,17 @@ erDiagram
     string EXTRACAO_IDT FK
   }
   SITUACAO_UNIDADE {
-    string EVENTO_IDT PK
+    string EVENTO_IDT PK, FK
     string TURNO_COD
     int EF_PRESENTE_QNT
     int VTR_OPERACIONAL_QNT
     string ATRIBUTO_EXTRA_TXT
+  }
+  MEDIDA_COORDENACAO {
+    string EVENTO_IDT PK, FK
+    string MEDIDA_ESPECIE_COD
+    string MEDIDA_NOME
+    string OBSERVACAO
   }
   REJEICAO {
     string REJEICAO_IDT PK
@@ -734,9 +764,17 @@ erDiagram
       <figcaption>Prancha 2 — as tabelas do percurso e suas ligações por chave. O losango cheio marca o
         lado &ldquo;um&rdquo; da relação; o pé-de-galinha marca o lado &ldquo;muitos&rdquo;.
         <code>OPERACAO_COD</code> aparece nas três tabelas brutas e em <code>EVENTO</code>: é a
-        coluna que atravessa tudo. Todo <code>EVENTO</code> tem um <code>RECEPCAO_IDT</code> (o
-        JSON ou o sidecar — daí o traço cheio); tem também <code>ARQUIVO_IDT</code> quando há um
-        binário por trás, que é quase sempre. <code>REJEICAO</code> e <code>INGESTAO</code> aparecem
+        coluna que atravessa tudo. Todo <code>EVENTO</code> tem exatamente um
+        <code>RECEPCAO_IDT</code> (o JSON ou o sidecar); a recíproca não vale — quando o mesmo turno do
+        RELPER chega em planilha <em>e</em> em PDF digitalizado, o PDF é recebido e lido, mas o
+        evento sai da planilha. <code>ARQUIVO_IDT</code> e
+        <code>EXTRACAO_IDT</code> são opcionais: o JSON do C2_A não tem binário, e a foto do
+        C2_B não passa por extração (a posição vem do EXIF, lido na ingestão). Um mesmo
+        <code>ARQUIVO</code> pode ter mais de um sidecar: a mesma foto anexada a dois incidentes
+        é guardada uma vez só, pelo hash. As duas extensões de <code>EVENTO</code> usam o próprio
+        <code>EVENTO_IDT</code> como chave (<code>PK, FK</code>) — por isso, no máximo uma linha
+        por evento. Nenhuma dessas regras é imposta pelo banco: o Iceberg não tem chave primária
+        nem estrangeira; elas são do modelo, e quem as respeita é o job. <code>REJEICAO</code> e <code>INGESTAO</code> aparecem
         <strong>sem ligação nenhuma</strong>, e é isso que elas têm a dizer: a primeira registra o
         arquivo que não chegou a virar linha em lugar algum; a segunda conta objetos que estão fora
         do repositório. Nenhuma das duas tem chave que a ligue ao resto — porque o assunto delas
@@ -749,7 +787,7 @@ erDiagram
 
     <p><code>REF_GAZETTEER</code> e <code>REF_ABREVIATURA</code> não aparecem como ligação porque
       não são chave estrangeira de nada: elas são <em>consultadas durante a transformação</em>, e
-      o resultado já entra gravado em <code>EVENTO</code> e <code>SITUACAO_UNIDADE</code>.
+      o resultado já entra gravado em <code>EVENTO</code> e nas suas extensões.
       <code>REF_UNIDADE</code> aparece porque <code>EVENTO.UNIDADE_REPORTANTE_COD</code> guarda o
       código que ela define — e aponta para si mesma, porque toda unidade tem uma superior (menos
       a brigada, no topo). <code>REF_OPERACAO</code> aparece porque <code>OPERACAO_COD</code> é
