@@ -32,7 +32,10 @@
 
 metadados:
   versao: 3
-  atualizado_em: 2026-10-08
+  # atualizado_em NAO e enfeite: e a trava da Silver (nota_2026_11_17). Toda
+  # mudanca que altera o resultado de uma receita exige uma nota nova e esta
+  # data atualizada, ou o job da Silver para.
+  atualizado_em: 2026-11-17
   nota: >-
     Versao 3 remove a fonte SIM — o simulador de funcoes de combate, que nao
     correspondia a sistema nenhum do ambiente real. Seus oito tipos foram
@@ -287,6 +290,25 @@ metadados:
     arquivo_tem_sidecar e pelo tipo SEM_SIDECAR de PROBLEMA_DADOS. Denunciar a
     falta, em vez de adivinhar a operacao, preserva a linhagem. A AREA_WKT de
     REF_OPERACAO fica: ancora a conversao da coordenada decametrica.
+  nota_2026_11_17: >-
+    A mudanca do modelo passa a ser detectada e registrada na Silver, como ja era
+    a mudanca de prompt na Bronze. Ate aqui, uma regra que nao passa por prompt
+    (sinonimo de dominio, abreviatura, de/para) mudava o resultado sem deixar
+    marca na linha, e a DAG da Silver nem percebia: so contava registro sem
+    evento. Entram duas colunas em EVENTO. RECEITA_HASH_COD e a impressao digital
+    do que a receita de fato usa: o SQL montado, o bloco da receita sem os textos
+    descritivos e o conteudo dos seeds; comentario e nota nao entram, e uma
+    mudanca que nao altera o SQL nao muda o hash. MODELO_REVISAO_COD copia
+    metadados.atualizado_em, que passa a ser a versao de trabalho do modelo (a
+    versao 3 continua nomeando a geracao). A trava: se o hash de uma receita
+    mudou e atualizado_em nao, o job para e pede uma nota nova, entao mudar a
+    regra sem documentar deixa de ser possivel. atualizado_em aceita data e hora
+    ('2026-11-17 15:30'), para a segunda mudanca do mesmo dia. Junto, a DAG da Silver passa a
+    contar como pendente o evento produzido por regra antiga e o evento cuja
+    extracao nao e a mais recente (releitura por prompt novo), e o job apaga, antes
+    do MERGE, o evento que o mesmo registro de origem deixou de produzir: uma
+    releitura que muda a hora lida (FOGOS, pelo Docling) mudaria o EVENTO_IDT e
+    deixaria o evento duplicado.
 
 
 # =============================================================================
@@ -608,6 +630,12 @@ entidades:
       EXTRACAO_MODELO_NOME:
         {tipo: string, nulo: true,
          descricao: "A cadeia de ferramentas de IA por tras do evento, da ultima leitura para a primeira (ex.: 'ollama qwen3.5:4b <- faster-whisper 1.1.0 medium-int8'). E o AVISO para quem le: este dado passou por inferencia e deve ser conferido — a responsabilidade pela interpretacao continua sendo do militar. Preenchida pelo job, e nao pela receita, sempre que houve inferencia no caminho; nula na leitura direta (planilha) e nas fontes JSON. Repetida aqui de proposito, para aparecer sem juncao."}
+      RECEITA_HASH_COD:
+        {tipo: string, nulo: true,
+         descricao: "Impressao digital (sha256) da regra que produziu o evento: o SQL montado da receita, o bloco da receita sem textos descritivos e os seeds. Preenchida pelo job. Muda quando a regra muda, e so entao; evento com hash diferente do atual esta pendente de reprocessamento."}
+      MODELO_REVISAO_COD:
+        {tipo: string, nulo: true,
+         descricao: "metadados.atualizado_em do modelo canonico quando o evento foi produzido (data, ou data e hora): aponta para a nota que explica a regra em vigor. Preenchida pelo job."}
 
   # ---------------------------------------------------------------------------
   SITUACAO_UNIDADE:

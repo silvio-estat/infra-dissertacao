@@ -25,6 +25,8 @@ de/para declarado no modelo e monta o SQL correspondente.
 """
 
 import argparse
+import hashlib
+import json
 import math
 import re
 import unicodedata
@@ -1110,11 +1112,15 @@ def _origem_da_extracao(spark, modelo, fonte, tipo, bloco):
 # 6. O DE/PARA VIRA UM SELECT
 # =============================================================================
 
-def montar_select(modelo, fonte, tipo=None):
+def montar_select(modelo, fonte, tipo=None, marcas=None):
     """Monta a consulta que le a origem e devolve colunas canonicas.
 
     Projeta as colunas de EVENTO e, quando a fonte tem extensao, tambem as dela —
     numa consulta so, porque as duas tabelas compartilham o EVENTO_IDT.
+
+    `marcas` sao colunas que nao vem da origem e sim do proprio modelo (o hash da
+    receita e a revisao). Ficam de fora quando o SQL e montado para CALCULAR o
+    hash — senao o hash dependeria de si mesmo.
     """
     spec = modelo["fontes"][fonte]
     blocos = spec.get("entidades") or {}
@@ -1161,6 +1167,7 @@ def montar_select(modelo, fonte, tipo=None):
     # inferencia no caminho pode deixar de avisar quem le o dado que ele deve conferir.
     if da_bronze_v3:
         projecoes.setdefault("EXTRACAO_MODELO_NOME", "EXTRACAO_MODELO")
+    projecoes.update(marcas or {})
 
     # --- campos derivados: calculados a partir dos ja mapeados, nao vem da origem
     if {"SISTEMA_ORIGEM_COD", "REGISTRO_ORIGEM_COD", "OCORRENCIA_DATA"} <= set(projecoes):
@@ -1202,28 +1209,130 @@ def montar_select(modelo, fonte, tipo=None):
     return "SELECT\n  " + ",\n  ".join(select) + f"\nFROM {de}{onde}"
 
 
+# =============================================================================
+# 7. A REGRA EM VIGOR — impressao digital da receita e trava de revisao
+# =============================================================================
+# O prompt ja tinha esse controle na Bronze (AJUSTE_EXTRACAO): o texto montado tem
+# um hash, e mudar o texto sem trocar a versao para a extracao. Aqui e o mesmo
+# para a REGRA que produz a Silver (nota_2026_11_17). O hash e do que a receita
+# de fato usa, e nao do arquivo YAML: comentario e nota nao mudam o resultado e
+# nao devem contar como mudanca.
+
+# chaves que so descrevem: mudar o texto delas nao muda nenhuma linha da Silver
+_TEXTOS_DESCRITIVOS = {"descricao", "observacao", "documento"}
+
+
+def _sem_textos(valor):
+    if isinstance(valor, dict):
+        return {k: _sem_textos(v) for k, v in valor.items()
+                if k not in _TEXTOS_DESCRITIVOS and not str(k).startswith("nota")}
+    if isinstance(valor, list):
+        return [_sem_textos(v) for v in valor]
+    return valor
+
+
+def impressao_receita(modelo, fonte, tipo) -> str:
+    """sha256 do que a receita usa: o SQL montado, o bloco da receita e os seeds.
+
+    O SQL cobre dominios e sinonimos (viram CASE WHEN) e as consultas as REF_*.
+    O bloco cobre o que e resolvido em Python antes do SQL (os cabecalhos e as
+    grafias da grade, `cede_a`). Os seeds cobrem o CONTEUDO das REF_*, que o SQL
+    so consulta: uma abreviatura nova nao muda o texto do SQL, mas muda o
+    resultado. Todos os seeds entram em toda receita — mais simples que descobrir
+    quais cada uma consulta, e o erro e so reprocessar a mais.
+    """
+    seeds = {}
+    for nome, entidade in sorted(modelo["entidades"].items()):
+        if entidade.get("seed"):
+            texto = (modelo["_dir"] / entidade["seed"]).read_text(encoding="utf-8")
+            seeds[nome] = [l for l in texto.splitlines() if l.strip() and not l.startswith("#")]
+    conteudo = json.dumps({"fonte": fonte, "receita": tipo,
+                           "sql": montar_select(modelo, fonte, tipo),
+                           "bloco": _sem_textos(modelo["fontes"][fonte]["entidades"][tipo]),
+                           "seeds": seeds},
+                          sort_keys=True, ensure_ascii=False, default=str)
+    return "sha256:" + hashlib.sha256(conteudo.encode("utf-8")).hexdigest()
+
+
+def _conferir_trava(spark, fonte, impressao, revisao):
+    """Regra mudou e a revisao do modelo nao: para, e pede a nota.
+
+    A comparacao e com os eventos que ESTA receita ja gravou (os registros da
+    origem). Se algum foi produzido na revisao atual com outro hash, alguem
+    mudou a regra depois de rodar e nao declarou a mudanca.
+    """
+    divergentes = spark.sql(f"""
+        SELECT count(*) FROM {CATALOGO}.silver.EVENTO d
+        WHERE d.SISTEMA_ORIGEM_COD = '{fonte}'
+          AND d.RECEPCAO_IDT IN (SELECT RECEPCAO_IDT FROM origem_bruta)
+          AND d.MODELO_REVISAO_COD = '{revisao}'
+          AND d.RECEITA_HASH_COD <> '{impressao}'
+    """).collect()[0][0]
+    if divergentes:
+        raise SystemExit(
+            f"\nA regra desta receita mudou e metadados.atualizado_em continua '{revisao}'.\n"
+            f"  {divergentes} eventos ja gravados nesta revisao saíram de outra regra.\n"
+            f"  Descreva a mudanca numa nota nova em `metadados:` e atualize atualizado_em\n"
+            f"  (data, ou data e hora se ja houve mudanca hoje). Depois rode de novo.\n")
+
+
+def _apagar_obsoletos(spark, fonte, extensao):
+    """Apaga o evento que o mesmo registro de origem deixou de produzir.
+
+    O MERGE so reconhece a linha antiga pelo EVENTO_IDT, que leva a hora do fato.
+    Se uma releitura muda a hora (o grupo data-hora do FOGOS e lido pelo Docling),
+    o EVENTO_IDT muda, o MERGE insere a linha nova e a antiga ficaria ao lado:
+    o mesmo bombardeio duas vezes. Pode apagar: a Silver e funcao da Bronze, e a
+    leitura antiga continua la.
+    """
+    obsoletos = [r[0] for r in spark.sql(f"""
+        SELECT d.EVENTO_IDT FROM {CATALOGO}.silver.EVENTO d
+        WHERE d.SISTEMA_ORIGEM_COD = '{fonte}'
+          AND d.RECEPCAO_IDT IN (SELECT RECEPCAO_IDT FROM origem_bruta)
+          AND d.EVENTO_IDT NOT IN (SELECT EVENTO_IDT FROM origem_canonica
+                                   WHERE EVENTO_IDT IS NOT NULL)
+    """).collect()]
+    if not obsoletos:
+        return
+    print(f"  {len(obsoletos)} eventos que a origem deixou de produzir: apagados")
+    # a extensao antes, porque ela aponta para o EVENTO_IDT
+    for tabela in ([extensao] if extensao else []) + ["EVENTO"]:
+        for i in range(0, len(obsoletos), 500):
+            lista = ", ".join(f"'{e}'" for e in obsoletos[i:i + 500])
+            spark.sql(f"DELETE FROM {CATALOGO}.silver.{tabela} WHERE EVENTO_IDT IN ({lista})")
+
+
 def processar(spark, modelo, fonte, tipo, mostrar=False):
     spec = modelo["fontes"][fonte]
+    marcas = None
+    if spec.get("entidades"):
+        receita = tipo or next(iter(spec["entidades"]))
+        impressao = impressao_receita(modelo, fonte, receita)
+        revisao = str(modelo["metadados"]["atualizado_em"])
+        marcas = {"RECEITA_HASH_COD": f"'{impressao}'", "MODELO_REVISAO_COD": f"'{revisao}'"}
+        print(f"  regra {impressao[:19]}... revisao {revisao}")
     if spec.get("entidades") and not mostrar:
         from pyspark.sql.types import StringType
         spark.udf.register("geojson_para_wkt", _wkt_de_geojson, StringType())
         spark.udf.register("dms_para_ponto", _ponto_de_dms, StringType())
         spark.udf.register("gdh_para_instante", _instante_de_gdh, StringType())
-        receita = tipo or next(iter(spec["entidades"]))
         mapa_receita = _mapa_do_bloco(spec["entidades"][receita])
         _registrar_mais_parecido(spark, modelo, mapa_receita)
         _registrar_decametrica(spark, mapa_receita)
         montar_origem(spark, modelo, fonte, receita)
 
-    consulta = montar_select(modelo, fonte, tipo)
+    consulta = montar_select(modelo, fonte, tipo, marcas)
     if mostrar:
         print(consulta + ";\n")
         return
 
     spark.sql(consulta).createOrReplaceTempView("origem_canonica")
+    extensao = _tabela_extensao(spec, tipo)
+    if marcas:
+        _conferir_trava(spark, fonte, impressao, revisao)
+        _apagar_obsoletos(spark, fonte, extensao)
 
     # EVENTO primeiro; a extensao depois, porque depende do EVENTO_IDT.
-    extensao = _tabela_extensao(spec, tipo)
     for tabela in ["EVENTO"] + ([extensao] if extensao else []):
         colunas = list(modelo["entidades"][tabela]["campos"])
         chave = modelo["entidades"][tabela]["chave"][0]

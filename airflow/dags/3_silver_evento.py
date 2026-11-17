@@ -28,12 +28,18 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 
 from helpers.lineage_emitter import linhagem
 
-# Duas pendencias, somadas:
+# Quatro pendencias. Qualquer uma faz a DAG rodar as 8 receitas inteiras.
 #   1. registro da Bronze que ainda nao virou evento. Todo evento guarda o
 #      RECEPCAO_IDT de onde nasceu, entao a conta e uma juncao so;
 #   2. evento que nasceu ANTES da interpretacao do seu registro. O relato do C2_B
 #      vira evento sem tipo e sem prioridade, e so ganha os dois quando o modelo
 #      de linguagem responde; o MERGE da Silver atualiza a linha que ja existe.
+#   3. evento cuja extracao NAO e a mais recente: o prompt mudou de versao, a
+#      DAG 2 releu, e a Silver ainda mostra a leitura velha;
+#   4. evento produzido por uma REGRA que nao e mais a do modelo canonico: o
+#      hash da receita gravado na linha difere do hash atual (nota_2026_11_17).
+# Sem a 3 e a 4, uma mudanca de prompt ou de regra so chegava a Silver de carona,
+# quando por acaso chegava dado novo junto.
 # O filtro da primeira lista o que esta DAG SABE transformar hoje: as demais
 # fontes entram quando suas receitas existirem, e ate la nao contam como pendencia.
 PENDENTES_SQL = """
@@ -67,6 +73,33 @@ PENDENTES_SQL = """
        FROM iceberg.silver.evento e
        JOIN iceberg.bronze.extracao i ON i.recepcao_idt = e.recepcao_idt AND i.status_cod = 'OK'
        WHERE e.extracao_idt IS NULL)
+"""
+
+# 3. A "mais recente" e contada como o job a escolhe: por arquivo (ou pelo
+# registro, no relato do C2_B, que nao tem arquivo) e separando a leitura direta
+# do binario da leitura de uma leitura — na voz, a transcricao nova nao torna
+# velha a interpretacao do modelo de linguagem; so a interpretacao nova torna.
+EXTRACAO_ANTIGA_SQL = """
+    WITH ultima AS (
+        SELECT coalesce(arquivo_idt, recepcao_idt) AS chave,
+               extracao_origem_idt IS NULL AS direta,
+               max(execucao_data) AS execucao_data
+        FROM iceberg.bronze.extracao
+        WHERE status_cod = 'OK'
+        GROUP BY 1, 2)
+    SELECT count(*)
+    FROM iceberg.silver.evento e
+    JOIN iceberg.bronze.extracao x ON x.extracao_idt = e.extracao_idt
+    JOIN ultima u ON u.chave = coalesce(x.arquivo_idt, x.recepcao_idt)
+                 AND u.direta = (x.extracao_origem_idt IS NULL)
+    WHERE x.execucao_data < u.execucao_data
+"""
+
+# 4. A lista de hashes em vigor vem do proprio job (impressao_receita), para a
+# DAG e o job nunca fazerem a conta de jeitos diferentes.
+REGRA_ANTIGA_SQL = """
+    SELECT count(*) FROM iceberg.silver.evento
+    WHERE receita_hash_cod IS NULL OR receita_hash_cod NOT IN ({hashes})
 """
 
 CONF_SPARK = {
@@ -103,13 +136,34 @@ CONF_SPARK = {
 }
 
 
+def regras_em_vigor() -> list:
+    """O hash atual de cada receita do modelo canonico — a mesma conta do job."""
+    import sys
+    sys.path.insert(0, "/opt/spark-jobs")
+    import canonico_para_silver as job
+
+    modelo = job.carregar_modelo(job.achar_modelo("/opt/canonico/modelo_canonico.yaml"))
+    return [job.impressao_receita(modelo, fonte, receita)
+            for fonte, spec in modelo["fontes"].items()
+            for receita in (spec.get("entidades") or {})]
+
+
 def conferir_pendentes() -> str:
     import trino
 
     cur = trino.dbapi.connect(host="trino", port=8090, user="airflow", http_scheme="http").cursor()
-    cur.execute(PENDENTES_SQL)
-    pendentes = cur.fetchone()[0]
-    print(f"pendencias (registro sem evento + evento sem interpretacao): {pendentes}")
+    hashes = ", ".join(f"'{h}'" for h in regras_em_vigor())
+    contas = {
+        "registro sem evento + evento sem interpretacao": PENDENTES_SQL,
+        "evento com extracao antiga": EXTRACAO_ANTIGA_SQL,
+        "evento com regra antiga": REGRA_ANTIGA_SQL.format(hashes=hashes),
+    }
+    pendentes = 0
+    for nome, sql in contas.items():
+        cur.execute(sql)
+        quantos = cur.fetchone()[0]
+        print(f"{nome}: {quantos}")
+        pendentes += quantos
     return "c2a_posicao" if pendentes else "nada_a_fazer"
 
 
